@@ -1,0 +1,38 @@
+.env
+__pycache__/
+*.pyc
+data/*.json
+data/*.csv
+data/*.html
+.venv/
+pipeline/.current_run.json
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Lead Desk runtime state
+pipeline/.current_run.json
+pipeline/discovered.json
+pipeline/enrichment_cache.json
+pipeline/dashboard_data.json
+pipeline/dashboard.html
+pipeline/leads.csv
+
+# Local/runtime artifacts
+*.log
+*.pid
+.DS_Store
+
+# Backups created during migration
+*.pre-*
+
+# Migration provenance / raw exports retained locally only
+agent/hyperagent-export.json
+*.hyperagent-backup
