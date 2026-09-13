@@ -123,6 +123,61 @@ class PostgresStore:
             print(f"PostgreSQL ping failed: {e}")
             return False
 
+    def get_active_run(self) -> dict | None:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                select
+                    id,
+                    started_at,
+                    finished_at,
+                    geo_label,
+                    verticals,
+                    status,
+                    stage
+                from runs
+                where status = 'running'
+                  and finished_at is null
+                order by started_at desc
+                limit 1
+                """
+            )
+            return cur.fetchone()
+
+    def abandon_run(self, run_id: str, reason: str = "") -> None:
+        now = datetime.now(timezone.utc)
+
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                update runs
+                set
+                    finished_at = %s,
+                    status = 'abandoned',
+                    stage = 'abandoned',
+                    notes = case
+                        when %s = '' then notes
+                        when coalesce(notes, '') = '' then %s
+                        else notes || chr(10) || %s
+                    end
+                where id = %s
+                  and status = 'running'
+                  and finished_at is null
+                """,
+                (
+                    now,
+                    reason,
+                    reason,
+                    reason,
+                    run_id,
+                ),
+            )
+
+            if cur.rowcount != 1:
+                raise RuntimeError(
+                    f"active run not found: {run_id}"
+                )
+
     def start_run(self, geo_label: str, verticals: list, grid_points: int,
                   dry_run: bool = False, notes: str = "") -> str:
         rows = self.insert("runs", [{

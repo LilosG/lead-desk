@@ -65,20 +65,40 @@ def active_run_store(required: bool = False):
     from store import PostgresStore
 
     state = load_current_run()
+
     if not state:
         if required:
             raise RuntimeError(
-                "no active staged run; begin with discover.py before finalize"
+                "no active staged run; begin with discover.py"
             )
         return None, None
 
     store = PostgresStore()
-    if not store.ping():
-        if required:
-            raise RuntimeError("PostgreSQL unavailable for active staged run")
-        return None, None
 
-    return store, str(state["run_id"])
+    if not store.ping():
+        raise RuntimeError(
+            "PostgreSQL unavailable for active staged run"
+        )
+
+    active = store.get_active_run()
+
+    if not active:
+        raise RuntimeError(
+            "run pointer exists but PostgreSQL has no active run; "
+            "use runctl.py status and resolve the stale state"
+        )
+
+    pointer_run_id = str(state["run_id"])
+    database_run_id = str(active["id"])
+
+    if pointer_run_id != database_run_id:
+        raise RuntimeError(
+            "run pointer does not match PostgreSQL active run: "
+            f"pointer={pointer_run_id} database={database_run_id}; "
+            "use runctl.py status before continuing"
+        )
+
+    return store, pointer_run_id
 
 
 def cmd_status(businesses, cache) -> None:
@@ -216,6 +236,20 @@ def cmd_psi(businesses, cache, batch: int) -> None:
 
     if not todo:
         print("psi complete — nothing left")
+
+        run_store, run_id = active_run_store(required=True)
+
+        psi_completed = sum(
+            1 for f in cache.values()
+            if getattr(f, "psi_performance", None) is not None
+        )
+
+        run_store.update_run_progress(
+            run_id,
+            stage="finalize",
+            psi_completed=psi_completed,
+            psi_finished_at=datetime.now(timezone.utc),
+        )
         return
     chunk = todo[:batch]
     print(f"running PageSpeed on top {len(chunk)} of {len(todo)} candidates...")
@@ -251,18 +285,33 @@ def cmd_psi(businesses, cache, batch: int) -> None:
                 save_cache(cache)
                 print(f"  {done}/{len(chunk)} (saved)")
     save_cache(cache)
-    print(f"done. {len(todo) - len(chunk)} candidates remain (stop whenever).")
+
+    remaining = len(todo) - len(chunk)
+
+    print(
+        f"done. {remaining} candidates remain "
+        "(stop whenever)."
+    )
 
     if run_store is not None:
         psi_completed = sum(
             1 for f in cache.values()
             if getattr(f, "psi_performance", None) is not None
         )
+
+        progress = {
+            "stage": "finalize" if remaining == 0 else "psi",
+            "psi_completed": psi_completed,
+        }
+
+        if remaining == 0:
+            progress["psi_finished_at"] = datetime.now(
+                timezone.utc
+            )
+
         run_store.update_run_progress(
             run_id,
-            stage="psi",
-            psi_completed=psi_completed,
-            psi_finished_at=datetime.now(timezone.utc),
+            **progress,
         )
 
 
@@ -290,7 +339,6 @@ def cmd_finalize(businesses, cache, args) -> None:
     store.update_run_progress(
         run_id,
         stage="finalize",
-        businesses_discovered=len(businesses),
         websites_crawled=crawled,
         psi_completed=psi_completed,
     )
@@ -319,9 +367,11 @@ def main() -> int:
     if args.command == "status":
         cmd_status(businesses, cache)
     elif args.command == "crawl":
+        active_run_store(required=True)
         cmd_crawl(businesses, cache, args.batch)
         cmd_status(businesses, cache)
     elif args.command == "psi":
+        active_run_store(required=True)
         cmd_psi(businesses, cache, args.batch)
     elif args.command == "finalize":
         cmd_finalize(businesses, cache, args)

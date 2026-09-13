@@ -14,7 +14,23 @@ from pathlib import Path
 STATE_FILE = Path(__file__).with_name(".current_run.json")
 
 
-def save_current_run(run_id: str, geo_label: str, verticals: list[str]) -> None:
+def save_current_run(
+    run_id: str,
+    geo_label: str,
+    verticals: list[str],
+    *,
+    replace: bool = False,
+) -> None:
+    existing = load_current_run()
+
+    if existing and not replace:
+        existing_run_id = existing.get("run_id")
+        raise RuntimeError(
+            "active run pointer already exists "
+            f"(run_id={existing_run_id}); "
+            "refusing to overwrite pipeline/.current_run.json"
+        )
+
     payload = {
         "run_id": str(run_id),
         "geo_label": geo_label,

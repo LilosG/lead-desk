@@ -358,6 +358,7 @@ def sweep(
     dry_run: bool = False,
     ledger: CostLedger | None = None,
     progress=print,
+    checkpoint=None,
 ) -> tuple[dict[str, dict], CostLedger]:
     """Run discovery. Returns {place_id: normalized_business} and the cost ledger.
 
@@ -411,6 +412,9 @@ def sweep(
                             found[pid] = rec
                             n_new += 1
                     progress(f"  {query:<55} +{n_new:<3} total={len(found)}")
+
+                    if checkpoint is not None:
+                        checkpoint(len(found), ledger)
                 except Exception as e:
                     progress(f"  !! {query}: {e}")
 
@@ -428,8 +432,6 @@ if __name__ == "__main__":
     ap.add_argument("--out", default="discovered.json")
     ap.add_argument("--merge", action="store_true",
                     help="union with existing --out file; counters Google's result churn")
-    ap.add_argument("--no-db", action="store_true",
-                    help="run discovery without creating/updating a PostgreSQL run")
     args = ap.parse_args()
 
     if args.dry_run:
@@ -454,32 +456,82 @@ if __name__ == "__main__":
     store = None
     run_id = None
 
-    if not args.no_db:
-        from store import PostgresStore
-        from run_state import save_current_run
+    from store import PostgresStore
+    from run_state import load_current_run, save_current_run
 
-        store = PostgresStore()
-        if store.ping():
-            grid_points = (
-                len(build_grid(C.GEO_BBOX, C.GRID_SPACING_KM))
-                if args.grid else 0
-            )
-            run_id = store.start_run(
-                C.GEO_LABEL,
-                sorted(args.verticals),
-                grid_points,
-                notes=f"model={C.MODEL_VERSION} staged",
-            )
-            save_current_run(run_id, C.GEO_LABEL, list(args.verticals))
-            print(f"run_id={run_id}")
-        else:
-            print("!! PostgreSQL unavailable; discovery will continue untracked")
-            store = None
+    store = PostgresStore()
+
+    if not store.ping():
+        raise SystemExit(
+            "PostgreSQL unavailable; discovery requires a tracked database run."
+        )
+
+    pointer = load_current_run()
+
+    if pointer:
+        raise SystemExit(
+            "active run pointer already exists "
+            f"(run_id={pointer.get('run_id')}); "
+            "resolve it before starting another discovery"
+        )
+
+    active = store.get_active_run()
+
+    if active:
+        raise SystemExit(
+            "PostgreSQL already has an active run "
+            f"(run_id={active['id']}, stage={active['stage']}); "
+            "resolve it before starting another discovery"
+        )
+
+    grid_points = (
+        len(build_grid(C.GEO_BBOX, C.GRID_SPACING_KM))
+        if args.grid else 0
+    )
+
+    run_id = store.start_run(
+        C.GEO_LABEL,
+        sorted(args.verticals),
+        grid_points,
+        notes=f"model={C.MODEL_VERSION} staged",
+    )
+
+    try:
+        save_current_run(
+            run_id,
+            C.GEO_LABEL,
+            list(args.verticals),
+        )
+    except Exception:
+        store.abandon_run(
+            run_id,
+            "Run pointer creation failed after database run creation",
+        )
+        raise
+
+    print(f"run_id={run_id}")
+
+    def persist_discovery_progress(
+        businesses_observed: int,
+        current_ledger: CostLedger,
+    ) -> None:
+        store.update_run_progress(
+            run_id,
+            stage="discovery",
+            businesses_discovered=businesses_observed,
+            api_calls_search=current_ledger.search_calls,
+            api_calls_details=current_ledger.details_calls,
+            est_cost_usd=round(
+                current_ledger.est_usd(),
+                4,
+            ),
+        )
 
     results, ledger = sweep(
         args.verticals,
         cities=args.cities,
         use_grid=args.grid,
+        checkpoint=persist_discovery_progress,
     )
 
     # Results DRIFT over days, but are stable within a session. Measured:
@@ -517,6 +569,5 @@ if __name__ == "__main__":
             api_calls_search=ledger.search_calls,
             api_calls_details=ledger.details_calls,
             est_cost_usd=round(ledger.est_usd(), 4),
-            businesses_discovered=len(results),
             discovery_finished_at=datetime.now(timezone.utc),
         )
