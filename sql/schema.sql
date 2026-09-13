@@ -301,4 +301,3 @@ create index if not exists idx_runs_finished_at
 -- Fast run-scoped lead ordering.
 create index if not exists idx_scores_run_total
   on scores(run_id, total_score desc);
-

@@ -290,4 +290,3 @@ SELECT b.vertical,
   GROUP BY b.vertical, b.city
  HAVING count(*) >= 3
   ORDER BY (count(*) FILTER (WHERE s.tier = ANY (ARRAY['A'::text, 'B'::text]))) DESC, (round(100.0 * count(*) FILTER (WHERE b.website_url IS NULL)::numeric / NULLIF(count(*), 0)::numeric, 1)) DESC;
-

@@ -263,4 +263,3 @@ class PostgresStore:
         } for b in baselines.values()]
         return self.upsert("vertical_baselines", rows,
                            on_conflict="run_id,vertical,geo_label")
-
