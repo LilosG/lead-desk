@@ -1,11 +1,8 @@
 -- Lilos Growth — Lead Desk operational views
 --
--- Canonicalized from the validated PostgreSQL production schema after
--- migrations 001-003. Operational lead views intentionally scope scoring
--- to the latest completed, non-dry-run sweep.
---
--- Migration history remains authoritative for upgrading existing databases.
--- This file represents the current state for clean installations.
+-- Current clean-install representation of the validated PostgreSQL schema.
+-- Operational lead views scope to the latest completed non-dry-run sweep.
+-- Lead segmentation semantics are centralized in v_lead_segments.
 
 -- ================================================================
 -- v_latest_completed_run
@@ -103,6 +100,28 @@ SELECT b.place_id,
      JOIN v_latest_score s ON s.place_id = b.place_id
      LEFT JOIN website_enrichment w ON w.place_id = b.place_id
   ORDER BY s.total_score DESC;
+
+-- ================================================================
+-- v_lead_segments
+-- ================================================================
+create or replace view v_lead_segments as
+WITH evidence_flags AS (
+         SELECT s_1.place_id,
+            count(*) FILTER (WHERE e.signal = ANY (ARRAY['no_localbusiness_schema'::text, 'no_city_pages'::text, 'no_service_pages'::text, 'psi_mobile_critical'::text, 'psi_mobile_poor'::text, 'thin_content'::text, 'template_builder'::text, 'no_contact_form'::text, 'no_ssl'::text, 'no_title'::text, 'category_generic'::text, 'category_mismatch'::text, 'no_website'::text, 'site_down'::text, 'no_services_listed'::text, 'no_business_description'::text, 'no_review_replies'::text])) AS real_gap_count,
+            bool_or(e.signal ~~ 'category_%'::text) AS category_opportunity
+           FROM v_latest_score s_1
+             LEFT JOIN score_evidence e ON e.score_id = s_1.score_id
+          GROUP BY s_1.place_id
+        )
+ SELECT s.place_id,
+    b.last_review_days IS NOT NULL AND b.last_review_days <= 365 AS confirmed_trading,
+    COALESCE(ef.category_opportunity, false) AS category_opportunity,
+    COALESCE(ef.real_gap_count, 0::bigint) AS real_gap_count,
+    b.last_review_days IS NOT NULL AND b.last_review_days <= 365 AND COALESCE(b.review_count, 0)::numeric >= vb.median_reviews AND COALESCE(ef.real_gap_count, 0::bigint) >= 2 AS established
+   FROM v_latest_score s
+     JOIN businesses b ON b.place_id = s.place_id
+     LEFT JOIN vertical_baselines vb ON vb.vertical = b.vertical AND vb.run_id = s.run_id
+     LEFT JOIN evidence_flags ef ON ef.place_id = s.place_id;
 
 -- ================================================================
 -- v_leads
@@ -290,3 +309,4 @@ SELECT b.vertical,
   GROUP BY b.vertical, b.city
  HAVING count(*) >= 3
   ORDER BY (count(*) FILTER (WHERE s.tier = ANY (ARRAY['A'::text, 'B'::text]))) DESC, (round(100.0 * count(*) FILTER (WHERE b.website_url IS NULL)::numeric / NULLIF(count(*), 0)::numeric, 1)) DESC;
+
