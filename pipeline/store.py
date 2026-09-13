@@ -154,7 +154,6 @@ class PostgresStore:
                 set
                     finished_at = %s,
                     status = 'abandoned',
-                    stage = 'abandoned',
                     notes = case
                         when %s = '' then notes
                         when coalesce(notes, '') = '' then %s
