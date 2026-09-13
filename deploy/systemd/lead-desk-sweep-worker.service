@@ -1,0 +1,22 @@
+[Unit]
+Description=Lead Desk Sweep Worker
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=mike
+Group=mike
+WorkingDirectory=/home/mike/lead-desk
+EnvironmentFile=/home/mike/lead-desk/.env
+ExecStart=/home/mike/lead-desk/.venv/bin/python /home/mike/lead-desk/pipeline/sweep_worker.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

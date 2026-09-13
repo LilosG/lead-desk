@@ -1,0 +1,417 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+---
+
+<AppLayout title="New Sweep">
+  <main class="mx-auto max-w-6xl space-y-8 p-6 lg:p-10">
+    <section>
+      <p class="text-sm uppercase tracking-[0.18em] text-neutral-500">
+        Lead Desk
+      </p>
+      <h1 class="mt-2 text-3xl font-semibold text-neutral-950">
+        New Sweep
+      </h1>
+      <p class="mt-2 max-w-3xl text-sm leading-6 text-neutral-600">
+        Start and monitor the complete discovery, crawl, PageSpeed,
+        scoring, and finalize workflow.
+      </p>
+    </section>
+
+    <section
+      id="execution-warning"
+      class="hidden rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+    >
+      Sweep execution is currently disabled. The interface is installed,
+      but no Google/API sweep can start until execution is enabled.
+    </section>
+
+    <div class="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
+      <section class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-neutral-950">
+          Sweep configuration
+        </h2>
+
+        <form id="sweep-form" class="mt-6 space-y-5">
+          <div>
+            <label
+              for="verticals"
+              class="block text-sm font-medium text-neutral-800"
+            >
+              Verticals
+            </label>
+
+            <input
+              id="verticals"
+              name="verticals"
+              value="electrician"
+              class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+            />
+
+            <p class="mt-1 text-xs text-neutral-500">
+              Comma-separated.
+            </p>
+          </div>
+
+          <div>
+            <label
+              for="cities"
+              class="block text-sm font-medium text-neutral-800"
+            >
+              Cities
+            </label>
+
+            <input
+              id="cities"
+              name="cities"
+              placeholder="Optional — comma-separated"
+              class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+            />
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <label class="flex items-center gap-3 rounded-lg border border-neutral-200 p-3">
+              <input
+                id="merge"
+                type="checkbox"
+                checked
+              />
+              <span class="text-sm text-neutral-700">
+                Merge prior discovery coverage
+              </span>
+            </label>
+
+            <label class="flex items-center gap-3 rounded-lg border border-neutral-200 p-3">
+              <input
+                id="grid"
+                type="checkbox"
+              />
+              <span class="text-sm text-neutral-700">
+                Include grid search
+              </span>
+            </label>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label
+                for="crawl-batch"
+                class="block text-sm font-medium text-neutral-800"
+              >
+                Crawl batch
+              </label>
+
+              <input
+                id="crawl-batch"
+                type="number"
+                min="1"
+                max="500"
+                value="80"
+                class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div>
+              <label
+                for="psi-batch"
+                class="block text-sm font-medium text-neutral-800"
+              >
+                PageSpeed batch
+              </label>
+
+              <input
+                id="psi-batch"
+                type="number"
+                min="1"
+                max="200"
+                value="20"
+                class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+
+          <div
+            id="form-message"
+            class="hidden rounded-lg border p-3 text-sm"
+          ></div>
+
+          <button
+            id="start-button"
+            type="submit"
+            class="rounded-lg bg-neutral-950 px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Start sweep
+          </button>
+        </form>
+      </section>
+
+      <section class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <div class="flex items-center justify-between gap-4">
+          <h2 class="text-lg font-semibold text-neutral-950">
+            Current sweep
+          </h2>
+
+          <button
+            id="refresh-button"
+            type="button"
+            class="text-sm font-medium text-neutral-600 hover:text-neutral-950"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div id="current-job" class="mt-6">
+          <p class="text-sm text-neutral-500">
+            Loading…
+          </p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+  function required<T extends HTMLElement>(
+    selector: string,
+  ): T {
+    const element = document.querySelector<T>(selector);
+
+    if (!element) {
+      throw new Error(`Missing required element: ${selector}`);
+    }
+
+    return element;
+  }
+
+  const form = required<HTMLFormElement>("#sweep-form");
+  const startButton =
+    required<HTMLButtonElement>("#start-button");
+  const warning =
+    required<HTMLElement>("#execution-warning");
+  const currentJob =
+    required<HTMLElement>("#current-job");
+  const message =
+    required<HTMLElement>("#form-message");
+  const refreshButton =
+    required<HTMLButtonElement>("#refresh-button");
+
+  const verticalsInput =
+    required<HTMLInputElement>("#verticals");
+  const citiesInput =
+    required<HTMLInputElement>("#cities");
+  const gridInput =
+    required<HTMLInputElement>("#grid");
+  const mergeInput =
+    required<HTMLInputElement>("#merge");
+  const crawlBatchInput =
+    required<HTMLInputElement>("#crawl-batch");
+  const psiBatchInput =
+    required<HTMLInputElement>("#psi-batch");
+
+  function splitValues(value: string): string[] {
+    return value
+      .split(",")
+      .map((item: string) => item.trim())
+      .filter(Boolean);
+  }
+
+  function escapeHtml(value: unknown): string {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  async function cancelJob(id: string): Promise<void> {
+    const response = await fetch(
+      `/api/sweeps/${encodeURIComponent(id)}/cancel`,
+      {
+        method: "POST",
+      },
+    );
+
+    if (!response.ok) {
+      const body = await response
+        .json()
+        .catch(() => ({}));
+
+      window.alert(
+        body.detail || "Unable to cancel sweep.",
+      );
+    }
+
+    await loadCurrent();
+  }
+
+  async function loadCurrent(): Promise<void> {
+    const response = await fetch(
+      "/api/sweeps/current",
+    );
+
+    if (!response.ok) {
+      currentJob.innerHTML = `
+        <p class="text-sm text-red-700">
+          Unable to load sweep state.
+        </p>
+      `;
+      return;
+    }
+
+    const data = await response.json();
+
+    warning.classList.toggle(
+      "hidden",
+      Boolean(data.execution_enabled),
+    );
+
+    startButton.disabled =
+      !data.execution_enabled ||
+      Boolean(data.job);
+
+    if (!data.job) {
+      currentJob.innerHTML = `
+        <div class="rounded-xl bg-neutral-50 p-5">
+          <p class="text-sm font-medium text-neutral-900">
+            No active sweep
+          </p>
+          <p class="mt-1 text-sm text-neutral-500">
+            The worker is idle.
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    const job = data.job;
+
+    currentJob.innerHTML = `
+      <div class="space-y-4 rounded-xl bg-neutral-50 p-5">
+        <div>
+          <p class="text-xs uppercase tracking-wider text-neutral-500">
+            Status
+          </p>
+          <p class="mt-1 text-lg font-semibold text-neutral-950">
+            ${escapeHtml(job.status)}
+          </p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <p class="text-neutral-500">Stage</p>
+            <p class="font-medium text-neutral-900">
+              ${escapeHtml(job.stage)}
+            </p>
+          </div>
+
+          <div>
+            <p class="text-neutral-500">Verticals</p>
+            <p class="font-medium text-neutral-900">
+              ${escapeHtml(
+                (job.verticals || []).join(", "),
+              )}
+            </p>
+          </div>
+        </div>
+
+        <button
+          id="cancel-active-job"
+          type="button"
+          class="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+        >
+          Stop sweep
+        </button>
+      </div>
+    `;
+
+    const cancelButton =
+      document.querySelector<HTMLButtonElement>(
+        "#cancel-active-job",
+      );
+
+    cancelButton?.addEventListener(
+      "click",
+      () => cancelJob(String(job.id)),
+    );
+  }
+
+  form.addEventListener(
+    "submit",
+    async (event: SubmitEvent) => {
+      event.preventDefault();
+
+      message.classList.add("hidden");
+
+      const cities = splitValues(
+        citiesInput.value,
+      );
+
+      const payload = {
+        verticals: splitValues(
+          verticalsInput.value,
+        ),
+        cities: cities.length ? cities : null,
+        use_grid: gridInput.checked,
+        merge_results: mergeInput.checked,
+        crawl_batch: Number(
+          crawlBatchInput.value,
+        ),
+        psi_batch: Number(
+          psiBatchInput.value,
+        ),
+      };
+
+      startButton.disabled = true;
+
+      const response = await fetch(
+        "/api/sweeps",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      const body = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok) {
+        message.textContent =
+          body.detail ||
+          "Unable to start sweep.";
+
+        message.className =
+          "rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800";
+
+        startButton.disabled = false;
+        return;
+      }
+
+      message.textContent = "Sweep queued.";
+
+      message.className =
+        "rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800";
+
+      await loadCurrent();
+    },
+  );
+
+  refreshButton.addEventListener(
+    "click",
+    () => {
+      void loadCurrent();
+    },
+  );
+
+  void loadCurrent();
+
+  window.setInterval(
+    () => {
+      void loadCurrent();
+    },
+    5000,
+  );
+</script>
+</AppLayout>
