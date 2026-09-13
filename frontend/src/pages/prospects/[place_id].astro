@@ -1,0 +1,382 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+
+export const prerender = false;
+
+const { place_id } = Astro.params;
+---
+
+<AppLayout
+  title="Prospect detail"
+  description="Full business, opportunity, and audit evidence."
+>
+  <div
+    id="prospect-detail-root"
+    data-place-id={place_id}
+    class="contents"
+  >
+  <div id="detail-loading" class="rounded-lg border border-[var(--line)] bg-white p-6">
+    <div class="text-sm text-[var(--muted)]">
+      Loading prospect…
+    </div>
+  </div>
+
+  <div id="detail-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-6">
+    <div class="font-medium text-red-900">
+      Prospect unavailable
+    </div>
+    <div id="detail-error-message" class="mt-1 text-sm text-red-700"></div>
+  </div>
+
+  <div id="detail" class="hidden space-y-6">
+    <div class="flex flex-col gap-4 rounded-lg border border-[var(--line)] bg-white p-5 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <a href="/prospects" class="text-xs text-[var(--muted)] hover:underline">
+          ← Back to prospects
+        </a>
+
+        <h2 id="business-name" class="mt-3 text-2xl font-semibold tracking-tight">
+          —
+        </h2>
+
+        <div id="business-location" class="mt-1 text-sm text-[var(--muted)]">
+          —
+        </div>
+
+        <div id="business-links" class="mt-4 flex flex-wrap gap-2"></div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3">
+        <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+          <div class="text-xs text-[var(--muted)]">Score</div>
+          <div id="detail-score" class="mt-1 text-xl font-semibold">—</div>
+        </div>
+
+        <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+          <div class="text-xs text-[var(--muted)]">Tier</div>
+          <div id="detail-tier" class="mt-1 text-xl font-semibold">—</div>
+        </div>
+
+        <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+          <div class="text-xs text-[var(--muted)]">Reviews</div>
+          <div id="detail-reviews" class="mt-1 text-xl font-semibold">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+      <section class="rounded-lg border border-[var(--line)] bg-white">
+        <div class="border-b border-[var(--line)] px-5 py-4">
+          <div class="text-sm font-medium">Findings</div>
+        </div>
+
+        <div id="findings" class="divide-y divide-[var(--line)]"></div>
+      </section>
+
+      <div class="space-y-6">
+        <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+          <div class="text-sm font-medium">Opportunity</div>
+
+          <div id="headline-gap" class="mt-4 text-sm leading-6"></div>
+
+          <dl class="mt-5 space-y-3 text-sm">
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">GBP gap</dt>
+              <dd id="gbp-gap" class="font-medium">—</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">Website gap</dt>
+              <dd id="website-gap" class="font-medium">—</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">Reachability</dt>
+              <dd id="reachability" class="font-medium">—</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">Real gaps</dt>
+              <dd id="real-gaps" class="font-medium">—</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+          <div class="text-sm font-medium">Website audit</div>
+
+          <dl id="website-audit" class="mt-4 space-y-3 text-sm"></dl>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  </div>
+
+  <script>
+    type Finding = {
+      category: string | null;
+      severity: string | null;
+      points: number | null;
+      finding: string | null;
+      signal: string | null;
+      observed: unknown;
+    };
+
+    type WebsiteAudit = {
+      is_reachable: boolean | null;
+      http_status: number | null;
+      has_ssl: boolean | null;
+      cms_detected: string | null;
+      psi_performance: number | null;
+      has_localbusiness_schema: boolean | null;
+      has_contact_form: boolean | null;
+    };
+
+    type ProspectDetail = {
+      name: string | null;
+      city: string | null;
+      state: string | null;
+      vertical: string | null;
+
+      phone: string | null;
+      website_url: string | null;
+      google_maps_uri: string | null;
+
+      review_count: number | null;
+
+      total_score: number;
+      tier: string | null;
+
+      headline_gap: string | null;
+      gbp_gap_score: number | null;
+      website_gap_score: number | null;
+      reachability_score: number | null;
+      real_gap_count: number;
+
+      findings: Finding[];
+      website_audit: WebsiteAudit | null;
+    };
+
+    const requireElement = <T extends Element>(
+      selector: string,
+    ): T => {
+      const element = document.querySelector<T>(selector);
+
+      if (!element) {
+        throw new Error(`Missing required element: ${selector}`);
+      }
+
+      return element;
+    };
+
+    const escapeHtml = (value: unknown): string =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+
+    const setText = (
+      selector: string,
+      value: unknown,
+    ): void => {
+      requireElement<HTMLElement>(selector).textContent =
+        String(value ?? '—');
+    };
+
+    async function loadDetail(): Promise<void> {
+      try {
+        const root = requireElement<HTMLElement>(
+          '#prospect-detail-root',
+        );
+
+        const placeId = root.dataset.placeId;
+
+        if (!placeId) {
+          throw new Error('Prospect place ID is missing');
+        }
+
+        const response = await fetch(
+          `/api/prospects/${encodeURIComponent(placeId)}`,
+          {
+            headers: {
+              Accept: 'application/json',
+            },
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+
+        const data = (await response.json()) as ProspectDetail;
+
+        setText('#business-name', data.name);
+
+        setText(
+          '#business-location',
+          [data.city, data.state, data.vertical]
+            .filter(Boolean)
+            .join(' · '),
+        );
+
+        setText('#detail-score', data.total_score);
+        setText('#detail-tier', data.tier);
+        setText('#detail-reviews', data.review_count);
+
+        setText('#headline-gap', data.headline_gap);
+        setText('#gbp-gap', data.gbp_gap_score);
+        setText('#website-gap', data.website_gap_score);
+        setText('#reachability', data.reachability_score);
+        setText('#real-gaps', data.real_gap_count);
+
+        const links: string[] = [];
+
+        if (data.phone) {
+          links.push(
+            `<a href="tel:${escapeHtml(data.phone)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">${escapeHtml(data.phone)}</a>`,
+          );
+        }
+
+        if (data.website_url) {
+          links.push(
+            `<a href="${escapeHtml(data.website_url)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Website</a>`,
+          );
+        }
+
+        if (data.google_maps_uri) {
+          links.push(
+            `<a href="${escapeHtml(data.google_maps_uri)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Google Maps</a>`,
+          );
+        }
+
+        requireElement<HTMLElement>('#business-links').innerHTML =
+          links.join('');
+
+        const findingsElement =
+          requireElement<HTMLElement>('#findings');
+
+        findingsElement.innerHTML = data.findings.length
+          ? data.findings
+              .map(
+                (finding: Finding) => `
+                  <div class="p-5">
+                    <div class="flex items-center gap-2">
+                      <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium">
+                        ${escapeHtml(finding.category)}
+                      </span>
+
+                      <span class="text-[11px] uppercase tracking-[0.08em] text-[var(--muted)]">
+                        ${escapeHtml(finding.severity)}
+                      </span>
+                    </div>
+
+                    <div class="mt-3 text-sm leading-6">
+                      ${escapeHtml(finding.finding)}
+                    </div>
+
+                    <div class="mt-2 text-xs text-[var(--muted)]">
+                      Signal: ${escapeHtml(finding.signal)}
+                    </div>
+                  </div>
+                `,
+              )
+              .join('')
+          : `
+              <div class="p-5 text-sm text-[var(--muted)]">
+                No findings recorded.
+              </div>
+            `;
+
+        const audit = data.website_audit;
+
+        requireElement<HTMLElement>('#website-audit').innerHTML =
+          audit
+            ? `
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--muted)]">Reachable</dt>
+                  <dd class="font-medium">
+                    ${audit.is_reachable ? 'Yes' : 'No'}
+                  </dd>
+                </div>
+
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--muted)]">HTTP status</dt>
+                  <dd class="font-medium">
+                    ${audit.http_status ?? '—'}
+                  </dd>
+                </div>
+
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--muted)]">SSL</dt>
+                  <dd class="font-medium">
+                    ${audit.has_ssl ? 'Yes' : 'No'}
+                  </dd>
+                </div>
+
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--muted)]">CMS</dt>
+                  <dd class="font-medium">
+                    ${escapeHtml(audit.cms_detected) || '—'}
+                  </dd>
+                </div>
+
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--muted)]">PageSpeed</dt>
+                  <dd class="font-medium">
+                    ${audit.psi_performance ?? '—'}
+                  </dd>
+                </div>
+
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--muted)]">Schema</dt>
+                  <dd class="font-medium">
+                    ${audit.has_localbusiness_schema ? 'Yes' : 'No'}
+                  </dd>
+                </div>
+
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--muted)]">Contact form</dt>
+                  <dd class="font-medium">
+                    ${audit.has_contact_form ? 'Yes' : 'No'}
+                  </dd>
+                </div>
+              `
+            : `
+                <div class="text-[var(--muted)]">
+                  No website audit available.
+                </div>
+              `;
+
+        requireElement<HTMLElement>(
+          '#detail-loading',
+        ).classList.add('hidden');
+
+        requireElement<HTMLElement>(
+          '#detail',
+        ).classList.remove('hidden');
+      } catch (error) {
+        document
+          .querySelector<HTMLElement>('#detail-loading')
+          ?.classList.add('hidden');
+
+        document
+          .querySelector<HTMLElement>('#detail-error')
+          ?.classList.remove('hidden');
+
+        const message =
+          document.querySelector<HTMLElement>(
+            '#detail-error-message',
+          );
+
+        if (message) {
+          message.textContent =
+            error instanceof Error
+              ? error.message
+              : 'Unable to load prospect.';
+        }
+      }
+    }
+
+    loadDetail();
+  </script>
+</AppLayout>

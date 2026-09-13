@@ -1,0 +1,101 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const {
+  title,
+  description = 'LILOs Growth Lead Desk',
+} = Astro.props;
+
+const pathname = Astro.url.pathname;
+
+const nav = [
+  { label: 'Overview', href: '/' },
+  { label: 'Prospects', href: '/prospects' },
+  { label: 'Runs', href: '/runs' },
+  { label: 'Outreach', href: '/outreach' },
+  { label: 'Settings', href: '/settings' },
+];
+
+function active(href: string) {
+  if (href === '/') return pathname === '/';
+  return pathname.startsWith(href);
+}
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width"
+    />
+    <meta name="description" content={description} />
+    <title>{title} · Lead Desk</title>
+  </head>
+
+  <body>
+    <div class="min-h-screen lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+      <aside
+        class="border-b border-[var(--line)] bg-[var(--dark)] text-white lg:min-h-screen lg:border-b-0 lg:border-r"
+      >
+        <div class="flex items-center justify-between px-6 py-5 lg:block">
+          <div>
+            <div class="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/45">
+              LILOs Growth
+            </div>
+            <div class="mt-1 text-xl font-semibold tracking-tight">
+              Lead Desk
+            </div>
+          </div>
+
+          <div class="text-xs text-white/40 lg:mt-2">
+            Opportunity intelligence
+          </div>
+        </div>
+
+        <nav class="flex gap-1 overflow-x-auto px-3 pb-4 lg:block lg:px-3 lg:py-4">
+          {
+            nav.map((item) => (
+              <a
+                href={item.href}
+                class:list={[
+                  'block whitespace-nowrap rounded-md px-3 py-2.5 text-sm transition',
+                  active(item.href)
+                    ? 'bg-white/10 font-medium text-white'
+                    : 'text-white/60 hover:bg-white/5 hover:text-white',
+                ]}
+              >
+                {item.label}
+              </a>
+            ))
+          }
+        </nav>
+      </aside>
+
+      <main class="min-w-0">
+        <header
+          class="border-b border-[var(--line)] bg-[var(--surface)] px-6 py-5 lg:px-8"
+        >
+          <div class="mx-auto max-w-[1500px]">
+            <h1 class="text-2xl font-semibold tracking-tight">
+              {title}
+            </h1>
+            <p class="mt-1 text-sm text-[var(--muted)]">
+              {description}
+            </p>
+          </div>
+        </header>
+
+        <div class="mx-auto max-w-[1500px] p-6 lg:p-8">
+          <slot />
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

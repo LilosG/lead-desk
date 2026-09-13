@@ -1,0 +1,313 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+
+export const prerender = false;
+
+const { run_id } = Astro.params;
+---
+
+<AppLayout
+  title="Run detail"
+  description="Pipeline execution, telemetry, and scoring summary."
+>
+  <div
+    id="run-detail-root"
+    data-run-id={run_id}
+    class="contents"
+  >
+    <div
+      id="run-loading"
+      class="rounded-lg border border-[var(--line)] bg-white p-6 text-sm text-[var(--muted)]"
+    >
+      Loading run…
+    </div>
+
+    <div
+      id="run-error"
+      class="hidden rounded-lg border border-red-200 bg-red-50 p-6"
+    >
+      <div class="font-medium text-red-900">Run unavailable</div>
+      <div id="run-error-message" class="mt-1 text-sm text-red-700"></div>
+    </div>
+
+    <div id="run-detail" class="hidden space-y-6">
+      <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+        <a
+          href="/runs"
+          class="text-xs text-[var(--muted)] hover:underline"
+        >
+          ← Back to runs
+        </a>
+
+        <div class="mt-4 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 id="run-market" class="text-2xl font-semibold tracking-tight">
+              —
+            </h2>
+
+            <div id="run-verticals" class="mt-1 text-sm text-[var(--muted)]">
+              —
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+              <div class="text-xs text-[var(--muted)]">Scored</div>
+              <div id="run-scored" class="mt-1 text-xl font-semibold">—</div>
+            </div>
+
+            <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+              <div class="text-xs text-[var(--muted)]">Avg score</div>
+              <div id="run-average" class="mt-1 text-xl font-semibold">—</div>
+            </div>
+
+            <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+              <div class="text-xs text-[var(--muted)]">Status</div>
+              <div id="run-status" class="mt-1 text-sm font-semibold">—</div>
+            </div>
+
+            <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+              <div class="text-xs text-[var(--muted)]">API cost</div>
+              <div id="run-cost" class="mt-1 text-xl font-semibold">—</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="grid gap-6 xl:grid-cols-2">
+        <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+          <div class="text-sm font-medium">Tier distribution</div>
+
+          <div class="mt-5 grid grid-cols-4 gap-3">
+            <div>
+              <div class="text-xs text-[var(--muted)]">Tier A</div>
+              <div id="tier-a" class="mt-1 text-2xl font-semibold">—</div>
+            </div>
+            <div>
+              <div class="text-xs text-[var(--muted)]">Tier B</div>
+              <div id="tier-b" class="mt-1 text-2xl font-semibold">—</div>
+            </div>
+            <div>
+              <div class="text-xs text-[var(--muted)]">Tier C</div>
+              <div id="tier-c" class="mt-1 text-2xl font-semibold">—</div>
+            </div>
+            <div>
+              <div class="text-xs text-[var(--muted)]">Tier D</div>
+              <div id="tier-d" class="mt-1 text-2xl font-semibold">—</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+          <div class="text-sm font-medium">Pipeline telemetry</div>
+
+          <dl class="mt-5 space-y-3 text-sm">
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">Discovered</dt>
+              <dd id="run-discovered" class="font-medium">—</dd>
+            </div>
+
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">Websites crawled</dt>
+              <dd id="run-crawled" class="font-medium">—</dd>
+            </div>
+
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">PSI completed</dt>
+              <dd id="run-psi" class="font-medium">—</dd>
+            </div>
+
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">Search API calls</dt>
+              <dd id="run-search-calls" class="font-medium">—</dd>
+            </div>
+
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">Detail API calls</dt>
+              <dd id="run-detail-calls" class="font-medium">—</dd>
+            </div>
+
+            <div class="flex justify-between gap-4">
+              <dt class="text-[var(--muted)]">PSI API calls</dt>
+              <dd id="run-psi-calls" class="font-medium">—</dd>
+            </div>
+          </dl>
+        </section>
+      </div>
+
+      <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+        <div class="text-sm font-medium">Run metadata</div>
+
+        <dl class="mt-5 grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-3">
+          <div>
+            <dt class="text-xs text-[var(--muted)]">Started</dt>
+            <dd id="run-started" class="mt-1 font-medium">—</dd>
+          </div>
+
+          <div>
+            <dt class="text-xs text-[var(--muted)]">Finished</dt>
+            <dd id="run-finished" class="mt-1 font-medium">—</dd>
+          </div>
+
+          <div>
+            <dt class="text-xs text-[var(--muted)]">Stage</dt>
+            <dd id="run-stage" class="mt-1 font-medium">—</dd>
+          </div>
+
+          <div>
+            <dt class="text-xs text-[var(--muted)]">Grid points</dt>
+            <dd id="run-grid" class="mt-1 font-medium">—</dd>
+          </div>
+
+          <div>
+            <dt class="text-xs text-[var(--muted)]">Dry run</dt>
+            <dd id="run-dry" class="mt-1 font-medium">—</dd>
+          </div>
+
+          <div>
+            <dt class="text-xs text-[var(--muted)]">Notes</dt>
+            <dd id="run-notes" class="mt-1 font-medium">—</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    type RunDetail = {
+      id: string;
+      started_at: string;
+      finished_at: string | null;
+      geo_label: string;
+      verticals: string[];
+      status: string;
+      stage: string | null;
+      dry_run: boolean;
+      businesses_discovered: number;
+      businesses_scored: number;
+      websites_crawled: number;
+      psi_completed: number;
+      tier_a: number;
+      tier_b: number;
+      tier_c: number;
+      tier_d: number;
+      avg_score: number | null;
+      api_calls_search: number;
+      api_calls_details: number;
+      api_calls_psi: number;
+      est_cost_usd: number;
+      grid_points: number;
+      notes: string | null;
+    };
+
+    const requireElement = <T extends Element>(
+      selector: string,
+    ): T => {
+      const element = document.querySelector<T>(selector);
+
+      if (!element) {
+        throw new Error(`Missing element: ${selector}`);
+      }
+
+      return element;
+    };
+
+    const setText = (
+      selector: string,
+      value: unknown,
+    ): void => {
+      requireElement<HTMLElement>(selector).textContent =
+        String(value ?? '—');
+    };
+
+    const formatDate = (value: string | null): string =>
+      value
+        ? new Intl.DateTimeFormat(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }).format(new Date(value))
+        : '—';
+
+    async function loadRun(): Promise<void> {
+      try {
+        const root =
+          requireElement<HTMLElement>('#run-detail-root');
+
+        const runId = root.dataset.runId;
+
+        if (!runId) {
+          throw new Error('Run ID is missing');
+        }
+
+        const response = await fetch(
+          `/api/runs/${encodeURIComponent(runId)}`,
+        );
+
+        if (!response.ok) {
+          throw new Error(`Runs API returned ${response.status}`);
+        }
+
+        const data = (await response.json()) as RunDetail;
+
+        setText('#run-market', data.geo_label);
+        setText('#run-verticals', data.verticals.join(', '));
+        setText('#run-scored', data.businesses_scored);
+        setText('#run-average', data.avg_score);
+        setText('#run-status', data.status);
+        setText(
+          '#run-cost',
+          `$${Number(data.est_cost_usd ?? 0).toFixed(2)}`,
+        );
+
+        setText('#tier-a', data.tier_a);
+        setText('#tier-b', data.tier_b);
+        setText('#tier-c', data.tier_c);
+        setText('#tier-d', data.tier_d);
+
+        setText('#run-discovered', data.businesses_discovered);
+        setText('#run-crawled', data.websites_crawled);
+        setText('#run-psi', data.psi_completed);
+        setText('#run-search-calls', data.api_calls_search);
+        setText('#run-detail-calls', data.api_calls_details);
+        setText('#run-psi-calls', data.api_calls_psi);
+
+        setText('#run-started', formatDate(data.started_at));
+        setText('#run-finished', formatDate(data.finished_at));
+        setText('#run-stage', data.stage);
+        setText('#run-grid', data.grid_points);
+        setText('#run-dry', data.dry_run ? 'Yes' : 'No');
+        setText('#run-notes', data.notes);
+
+        requireElement<HTMLElement>(
+          '#run-loading',
+        ).classList.add('hidden');
+
+        requireElement<HTMLElement>(
+          '#run-detail',
+        ).classList.remove('hidden');
+      } catch (error) {
+        document
+          .querySelector<HTMLElement>('#run-loading')
+          ?.classList.add('hidden');
+
+        document
+          .querySelector<HTMLElement>('#run-error')
+          ?.classList.remove('hidden');
+
+        const message =
+          document.querySelector<HTMLElement>(
+            '#run-error-message',
+          );
+
+        if (message) {
+          message.textContent =
+            error instanceof Error
+              ? error.message
+              : 'Unable to load run.';
+        }
+      }
+    }
+
+    loadRun();
+  </script>
+</AppLayout>

@@ -1,0 +1,623 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+---
+
+<AppLayout
+  title="Prospects"
+  description="Search, filter, inspect, and prioritize current opportunities."
+>
+  <div class="space-y-5">
+    <section class="rounded-lg border border-[var(--line)] bg-white p-4">
+      <div class="grid gap-3 lg:grid-cols-[minmax(240px,1.6fr)_repeat(4,minmax(140px,0.7fr))]">
+        <div>
+          <label for="search" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
+            Search
+          </label>
+          <input
+            id="search"
+            type="search"
+            placeholder="Business, city, phone, address…"
+            class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[var(--accent)]"
+          />
+        </div>
+
+        <div>
+          <label for="city" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
+            City
+          </label>
+          <select
+            id="city"
+            class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">All cities</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="vertical" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
+            Vertical
+          </label>
+          <select
+            id="vertical"
+            class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">All verticals</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="tier" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
+            Tier
+          </label>
+          <select
+            id="tier"
+            class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">All tiers</option>
+            <option value="A">Tier A</option>
+            <option value="B">Tier B</option>
+            <option value="C">Tier C</option>
+            <option value="D">Tier D</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="contact" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
+            Contact
+          </label>
+          <select
+            id="contact"
+            class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">Any contact</option>
+            <option value="email">Email</option>
+            <option value="phone">Phone only</option>
+            <option value="none">No contact</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-4">
+        <button
+          id="filter-established"
+          type="button"
+          data-toggle-key="established"
+          class="rounded-full border border-[var(--dark)] bg-[var(--dark)] px-3 py-1.5 text-xs font-medium text-white"
+        >
+          Established
+        </button>
+
+        <button
+          id="filter-trading"
+          type="button"
+          data-toggle-key="trading"
+          class="rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-medium"
+        >
+          Confirmed trading
+        </button>
+
+        <button
+          id="filter-category"
+          type="button"
+          data-toggle-key="category_opportunity"
+          class="rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-medium"
+        >
+          Category opportunity
+        </button>
+
+        <button
+          id="clear-filters"
+          type="button"
+          class="ml-auto rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium hover:border-[var(--accent)]"
+        >
+          Clear filters
+        </button>
+      </div>
+    </section>
+
+    <section class="overflow-hidden rounded-lg border border-[var(--line)] bg-white">
+      <div class="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
+        <div>
+          <div class="text-sm font-medium">
+            Current opportunities
+          </div>
+          <div id="result-summary" class="mt-0.5 text-xs text-[var(--muted)]">
+            Loading…
+          </div>
+        </div>
+
+        <select
+          id="page-size"
+          class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-xs"
+        >
+          <option value="25">25 / page</option>
+          <option value="50">50 / page</option>
+          <option value="100">100 / page</option>
+        </select>
+      </div>
+
+      <div id="prospect-error" class="hidden border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"></div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full border-collapse">
+          <thead class="bg-[var(--surface-muted)]">
+            <tr class="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+              <th class="px-4 py-3">Business</th>
+              <th class="px-4 py-3">Score</th>
+              <th class="px-4 py-3">Tier</th>
+              <th class="px-4 py-3">Reviews</th>
+              <th class="px-4 py-3">Contact</th>
+              <th class="px-4 py-3">Website</th>
+              <th class="px-4 py-3">Signals</th>
+              <th class="px-4 py-3"></th>
+            </tr>
+          </thead>
+
+          <tbody id="prospect-rows" class="divide-y divide-[var(--line)]"></tbody>
+        </table>
+      </div>
+
+      <div
+        id="empty-state"
+        class="hidden px-6 py-14 text-center text-sm text-[var(--muted)]"
+      >
+        No prospects match the current filters.
+      </div>
+
+      <div class="flex items-center justify-between border-t border-[var(--line)] px-4 py-3">
+        <div id="page-label" class="text-xs text-[var(--muted)]">
+          Page —
+        </div>
+
+        <div class="flex gap-2">
+          <button
+            id="prev-page"
+            type="button"
+            class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <button
+            id="next-page"
+            type="button"
+            class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    type Prospect = {
+      place_id: string;
+      name: string | null;
+      city: string | null;
+      vertical: string | null;
+      total_score: number;
+      tier: string | null;
+      headline_gap: string | null;
+      phone: string | null;
+      email: string | null;
+      website_url: string | null;
+      rating: number | null;
+      review_count: number | null;
+      confirmed_trading: boolean;
+      category_opportunity: boolean;
+      established: boolean;
+      real_gap_count: number;
+      needs_manual_check: boolean;
+    };
+
+    type ProspectResponse = {
+      items: Prospect[];
+      pagination: {
+        page: number;
+        page_size: number;
+        total: number;
+        total_pages: number;
+      };
+    };
+
+    type MetaResponse = {
+      cities: string[];
+      verticals: string[];
+      tiers: string[];
+      total_prospects: number;
+    };
+
+    const $ = <T extends Element>(selector: string): T | null =>
+      document.querySelector<T>(selector);
+
+    const searchInput = $('#search') as HTMLInputElement;
+    const citySelect = $('#city') as HTMLSelectElement;
+    const verticalSelect = $('#vertical') as HTMLSelectElement;
+    const tierSelect = $('#tier') as HTMLSelectElement;
+    const contactSelect = $('#contact') as HTMLSelectElement;
+    const pageSizeSelect = $('#page-size') as HTMLSelectElement;
+
+    const rows = $('#prospect-rows') as HTMLTableSectionElement;
+    const errorBox = $('#prospect-error') as HTMLDivElement;
+    const emptyState = $('#empty-state') as HTMLDivElement;
+    const resultSummary = $('#result-summary') as HTMLDivElement;
+    const pageLabel = $('#page-label') as HTMLDivElement;
+    const prevButton = $('#prev-page') as HTMLButtonElement;
+    const nextButton = $('#next-page') as HTMLButtonElement;
+
+    const state = {
+      page: 1,
+      pageSize: 25,
+      search: '',
+      city: '',
+      vertical: '',
+      tier: '',
+      contact: '',
+      trading: false,
+      established: true,
+      categoryOpportunity: false,
+    };
+
+    let debounceTimer: number | undefined;
+
+    const escapeHtml = (value: string | null | undefined) =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+
+    function readUrlState() {
+      const params = new URLSearchParams(window.location.search);
+
+      state.page = Math.max(1, Number(params.get('page') || 1));
+      state.pageSize = Math.min(
+        100,
+        Math.max(1, Number(params.get('page_size') || 25)),
+      );
+
+      state.search = params.get('search') || '';
+      state.city = params.get('city') || '';
+      state.vertical = params.get('vertical') || '';
+      state.tier = params.get('tier') || '';
+      state.contact = params.get('contact') || '';
+
+      state.trading = params.get('trading') === 'true';
+
+      state.established =
+        params.has('established')
+          ? params.get('established') === 'true'
+          : true;
+
+      state.categoryOpportunity =
+        params.get('category_opportunity') === 'true';
+    }
+
+    function syncControls() {
+      searchInput.value = state.search;
+      citySelect.value = state.city;
+      verticalSelect.value = state.vertical;
+      tierSelect.value = state.tier;
+      contactSelect.value = state.contact;
+      pageSizeSelect.value = String(state.pageSize);
+
+      updateToggleStyles();
+    }
+
+    function updateToggleStyles() {
+      const toggleMap = [
+        ['#filter-established', state.established],
+        ['#filter-trading', state.trading],
+        ['#filter-category', state.categoryOpportunity],
+      ] as const;
+
+      toggleMap.forEach(([selector, active]) => {
+        const button = $(selector) as HTMLButtonElement | null;
+        if (!button) return;
+
+        button.className = active
+          ? 'rounded-full border border-[var(--dark)] bg-[var(--dark)] px-3 py-1.5 text-xs font-medium text-white'
+          : 'rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-medium';
+      });
+    }
+
+    function buildApiParams() {
+      const params = new URLSearchParams();
+
+      params.set('page', String(state.page));
+      params.set('page_size', String(state.pageSize));
+
+      if (state.search) params.set('search', state.search);
+      if (state.city) params.set('city', state.city);
+      if (state.vertical) params.set('vertical', state.vertical);
+      if (state.tier) params.set('tier', state.tier);
+      if (state.contact) params.set('contact', state.contact);
+      if (state.trading) params.set('trading', 'true');
+      if (state.established) params.set('established', 'true');
+      if (state.categoryOpportunity) {
+        params.set('category_opportunity', 'true');
+      }
+
+      return params;
+    }
+
+    function syncBrowserUrl() {
+      const params = buildApiParams();
+
+      if (state.page === 1) params.delete('page');
+      if (state.pageSize === 25) params.delete('page_size');
+
+      const query = params.toString();
+
+      history.replaceState(
+        null,
+        '',
+        query ? `/prospects?${query}` : '/prospects',
+      );
+    }
+
+    function signalBadges(item: Prospect) {
+      const badges: string[] = [];
+
+      if (item.established) {
+        badges.push(
+          '<span class="rounded-full bg-[var(--accent-soft)] px-2 py-1 text-[11px] font-medium">Established</span>',
+        );
+      }
+
+      if (item.category_opportunity) {
+        badges.push(
+          '<span class="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">Category</span>',
+        );
+      }
+
+      if (item.needs_manual_check) {
+        badges.push(
+          '<span class="rounded-full bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700">Check</span>',
+        );
+      }
+
+      return badges.join(' ');
+    }
+
+    function renderRows(items: Prospect[]) {
+      rows.innerHTML = '';
+
+      if (!items.length) {
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+
+      rows.innerHTML = items
+        .map((item) => {
+          const contact = item.email
+            ? escapeHtml(item.email)
+            : item.phone
+              ? escapeHtml(item.phone)
+              : '—';
+
+          const website = item.website_url
+            ? `<a href="${escapeHtml(item.website_url)}" target="_blank" rel="noreferrer" class="text-xs underline decoration-[var(--line)] underline-offset-2">Visit</a>`
+            : '<span class="text-xs text-[var(--muted)]">None</span>';
+
+          return `
+            <tr class="align-top hover:bg-[var(--surface-muted)]/50">
+              <td class="px-4 py-4">
+                <div class="font-medium">${escapeHtml(item.name) || 'Unnamed business'}</div>
+                <div class="mt-1 text-xs text-[var(--muted)]">
+                  ${escapeHtml(item.city)}${item.vertical ? ` · ${escapeHtml(item.vertical)}` : ''}
+                </div>
+                ${
+                  item.headline_gap
+                    ? `<div class="mt-2 max-w-xl text-xs leading-5 text-[var(--muted)]">${escapeHtml(item.headline_gap)}</div>`
+                    : ''
+                }
+              </td>
+
+              <td class="px-4 py-4">
+                <div class="text-lg font-semibold">${item.total_score}</div>
+              </td>
+
+              <td class="px-4 py-4">
+                <span class="inline-flex min-w-8 justify-center rounded-md border border-[var(--line)] px-2 py-1 text-xs font-semibold">
+                  ${escapeHtml(item.tier) || '—'}
+                </span>
+              </td>
+
+              <td class="px-4 py-4">
+                <div class="text-sm font-medium">${item.review_count ?? 0}</div>
+                <div class="mt-1 text-xs text-[var(--muted)]">
+                  ${item.rating ?? '—'}★
+                </div>
+              </td>
+
+              <td class="px-4 py-4 text-xs">
+                ${contact}
+              </td>
+
+              <td class="px-4 py-4">
+                ${website}
+              </td>
+
+              <td class="px-4 py-4">
+                <div class="flex max-w-[220px] flex-wrap gap-1.5">
+                  ${signalBadges(item)}
+                </div>
+              </td>
+
+              <td class="px-4 py-4 text-right">
+                <a
+                  href="/prospects/${encodeURIComponent(item.place_id)}"
+                  class="inline-flex rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium hover:border-[var(--accent)]"
+                >
+                  View
+                </a>
+              </td>
+            </tr>
+          `;
+        })
+        .join('');
+    }
+
+    async function loadMeta() {
+      const response = await fetch('/api/prospects/meta');
+
+      if (!response.ok) {
+        throw new Error(`Metadata API returned ${response.status}`);
+      }
+
+      const meta = (await response.json()) as MetaResponse;
+
+      meta.cities.forEach((city) => {
+        citySelect.insertAdjacentHTML(
+          'beforeend',
+          `<option value="${escapeHtml(city)}">${escapeHtml(city)}</option>`,
+        );
+      });
+
+      meta.verticals.forEach((vertical) => {
+        verticalSelect.insertAdjacentHTML(
+          'beforeend',
+          `<option value="${escapeHtml(vertical)}">${escapeHtml(vertical)}</option>`,
+        );
+      });
+
+      syncControls();
+    }
+
+    async function loadProspects() {
+      errorBox.classList.add('hidden');
+
+      const params = buildApiParams();
+      syncBrowserUrl();
+
+      try {
+        const response = await fetch(`/api/prospects?${params.toString()}`);
+
+        if (!response.ok) {
+          throw new Error(`Prospect API returned ${response.status}`);
+        }
+
+        const data = (await response.json()) as ProspectResponse;
+
+        renderRows(data.items);
+
+        resultSummary.textContent =
+          `${data.pagination.total.toLocaleString()} matching prospects`;
+
+        pageLabel.textContent =
+          `Page ${data.pagination.page} of ${Math.max(data.pagination.total_pages, 1)}`;
+
+        prevButton.disabled = data.pagination.page <= 1;
+        nextButton.disabled =
+          data.pagination.page >= data.pagination.total_pages ||
+          data.pagination.total_pages === 0;
+      } catch (error) {
+        rows.innerHTML = '';
+        emptyState.classList.add('hidden');
+
+        errorBox.textContent =
+          error instanceof Error
+            ? error.message
+            : 'Unable to load prospects.';
+
+        errorBox.classList.remove('hidden');
+        resultSummary.textContent = 'Unable to load prospects';
+      }
+    }
+
+    function refreshFromControls() {
+      state.page = 1;
+      state.city = citySelect.value;
+      state.vertical = verticalSelect.value;
+      state.tier = tierSelect.value;
+      state.contact = contactSelect.value;
+      state.pageSize = Number(pageSizeSelect.value);
+
+      loadProspects();
+    }
+
+    searchInput.addEventListener('input', () => {
+      window.clearTimeout(debounceTimer);
+
+      debounceTimer = window.setTimeout(() => {
+        state.search = searchInput.value.trim();
+        state.page = 1;
+        loadProspects();
+      }, 300);
+    });
+
+    [citySelect, verticalSelect, tierSelect, contactSelect, pageSizeSelect]
+      .forEach((element) => {
+        element.addEventListener('change', refreshFromControls);
+      });
+
+    document.querySelectorAll<HTMLButtonElement>('[data-toggle-key]')
+      .forEach((button) => {
+        button.addEventListener('click', () => {
+          const key = button.dataset.toggleKey;
+
+          if (key === 'established') {
+            state.established = !state.established;
+          }
+
+          if (key === 'trading') {
+            state.trading = !state.trading;
+          }
+
+          if (key === 'category_opportunity') {
+            state.categoryOpportunity = !state.categoryOpportunity;
+          }
+
+          state.page = 1;
+          updateToggleStyles();
+          loadProspects();
+        });
+      });
+
+    $('#clear-filters')?.addEventListener('click', () => {
+      state.page = 1;
+      state.pageSize = 25;
+      state.search = '';
+      state.city = '';
+      state.vertical = '';
+      state.tier = '';
+      state.contact = '';
+      state.trading = false;
+      state.established = false;
+      state.categoryOpportunity = false;
+
+      syncControls();
+      loadProspects();
+    });
+
+    prevButton.addEventListener('click', () => {
+      if (state.page <= 1) return;
+      state.page -= 1;
+      loadProspects();
+    });
+
+    nextButton.addEventListener('click', () => {
+      state.page += 1;
+      loadProspects();
+    });
+
+    readUrlState();
+
+    try {
+      await loadMeta();
+      await loadProspects();
+    } catch (error) {
+      errorBox.textContent =
+        error instanceof Error
+          ? error.message
+          : 'Unable to initialize prospects.';
+
+      errorBox.classList.remove('hidden');
+      resultSummary.textContent = 'Unable to initialize prospects';
+    }
+  </script>
+</AppLayout>

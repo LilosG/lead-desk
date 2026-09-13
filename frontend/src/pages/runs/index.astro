@@ -1,0 +1,276 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+---
+
+<AppLayout
+  title="Runs"
+  description="Discovery, crawl, audit, and scoring history."
+>
+  <div class="space-y-5">
+    <section class="rounded-lg border border-[var(--line)] bg-white">
+      <div class="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
+        <div>
+          <div class="text-sm font-medium">Pipeline runs</div>
+          <div id="run-summary" class="mt-1 text-xs text-[var(--muted)]">
+            Loading…
+          </div>
+        </div>
+
+        <select
+          id="page-size"
+          class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-xs"
+        >
+          <option value="10">10 / page</option>
+          <option value="25">25 / page</option>
+          <option value="50">50 / page</option>
+        </select>
+      </div>
+
+      <div
+        id="runs-error"
+        class="hidden border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700"
+      ></div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full border-collapse">
+          <thead class="bg-[var(--surface-muted)]">
+            <tr class="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+              <th class="px-5 py-3">Run</th>
+              <th class="px-5 py-3">Market</th>
+              <th class="px-5 py-3">Verticals</th>
+              <th class="px-5 py-3">Scored</th>
+              <th class="px-5 py-3">Tier mix</th>
+              <th class="px-5 py-3">Avg score</th>
+              <th class="px-5 py-3">Cost</th>
+              <th class="px-5 py-3"></th>
+            </tr>
+          </thead>
+
+          <tbody
+            id="run-rows"
+            class="divide-y divide-[var(--line)]"
+          ></tbody>
+        </table>
+      </div>
+
+      <div
+        id="runs-empty"
+        class="hidden px-6 py-14 text-center text-sm text-[var(--muted)]"
+      >
+        No completed runs available.
+      </div>
+
+      <div class="flex items-center justify-between border-t border-[var(--line)] px-5 py-3">
+        <div id="page-label" class="text-xs text-[var(--muted)]">
+          Page —
+        </div>
+
+        <div class="flex gap-2">
+          <button
+            id="prev-page"
+            type="button"
+            class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+          >
+            Previous
+          </button>
+
+          <button
+            id="next-page"
+            type="button"
+            class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    type RunItem = {
+      id: string;
+      started_at: string;
+      finished_at: string | null;
+      geo_label: string;
+      verticals: string[];
+      status: string;
+      stage: string | null;
+      businesses_scored: number;
+      tier_a: number;
+      tier_b: number;
+      tier_c: number;
+      tier_d: number;
+      avg_score: number | null;
+      est_cost_usd: number;
+    };
+
+    type RunResponse = {
+      items: RunItem[];
+      pagination: {
+        page: number;
+        page_size: number;
+        total: number;
+        total_pages: number;
+      };
+    };
+
+    const requireElement = <T extends Element>(
+      selector: string,
+    ): T => {
+      const element = document.querySelector<T>(selector);
+
+      if (!element) {
+        throw new Error(`Missing element: ${selector}`);
+      }
+
+      return element;
+    };
+
+    const escapeHtml = (value: unknown): string =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+
+    const rows = requireElement<HTMLTableSectionElement>('#run-rows');
+    const errorBox = requireElement<HTMLDivElement>('#runs-error');
+    const empty = requireElement<HTMLDivElement>('#runs-empty');
+    const summary = requireElement<HTMLDivElement>('#run-summary');
+    const pageLabel = requireElement<HTMLDivElement>('#page-label');
+    const pageSize = requireElement<HTMLSelectElement>('#page-size');
+    const prev = requireElement<HTMLButtonElement>('#prev-page');
+    const next = requireElement<HTMLButtonElement>('#next-page');
+
+    let page = 1;
+    let size = 10;
+
+    function formatDate(value: string): string {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(value));
+    }
+
+    async function loadRuns(): Promise<void> {
+      errorBox.classList.add('hidden');
+
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          page_size: String(size),
+        });
+
+        const response = await fetch(`/api/runs?${params}`);
+
+        if (!response.ok) {
+          throw new Error(`Runs API returned ${response.status}`);
+        }
+
+        const data = (await response.json()) as RunResponse;
+
+        rows.innerHTML = '';
+
+        if (!data.items.length) {
+          empty.classList.remove('hidden');
+        } else {
+          empty.classList.add('hidden');
+
+          rows.innerHTML = data.items
+            .map(
+              (run) => `
+                <tr class="align-top hover:bg-[var(--surface-muted)]/50">
+                  <td class="px-5 py-4">
+                    <div class="font-medium">
+                      ${escapeHtml(formatDate(run.started_at))}
+                    </div>
+                    <div class="mt-1 text-xs text-[var(--muted)]">
+                      ${escapeHtml(run.status)} · ${escapeHtml(run.stage)}
+                    </div>
+                  </td>
+
+                  <td class="px-5 py-4 text-sm">
+                    ${escapeHtml(run.geo_label)}
+                  </td>
+
+                  <td class="px-5 py-4 text-sm">
+                    ${run.verticals.map(escapeHtml).join(', ')}
+                  </td>
+
+                  <td class="px-5 py-4 font-medium">
+                    ${run.businesses_scored}
+                  </td>
+
+                  <td class="px-5 py-4 text-xs">
+                    A ${run.tier_a}
+                    · B ${run.tier_b}
+                    · C ${run.tier_c}
+                    · D ${run.tier_d}
+                  </td>
+
+                  <td class="px-5 py-4 text-sm">
+                    ${run.avg_score ?? '—'}
+                  </td>
+
+                  <td class="px-5 py-4 text-sm">
+                    $${Number(run.est_cost_usd ?? 0).toFixed(2)}
+                  </td>
+
+                  <td class="px-5 py-4 text-right">
+                    <a
+                      href="/runs/${encodeURIComponent(run.id)}"
+                      class="inline-flex rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium hover:border-[var(--accent)]"
+                    >
+                      View
+                    </a>
+                  </td>
+                </tr>
+              `,
+            )
+            .join('');
+        }
+
+        summary.textContent =
+          `${data.pagination.total} completed run${data.pagination.total === 1 ? '' : 's'}`;
+
+        pageLabel.textContent =
+          `Page ${data.pagination.page} of ${Math.max(data.pagination.total_pages, 1)}`;
+
+        prev.disabled = data.pagination.page <= 1;
+        next.disabled =
+          data.pagination.page >= data.pagination.total_pages ||
+          data.pagination.total_pages === 0;
+      } catch (error) {
+        rows.innerHTML = '';
+
+        errorBox.textContent =
+          error instanceof Error
+            ? error.message
+            : 'Unable to load runs.';
+
+        errorBox.classList.remove('hidden');
+        summary.textContent = 'Unable to load run history';
+      }
+    }
+
+    pageSize.addEventListener('change', () => {
+      size = Number(pageSize.value);
+      page = 1;
+      loadRuns();
+    });
+
+    prev.addEventListener('click', () => {
+      if (page <= 1) return;
+      page -= 1;
+      loadRuns();
+    });
+
+    next.addEventListener('click', () => {
+      page += 1;
+      loadRuns();
+    });
+
+    loadRuns();
+  </script>
+</AppLayout>

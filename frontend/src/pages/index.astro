@@ -1,0 +1,263 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+---
+
+<AppLayout
+  title="Overview"
+  description="Current local-market opportunity and pipeline status."
+>
+  <div id="overview-loading" class="rounded-lg border border-[var(--line)] bg-white p-6">
+    <div class="text-sm text-[var(--muted)]">
+      Loading Lead Desk…
+    </div>
+  </div>
+
+  <div id="overview-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-6">
+    <div class="font-medium text-red-900">
+      Lead Desk API unavailable
+    </div>
+    <div id="overview-error-message" class="mt-1 text-sm text-red-700"></div>
+  </div>
+
+  <div id="overview" class="hidden">
+    <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <button
+        type="button"
+        data-filter-link="/prospects"
+        class="rounded-lg border border-[var(--line)] bg-white p-5 text-left transition hover:border-[var(--accent)]"
+      >
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+          Prospects
+        </div>
+        <div id="metric-prospects" class="mt-3 text-4xl font-semibold tracking-tight">
+          —
+        </div>
+        <div class="mt-2 text-sm text-[var(--muted)]">
+          Current scored market
+        </div>
+      </button>
+
+      <button
+        type="button"
+        data-filter-link="/prospects?trading=true"
+        class="rounded-lg border border-[var(--line)] bg-white p-5 text-left transition hover:border-[var(--accent)]"
+      >
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+          Confirmed trading
+        </div>
+        <div id="metric-trading" class="mt-3 text-4xl font-semibold tracking-tight">
+          —
+        </div>
+        <div class="mt-2 text-sm text-[var(--muted)]">
+          Reviewed within the last year
+        </div>
+      </button>
+
+      <button
+        type="button"
+        data-filter-link="/prospects?category_opportunity=true"
+        class="rounded-lg border border-[var(--line)] bg-white p-5 text-left transition hover:border-[var(--accent)]"
+      >
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+          Category opportunities
+        </div>
+        <div id="metric-category" class="mt-3 text-4xl font-semibold tracking-tight">
+          —
+        </div>
+        <div class="mt-2 text-sm text-[var(--muted)]">
+          Verified Google category gaps
+        </div>
+      </button>
+
+      <button
+        type="button"
+        data-filter-link="/prospects?established=true"
+        class="rounded-lg border border-[var(--dark)] bg-[var(--dark)] p-5 text-left text-white transition hover:opacity-95"
+      >
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-white/55">
+          Work first
+        </div>
+        <div id="metric-established" class="mt-3 text-4xl font-semibold tracking-tight">
+          —
+        </div>
+        <div class="mt-2 text-sm text-white/60">
+          Established & neglected
+        </div>
+      </button>
+    </section>
+
+    <section class="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.7fr)]">
+      <div class="rounded-lg border border-[var(--line)] bg-white">
+        <div class="border-b border-[var(--line)] px-5 py-4">
+          <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+            Pipeline
+          </div>
+        </div>
+
+        <div class="grid gap-px bg-[var(--line)] sm:grid-cols-2 xl:grid-cols-4">
+          <div class="bg-white p-5">
+            <div class="text-sm text-[var(--muted)]">Tier A</div>
+            <div id="tier-a" class="mt-2 text-2xl font-semibold">—</div>
+          </div>
+          <div class="bg-white p-5">
+            <div class="text-sm text-[var(--muted)]">Tier B</div>
+            <div id="tier-b" class="mt-2 text-2xl font-semibold">—</div>
+          </div>
+          <div class="bg-white p-5">
+            <div class="text-sm text-[var(--muted)]">Tier C</div>
+            <div id="tier-c" class="mt-2 text-2xl font-semibold">—</div>
+          </div>
+          <div class="bg-white p-5">
+            <div class="text-sm text-[var(--muted)]">Tier D</div>
+            <div id="tier-d" class="mt-2 text-2xl font-semibold">—</div>
+          </div>
+        </div>
+
+        <div class="grid gap-px border-t border-[var(--line)] bg-[var(--line)] sm:grid-cols-3">
+          <div class="bg-white p-5">
+            <div class="text-sm text-[var(--muted)]">Emailable</div>
+            <div id="metric-emailable" class="mt-2 text-2xl font-semibold">—</div>
+          </div>
+          <div class="bg-white p-5">
+            <div class="text-sm text-[var(--muted)]">Phone only</div>
+            <div id="metric-phone" class="mt-2 text-2xl font-semibold">—</div>
+          </div>
+          <div class="bg-white p-5">
+            <div class="text-sm text-[var(--muted)]">No website</div>
+            <div id="metric-no-website" class="mt-2 text-2xl font-semibold">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-[var(--line)] bg-white p-5">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+          Latest run
+        </div>
+
+        <div id="run-empty" class="mt-5 hidden text-sm text-[var(--muted)]">
+          No completed run available.
+        </div>
+
+        <div id="run-details" class="mt-5 space-y-4">
+          <div>
+            <div class="text-xs text-[var(--muted)]">Market</div>
+            <div id="run-market" class="mt-1 font-medium">—</div>
+          </div>
+
+          <div>
+            <div class="text-xs text-[var(--muted)]">Vertical</div>
+            <div id="run-vertical" class="mt-1 font-medium">—</div>
+          </div>
+
+          <div>
+            <div class="text-xs text-[var(--muted)]">Status</div>
+            <div id="run-status" class="mt-1 font-medium">—</div>
+          </div>
+
+          <div>
+            <div class="text-xs text-[var(--muted)]">Estimated API cost</div>
+            <div id="run-cost" class="mt-1 font-medium">—</div>
+          </div>
+
+          <a
+            id="run-link"
+            href="/runs"
+            class="inline-flex rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:border-[var(--accent)]"
+          >
+            View run
+          </a>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const loading = document.querySelector('#overview-loading');
+    const overview = document.querySelector('#overview');
+    const errorBox = document.querySelector('#overview-error');
+    const errorMessage = document.querySelector('#overview-error-message');
+
+    const setText = (selector: string, value: unknown) => {
+      const element = document.querySelector(selector);
+      if (element) element.textContent = String(value ?? '—');
+    };
+
+    document.querySelectorAll('[data-filter-link]').forEach((element) => {
+      element.addEventListener('click', () => {
+        const href = element.getAttribute('data-filter-link');
+        if (href) window.location.href = href;
+      });
+    });
+
+    async function loadOverview() {
+      try {
+        const response = await fetch('/api/overview', {
+          headers: {
+            Accept: 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        setText('#metric-prospects', data.prospects);
+        setText('#metric-trading', data.confirmed_trading);
+        setText('#metric-category', data.category_opportunity);
+        setText('#metric-established', data.established);
+
+        setText('#tier-a', data.tier_a);
+        setText('#tier-b', data.tier_b);
+        setText('#tier-c', data.tier_c);
+        setText('#tier-d', data.tier_d);
+
+        setText('#metric-emailable', data.emailable);
+        setText('#metric-phone', data.phone_only);
+        setText('#metric-no-website', data.no_website);
+
+        if (data.latest_run) {
+          setText('#run-market', data.latest_run.geo_label);
+          setText(
+            '#run-vertical',
+            Array.isArray(data.latest_run.verticals)
+              ? data.latest_run.verticals.join(', ')
+              : '—',
+          );
+          setText('#run-status', data.latest_run.status);
+          setText(
+            '#run-cost',
+            `$${Number(data.latest_run.est_cost_usd ?? 0).toFixed(2)}`,
+          );
+
+          const link = document.querySelector('#run-link');
+          if (link) {
+            link.setAttribute(
+              'href',
+              `/runs/${encodeURIComponent(data.latest_run.id)}`,
+            );
+          }
+        } else {
+          document.querySelector('#run-details')?.classList.add('hidden');
+          document.querySelector('#run-empty')?.classList.remove('hidden');
+        }
+
+        loading?.classList.add('hidden');
+        overview?.classList.remove('hidden');
+      } catch (error) {
+        loading?.classList.add('hidden');
+        errorBox?.classList.remove('hidden');
+
+        if (errorMessage) {
+          errorMessage.textContent =
+            error instanceof Error
+              ? error.message
+              : 'Unable to load Lead Desk.';
+        }
+      }
+    }
+
+    loadOverview();
+  </script>
+</AppLayout>

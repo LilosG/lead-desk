@@ -194,3 +194,24 @@ def test_real_run_detail(client):
     assert body["tier_b"] == 47
     assert body["tier_c"] == 40
     assert body["tier_d"] == 160
+
+
+def test_vertical_filter(client):
+    response = client.get(
+        "/api/prospects",
+        params={
+            "page": 1,
+            "page_size": 25,
+            "vertical": "electrician",
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["pagination"]["total"] == 251
+    assert all(
+        item["vertical"] == "electrician"
+        for item in body["items"]
+    )

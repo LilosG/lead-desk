@@ -16,6 +16,7 @@ class ProspectRepository:
         search: str | None,
         tier: str | None,
         city: str | None,
+        vertical: str | None,
         contact: str | None,
         trading: bool | None,
         established: bool | None,
@@ -46,6 +47,10 @@ class ProspectRepository:
         if city:
             conditions.append(sql.SQL("w.city = %(city)s"))
             params["city"] = city
+
+        if vertical:
+            conditions.append(sql.SQL("w.vertical = %(vertical)s"))
+            params["vertical"] = vertical
 
         if contact == "email":
             conditions.append(
