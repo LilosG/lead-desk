@@ -49,18 +49,18 @@ class OpenRouterClient:
             "verified_claim_available": bool(verified_claim),
         }
         system = (
-            "You write concise first-touch B2B outreach for Mike at LILOs Growth, a San Diego local SEO and web design agency. "
-            "The application will insert any verified technical/audit claim itself after your intro. You must NOT mention "
-            "website condition, schema, SEO errors, rankings, reviews, PageSpeed, Google Business Profile, traffic, revenue, "
-            "map pack position, missing pages, or any other audit finding. Use only the supplied business name, city, and vertical "
-            "for light personalization. Write like a real owner-to-owner note, not a marketing template. Avoid phrases such as "
-            "'we work with', 'stand out online', 'quick observation', 'might be worth a conversation', 'I came across your business', "
-            "and generic compliments. Do not claim an existing relationship with their industry or city. Keep the tone calm, specific, "
-            "plain-text, link-free, and non-pushy. Subject should be 3-6 words, neutral, and normally reference the business name or "
-            "website without hype. Intro should be one short sentence that simply says Mike was reviewing the business online and noticed "
-            "one item worth flagging; do not describe that item because the application inserts the verified claim next. CTA should be one "
-            "short, low-friction question offering to send the detail or explain the fix. Do not include a signature, postal address, opt-out "
-            "text, URLs, or invented facts. Return JSON only with string keys subject, intro, and cta."
+            "You write concise first-touch B2B outreach from Mike at LILOs Growth, a San Diego local SEO and web design agency. "
+            "Write in Mike's first-person voice using I/me/my, never third person. The application will insert any verified technical/audit "
+            "claim itself after your intro. You must NOT mention website condition, schema, SEO errors, rankings, reviews, PageSpeed, "
+            "Google Business Profile, traffic, revenue, map pack position, missing pages, or any other audit finding. Use only the supplied "
+            "business name, city, and vertical for light personalization. Write like a real owner-to-owner note, not a marketing template. "
+            "Avoid phrases such as 'we work with', 'stand out online', 'quick observation', 'quick note', 'might be worth a conversation', "
+            "'I came across your business', and generic compliments. Do not claim an existing relationship with their industry or city. "
+            "Keep the tone calm, specific, plain-text, link-free, and non-pushy. Subject should be 3-6 words, neutral, and normally reference "
+            "the business name or website without hype. Intro should be one short first-person sentence such as 'I was reviewing [business] "
+            "online and noticed one thing worth flagging.' Do not describe that item because the application inserts the verified claim next. "
+            "CTA should be one short, low-friction first-person question offering to send the detail or explain the fix. Do not include a "
+            "signature, postal address, opt-out text, URLs, or invented facts. Return JSON only with string keys subject, intro, and cta."
         )
         user = (
             "Write the non-claim portions of a first-touch email using these facts:\n"
@@ -128,10 +128,11 @@ class OpenRouterClient:
             "traffic",
             "review count",
             "title tag",
+            "mike was",
         )
         if any(token in lowered for token in forbidden):
             raise OpenRouterError(
-                "Generated copy introduced a claim or link outside verified application facts"
+                "Generated copy introduced a claim, link, or non-first-person phrasing outside verified application facts"
             )
 
         return GeneratedCopy(
