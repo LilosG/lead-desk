@@ -74,6 +74,12 @@ class OutreachRepository:
                 q.claim_signal,
                 q.verification_status,
                 q.verification_note,
+                q.generation_model,
+                q.generation_prompt_version,
+                q.draft_generated_at,
+                q.gmail_draft_id,
+                q.gmail_message_id,
+                q.gmail_draft_created_at,
                 exists (
                     select 1
                     from suppression s
@@ -127,6 +133,60 @@ class OutreachRepository:
                 cur.execute(query, (place_id,))
                 return cur.fetchone()
 
+    def draft_context(self, item_id: str) -> dict[str, Any] | None:
+        query = """
+            select
+                q.id::text as id,
+                q.place_id,
+                q.channel,
+                q.status,
+                q.to_address,
+                q.version,
+                b.name,
+                b.city,
+                b.vertical,
+                b.website_url,
+                w.headline_gap,
+                w.total_score,
+                w.tier,
+                we.resolved_url,
+                we.contact_page_url,
+                we.crawl_error,
+                coalesce(f.needs_manual_check, false) as needs_manual_check
+            from outreach_queue q
+            join businesses b on b.place_id = q.place_id
+            left join v_lead_worklist w on w.place_id = q.place_id
+            left join website_enrichment we on we.place_id = q.place_id
+            left join v_lead_findings f on f.place_id = q.place_id
+            where q.id = %s::uuid
+        """
+        findings_query = """
+            select signal, finding, observed, severity, points
+            from v_lead_audit_detail
+            where place_id = %s
+            order by
+                case severity
+                    when 'critical' then 1
+                    when 'high' then 2
+                    when 'medium' then 3
+                    when 'low' then 4
+                    else 5
+                end,
+                points desc,
+                signal
+            limit 12
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (item_id,))
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                result = dict(row)
+                cur.execute(findings_query, (row['place_id'],))
+                result['findings'] = cur.fetchall()
+                return result
+
     def is_suppressed(self, email: str | None) -> bool:
         if not email:
             return False
@@ -165,7 +225,10 @@ class OutreachRepository:
         query = """
             select id::text as id, place_id, channel, status, to_address,
                    subject, body, claim_signal, verification_status,
-                   verification_note, version, created_at, updated_at
+                   verification_note, generation_model,
+                   generation_prompt_version, draft_generated_at,
+                   gmail_draft_id, gmail_message_id, gmail_draft_created_at,
+                   version, created_at, updated_at
             from outreach_queue
             where id = %s::uuid
         """
@@ -214,6 +277,9 @@ class OutreachRepository:
                         returning id::text as id, place_id, channel, status,
                                   to_address, subject, body, claim_signal,
                                   verification_status, verification_note,
+                                  generation_model, generation_prompt_version,
+                                  draft_generated_at, gmail_draft_id,
+                                  gmail_message_id, gmail_draft_created_at,
                                   version, created_at, updated_at
                         """,
                         (
@@ -230,5 +296,151 @@ class OutreachRepository:
                         values (%s::uuid, %s, 'updated', %s)
                         """,
                         (item_id, updated['place_id'], Jsonb(safe)),
+                    )
+        return updated, False
+
+    def record_generated_draft(
+        self,
+        item_id: str,
+        *,
+        expected_version: int,
+        subject: str,
+        body: str,
+        claim_signal: str | None,
+        verification_status: str,
+        verification_note: str,
+        generation_model: str,
+        prompt_version: str,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        select id::text as id, place_id, version
+                        from outreach_queue
+                        where id = %s::uuid
+                        for update
+                        """,
+                        (item_id,),
+                    )
+                    current = cur.fetchone()
+                    if current is None:
+                        return None, False
+                    if current['version'] != expected_version:
+                        return current, True
+
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set subject = %s,
+                            body = %s,
+                            claim_signal = %s,
+                            verification_status = %s,
+                            verification_note = %s,
+                            status = 'review_required',
+                            generation_model = %s,
+                            generation_prompt_version = %s,
+                            draft_generated_at = now(),
+                            gmail_draft_id = null,
+                            gmail_message_id = null,
+                            gmail_draft_created_at = null,
+                            version = version + 1,
+                            updated_at = now()
+                        where id = %s::uuid
+                        returning id::text as id, place_id, channel, status,
+                                  to_address, subject, body, claim_signal,
+                                  verification_status, verification_note,
+                                  generation_model, generation_prompt_version,
+                                  draft_generated_at, gmail_draft_id,
+                                  gmail_message_id, gmail_draft_created_at,
+                                  version, created_at, updated_at
+                        """,
+                        (
+                            subject,
+                            body,
+                            claim_signal,
+                            verification_status,
+                            verification_note,
+                            generation_model,
+                            prompt_version,
+                            item_id,
+                        ),
+                    )
+                    updated = cur.fetchone()
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (queue_id, place_id, event_type, changes)
+                        values (%s::uuid, %s, 'draft_generated', %s)
+                        """,
+                        (
+                            item_id,
+                            updated['place_id'],
+                            Jsonb({
+                                'claim_signal': claim_signal,
+                                'verification_status': verification_status,
+                                'generation_model': generation_model,
+                                'prompt_version': prompt_version,
+                            }),
+                        ),
+                    )
+        return updated, False
+
+    def record_gmail_draft(
+        self,
+        item_id: str,
+        *,
+        expected_version: int,
+        draft_id: str,
+        message_id: str | None,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        select id::text as id, place_id, version
+                        from outreach_queue
+                        where id = %s::uuid
+                        for update
+                        """,
+                        (item_id,),
+                    )
+                    current = cur.fetchone()
+                    if current is None:
+                        return None, False
+                    if current['version'] != expected_version:
+                        return current, True
+
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set gmail_draft_id = %s,
+                            gmail_message_id = %s,
+                            gmail_draft_created_at = now(),
+                            version = version + 1,
+                            updated_at = now()
+                        where id = %s::uuid
+                        returning id::text as id, place_id, channel, status,
+                                  to_address, subject, body, claim_signal,
+                                  verification_status, verification_note,
+                                  generation_model, generation_prompt_version,
+                                  draft_generated_at, gmail_draft_id,
+                                  gmail_message_id, gmail_draft_created_at,
+                                  version, created_at, updated_at
+                        """,
+                        (draft_id, message_id, item_id),
+                    )
+                    updated = cur.fetchone()
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (queue_id, place_id, event_type, changes)
+                        values (%s::uuid, %s, 'gmail_draft_created', %s)
+                        """,
+                        (
+                            item_id,
+                            updated['place_id'],
+                            Jsonb({'gmail_draft_id': draft_id, 'gmail_message_id': message_id}),
+                        ),
                     )
         return updated, False
