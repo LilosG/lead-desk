@@ -1,0 +1,20 @@
+[Unit]
+Description=Lead Desk FastAPI
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=mike
+Group=mike
+WorkingDirectory=/home/mike/lead-desk
+EnvironmentFile=/home/mike/lead-desk/.env
+ExecStart=/home/mike/lead-desk/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
