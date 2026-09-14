@@ -38,6 +38,12 @@ class OutreachQueueItem(BaseModel):
     claim_signal: str | None
     verification_status: VerificationStatus
     verification_note: str | None
+    generation_model: str | None = None
+    generation_prompt_version: str | None = None
+    draft_generated_at: datetime | None = None
+    gmail_draft_id: str | None = None
+    gmail_message_id: str | None = None
+    gmail_draft_created_at: datetime | None = None
     suppressed: bool
     needs_manual_check: bool
     version: int
@@ -64,3 +70,7 @@ class OutreachUpdate(BaseModel):
     claim_signal: str | None = Field(default=None, max_length=120)
     verification_status: VerificationStatus | None = None
     verification_note: str | None = Field(default=None, max_length=2000)
+
+
+class OutreachVersionAction(BaseModel):
+    expected_version: int = Field(ge=1)
