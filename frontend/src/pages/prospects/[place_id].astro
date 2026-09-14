@@ -8,106 +8,152 @@ const { place_id } = Astro.params;
 
 <AppLayout
   title="Prospect detail"
-  description="Full business, opportunity, and audit evidence."
+  description="Full business, opportunity, audit evidence, and workflow."
 >
-  <div
-    id="prospect-detail-root"
-    data-place-id={place_id}
-    class="contents"
-  >
-  <div id="detail-loading" class="rounded-lg border border-[var(--line)] bg-white p-6">
-    <div class="text-sm text-[var(--muted)]">
-      Loading prospect…
-    </div>
-  </div>
-
-  <div id="detail-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-6">
-    <div class="font-medium text-red-900">
-      Prospect unavailable
-    </div>
-    <div id="detail-error-message" class="mt-1 text-sm text-red-700"></div>
-  </div>
-
-  <div id="detail" class="hidden space-y-6">
-    <div class="flex flex-col gap-4 rounded-lg border border-[var(--line)] bg-white p-5 lg:flex-row lg:items-start lg:justify-between">
-      <div>
-        <a href="/prospects" class="text-xs text-[var(--muted)] hover:underline">
-          ← Back to prospects
-        </a>
-
-        <h2 id="business-name" class="mt-3 text-2xl font-semibold tracking-tight">
-          —
-        </h2>
-
-        <div id="business-location" class="mt-1 text-sm text-[var(--muted)]">
-          —
-        </div>
-
-        <div id="business-links" class="mt-4 flex flex-wrap gap-2"></div>
-      </div>
-
-      <div class="grid grid-cols-3 gap-3">
-        <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
-          <div class="text-xs text-[var(--muted)]">Score</div>
-          <div id="detail-score" class="mt-1 text-xl font-semibold">—</div>
-        </div>
-
-        <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
-          <div class="text-xs text-[var(--muted)]">Tier</div>
-          <div id="detail-tier" class="mt-1 text-xl font-semibold">—</div>
-        </div>
-
-        <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
-          <div class="text-xs text-[var(--muted)]">Reviews</div>
-          <div id="detail-reviews" class="mt-1 text-xl font-semibold">—</div>
-        </div>
-      </div>
+  <div id="prospect-detail-root" data-place-id={place_id} class="contents">
+    <div id="detail-loading" class="rounded-lg border border-[var(--line)] bg-white p-6">
+      <div class="text-sm text-[var(--muted)]">Loading prospect…</div>
     </div>
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
-      <section class="rounded-lg border border-[var(--line)] bg-white">
-        <div class="border-b border-[var(--line)] px-5 py-4">
-          <div class="text-sm font-medium">Findings</div>
-        </div>
+    <div id="detail-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-6">
+      <div class="font-medium text-red-900">Prospect unavailable</div>
+      <div id="detail-error-message" class="mt-1 text-sm text-red-700"></div>
+    </div>
 
-        <div id="findings" class="divide-y divide-[var(--line)]"></div>
+    <div id="detail" class="hidden space-y-6">
+      <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+        <div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div class="min-w-0">
+            <a href="/prospects" class="text-xs text-[var(--muted)] hover:underline">← Back to prospects</a>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <h2 id="business-name" class="text-2xl font-semibold tracking-tight">—</h2>
+              <div id="segment-badges" class="flex flex-wrap gap-1.5"></div>
+            </div>
+            <div id="business-location" class="mt-1 text-sm text-[var(--muted)]">—</div>
+            <div id="manual-check-warning" class="mt-3 hidden rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Manual verification required before outreach.
+            </div>
+            <div id="business-links" class="mt-4 flex flex-wrap gap-2"></div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+              <div class="text-xs text-[var(--muted)]">Score</div>
+              <div id="detail-score" class="mt-1 text-xl font-semibold">—</div>
+            </div>
+            <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+              <div class="text-xs text-[var(--muted)]">Tier</div>
+              <div id="detail-tier" class="mt-1 text-xl font-semibold">—</div>
+            </div>
+            <div class="rounded-md bg-[var(--surface-muted)] px-4 py-3 text-center">
+              <div class="text-xs text-[var(--muted)]">Reviews</div>
+              <div id="detail-reviews" class="mt-1 text-xl font-semibold">—</div>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <div class="space-y-6">
-        <section class="rounded-lg border border-[var(--line)] bg-white p-5">
-          <div class="text-sm font-medium">Opportunity</div>
-
-          <div id="headline-gap" class="mt-4 text-sm leading-6"></div>
-
-          <dl class="mt-5 space-y-3 text-sm">
-            <div class="flex justify-between gap-4">
-              <dt class="text-[var(--muted)]">GBP gap</dt>
-              <dd id="gbp-gap" class="font-medium">—</dd>
+      <div class="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
+        <div class="space-y-6">
+          <section class="rounded-lg border border-[var(--line)] bg-white">
+            <div class="border-b border-[var(--line)] px-5 py-4">
+              <div class="text-sm font-medium">Audit findings</div>
+              <div class="mt-1 text-xs text-[var(--muted)]">Evidence behind the opportunity score. Scoring remains read-only.</div>
             </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-[var(--muted)]">Website gap</dt>
-              <dd id="website-gap" class="font-medium">—</dd>
-            </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-[var(--muted)]">Reachability</dt>
-              <dd id="reachability" class="font-medium">—</dd>
-            </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-[var(--muted)]">Real gaps</dt>
-              <dd id="real-gaps" class="font-medium">—</dd>
-            </div>
-          </dl>
-        </section>
+            <div id="findings" class="divide-y divide-[var(--line)]"></div>
+          </section>
 
-        <section class="rounded-lg border border-[var(--line)] bg-white p-5">
-          <div class="text-sm font-medium">Website audit</div>
+          <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+            <div class="text-sm font-medium">Website audit</div>
+            <dl id="website-audit" class="mt-4 grid gap-3 text-sm sm:grid-cols-2"></dl>
+          </section>
+        </div>
 
-          <dl id="website-audit" class="mt-4 space-y-3 text-sm"></dl>
-        </section>
+        <div class="space-y-6">
+          <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+            <div class="text-sm font-medium">Opportunity</div>
+            <div id="headline-gap" class="mt-4 text-sm leading-6"></div>
+            <dl class="mt-5 space-y-3 text-sm">
+              <div class="flex justify-between gap-4"><dt class="text-[var(--muted)]">GBP gap</dt><dd id="gbp-gap" class="font-medium">—</dd></div>
+              <div class="flex justify-between gap-4"><dt class="text-[var(--muted)]">Website gap</dt><dd id="website-gap" class="font-medium">—</dd></div>
+              <div class="flex justify-between gap-4"><dt class="text-[var(--muted)]">Reachability</dt><dd id="reachability" class="font-medium">—</dd></div>
+              <div class="flex justify-between gap-4"><dt class="text-[var(--muted)]">Real gaps</dt><dd id="real-gaps" class="font-medium">—</dd></div>
+            </dl>
+          </section>
+
+          <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <div class="text-sm font-medium">Workflow</div>
+                <div class="mt-1 text-xs text-[var(--muted)]">Human-controlled prospect state. Saving never sends outreach.</div>
+              </div>
+              <span id="workflow-saved" class="hidden text-xs font-medium text-emerald-700">Saved</span>
+            </div>
+
+            <form id="workflow-form" class="mt-5 space-y-4">
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label for="workflow-status" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Status</label>
+                  <select id="workflow-status" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
+                    <option value="new">New</option>
+                    <option value="researching">Researching</option>
+                    <option value="qualified">Qualified</option>
+                    <option value="outreach_ready">Outreach ready</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="replied">Replied</option>
+                    <option value="won">Won</option>
+                    <option value="lost">Lost</option>
+                    <option value="disqualified">Disqualified</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="workflow-priority" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Priority</label>
+                  <select id="workflow-priority" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label for="workflow-owner" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Owner</label>
+                <input id="workflow-owner" maxlength="120" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" placeholder="Optional owner" />
+              </div>
+
+              <div>
+                <label for="workflow-next-action" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Next action</label>
+                <input id="workflow-next-action" maxlength="500" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" placeholder="Review site, prepare draft, call…" />
+              </div>
+
+              <div>
+                <label for="workflow-next-action-at" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Next action time</label>
+                <input id="workflow-next-action-at" type="datetime-local" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label for="workflow-notes" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Internal notes</label>
+                <textarea id="workflow-notes" maxlength="10000" rows="5" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" placeholder="Research notes, qualification context, follow-up details…"></textarea>
+              </div>
+
+              <div id="workflow-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
+
+              <button id="workflow-save" type="submit" class="w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+                Save workflow
+              </button>
+            </form>
+          </section>
+
+          <section class="rounded-lg border border-[var(--line)] bg-white">
+            <div class="border-b border-[var(--line)] px-5 py-4">
+              <div class="text-sm font-medium">Workflow history</div>
+            </div>
+            <div id="workflow-history" class="divide-y divide-[var(--line)]"></div>
+          </section>
+        </div>
       </div>
     </div>
-  </div>
-
   </div>
 
   <script>
@@ -126,44 +172,63 @@ const { place_id } = Astro.params;
       has_ssl: boolean | null;
       cms_detected: string | null;
       psi_performance: number | null;
+      psi_seo: number | null;
       has_localbusiness_schema: boolean | null;
       has_contact_form: boolean | null;
+      has_service_pages: boolean | null;
+      has_city_pages: boolean | null;
+      nap_matches_gbp: boolean | null;
+      word_count: number | null;
+    };
+
+    type WorkflowState = {
+      status: string;
+      priority: string;
+      owner: string | null;
+      next_action: string | null;
+      next_action_at: string | null;
+      notes: string | null;
+      version: number;
+    };
+
+    type WorkflowEvent = {
+      id: string;
+      event_type: string;
+      changes: Record<string, unknown>;
+      created_at: string;
     };
 
     type ProspectDetail = {
+      place_id: string;
       name: string | null;
       city: string | null;
       state: string | null;
       vertical: string | null;
-
       phone: string | null;
+      email: string | null;
       website_url: string | null;
       google_maps_uri: string | null;
-
       review_count: number | null;
-
       total_score: number;
       tier: string | null;
-
       headline_gap: string | null;
       gbp_gap_score: number | null;
       website_gap_score: number | null;
       reachability_score: number | null;
       real_gap_count: number;
-
+      confirmed_trading: boolean;
+      category_opportunity: boolean;
+      established: boolean;
+      needs_manual_check: boolean;
       findings: Finding[];
       website_audit: WebsiteAudit | null;
+      workflow: WorkflowState;
+      workflow_events: WorkflowEvent[];
     };
 
-    const requireElement = <T extends Element>(
-      selector: string,
-    ): T => {
+    const required = <T extends HTMLElement>(selector: string): T => {
       const element = document.querySelector<T>(selector);
-
-      if (!element) {
-        throw new Error(`Missing required element: ${selector}`);
-      }
-
+      if (!element) throw new Error(`Missing required element: ${selector}`);
       return element;
     };
 
@@ -175,207 +240,183 @@ const { place_id } = Astro.params;
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
 
-    const setText = (
-      selector: string,
-      value: unknown,
-    ): void => {
-      requireElement<HTMLElement>(selector).textContent =
-        String(value ?? '—');
+    const setText = (selector: string, value: unknown): void => {
+      required(selector).textContent = String(value ?? '—');
+    };
+
+    const boolLabel = (value: boolean | null): string =>
+      value === null ? '—' : value ? 'Yes' : 'No';
+
+    const auditRow = (label: string, value: unknown): string => `
+      <div class="flex justify-between gap-4 rounded-md bg-[var(--surface-muted)] px-3 py-2.5">
+        <dt class="text-[var(--muted)]">${escapeHtml(label)}</dt>
+        <dd class="font-medium text-right">${escapeHtml(value ?? '—')}</dd>
+      </div>
+    `;
+
+    const formatLocalInput = (value: string | null): string => {
+      if (!value) return '';
+      const date = new Date(value);
+      const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+      return local.toISOString().slice(0, 16);
+    };
+
+    const renderHistory = (events: WorkflowEvent[]): void => {
+      const container = required('#workflow-history');
+      container.innerHTML = events.length
+        ? events.map((event) => {
+            const labels = Object.entries(event.changes)
+              .map(([key, value]) => `${key.replaceAll('_', ' ')}: ${String(value ?? 'cleared')}`)
+              .join(' · ');
+            return `
+              <div class="px-5 py-4">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-xs font-medium capitalize">${escapeHtml(event.event_type)}</span>
+                  <span class="text-[11px] text-[var(--muted)]">${escapeHtml(new Date(event.created_at).toLocaleString())}</span>
+                </div>
+                <div class="mt-1 text-xs leading-5 text-[var(--muted)]">${escapeHtml(labels || 'Workflow initialized')}</div>
+              </div>
+            `;
+          }).join('')
+        : '<div class="px-5 py-6 text-sm text-[var(--muted)]">No workflow changes yet.</div>';
+    };
+
+    const populateWorkflow = (workflow: WorkflowState): void => {
+      (required<HTMLSelectElement>('#workflow-status')).value = workflow.status;
+      (required<HTMLSelectElement>('#workflow-priority')).value = workflow.priority;
+      (required<HTMLInputElement>('#workflow-owner')).value = workflow.owner ?? '';
+      (required<HTMLInputElement>('#workflow-next-action')).value = workflow.next_action ?? '';
+      (required<HTMLInputElement>('#workflow-next-action-at')).value = formatLocalInput(workflow.next_action_at);
+      (required<HTMLTextAreaElement>('#workflow-notes')).value = workflow.notes ?? '';
+      required('#workflow-form').dataset.version = String(workflow.version);
     };
 
     async function loadDetail(): Promise<void> {
       try {
-        const root = requireElement<HTMLElement>(
-          '#prospect-detail-root',
-        );
-
+        const root = required('#prospect-detail-root');
         const placeId = root.dataset.placeId;
+        if (!placeId) throw new Error('Prospect place ID is missing');
 
-        if (!placeId) {
-          throw new Error('Prospect place ID is missing');
-        }
-
-        const response = await fetch(
-          `/api/prospects/${encodeURIComponent(placeId)}`,
-          {
-            headers: {
-              Accept: 'application/json',
-            },
-          },
-        );
-
-        if (!response.ok) {
-          throw new Error(`API returned ${response.status}`);
-        }
+        const response = await fetch(`/api/prospects/${encodeURIComponent(placeId)}`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
 
         const data = (await response.json()) as ProspectDetail;
-
         setText('#business-name', data.name);
-
-        setText(
-          '#business-location',
-          [data.city, data.state, data.vertical]
-            .filter(Boolean)
-            .join(' · '),
-        );
-
+        setText('#business-location', [data.city, data.state, data.vertical].filter(Boolean).join(' · '));
         setText('#detail-score', data.total_score);
         setText('#detail-tier', data.tier);
         setText('#detail-reviews', data.review_count);
-
         setText('#headline-gap', data.headline_gap);
         setText('#gbp-gap', data.gbp_gap_score);
         setText('#website-gap', data.website_gap_score);
         setText('#reachability', data.reachability_score);
         setText('#real-gaps', data.real_gap_count);
 
+        const badges: string[] = [];
+        if (data.established) badges.push('<span class="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800">Established</span>');
+        if (data.confirmed_trading) badges.push('<span class="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-800">Trading</span>');
+        if (data.category_opportunity) badges.push('<span class="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">Category gap</span>');
+        required('#segment-badges').innerHTML = badges.join('');
+        required('#manual-check-warning').classList.toggle('hidden', !data.needs_manual_check);
+
         const links: string[] = [];
+        if (data.phone) links.push(`<a href="tel:${escapeHtml(data.phone)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">${escapeHtml(data.phone)}</a>`);
+        if (data.email) links.push(`<a href="mailto:${escapeHtml(data.email)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">${escapeHtml(data.email)}</a>`);
+        if (data.website_url) links.push(`<a href="${escapeHtml(data.website_url)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Website</a>`);
+        if (data.google_maps_uri) links.push(`<a href="${escapeHtml(data.google_maps_uri)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Google Maps</a>`);
+        required('#business-links').innerHTML = links.join('');
 
-        if (data.phone) {
-          links.push(
-            `<a href="tel:${escapeHtml(data.phone)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">${escapeHtml(data.phone)}</a>`,
-          );
-        }
-
-        if (data.website_url) {
-          links.push(
-            `<a href="${escapeHtml(data.website_url)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Website</a>`,
-          );
-        }
-
-        if (data.google_maps_uri) {
-          links.push(
-            `<a href="${escapeHtml(data.google_maps_uri)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Google Maps</a>`,
-          );
-        }
-
-        requireElement<HTMLElement>('#business-links').innerHTML =
-          links.join('');
-
-        const findingsElement =
-          requireElement<HTMLElement>('#findings');
-
-        findingsElement.innerHTML = data.findings.length
-          ? data.findings
-              .map(
-                (finding: Finding) => `
-                  <div class="p-5">
-                    <div class="flex items-center gap-2">
-                      <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium">
-                        ${escapeHtml(finding.category)}
-                      </span>
-
-                      <span class="text-[11px] uppercase tracking-[0.08em] text-[var(--muted)]">
-                        ${escapeHtml(finding.severity)}
-                      </span>
-                    </div>
-
-                    <div class="mt-3 text-sm leading-6">
-                      ${escapeHtml(finding.finding)}
-                    </div>
-
-                    <div class="mt-2 text-xs text-[var(--muted)]">
-                      Signal: ${escapeHtml(finding.signal)}
-                    </div>
-                  </div>
-                `,
-              )
-              .join('')
-          : `
-              <div class="p-5 text-sm text-[var(--muted)]">
-                No findings recorded.
+        required('#findings').innerHTML = data.findings.length
+          ? data.findings.map((finding) => `
+              <div class="p-5">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium">${escapeHtml(finding.category)}</span>
+                  <span class="text-[11px] uppercase tracking-[0.08em] text-[var(--muted)]">${escapeHtml(finding.severity)}</span>
+                  <span class="ml-auto text-xs font-medium">${finding.points ?? 0} pts</span>
+                </div>
+                <div class="mt-3 text-sm leading-6">${escapeHtml(finding.finding)}</div>
+                <div class="mt-2 text-xs text-[var(--muted)]">Signal: ${escapeHtml(finding.signal)}</div>
               </div>
-            `;
+            `).join('')
+          : '<div class="p-5 text-sm text-[var(--muted)]">No findings recorded.</div>';
 
         const audit = data.website_audit;
+        required('#website-audit').innerHTML = audit
+          ? [
+              auditRow('Reachable', boolLabel(audit.is_reachable)),
+              auditRow('HTTP status', audit.http_status),
+              auditRow('SSL', boolLabel(audit.has_ssl)),
+              auditRow('CMS', audit.cms_detected),
+              auditRow('PageSpeed', audit.psi_performance),
+              auditRow('SEO score', audit.psi_seo),
+              auditRow('LocalBusiness schema', boolLabel(audit.has_localbusiness_schema)),
+              auditRow('Contact form', boolLabel(audit.has_contact_form)),
+              auditRow('Service pages', boolLabel(audit.has_service_pages)),
+              auditRow('City pages', boolLabel(audit.has_city_pages)),
+              auditRow('NAP matches GBP', boolLabel(audit.nap_matches_gbp)),
+              auditRow('Word count', audit.word_count),
+            ].join('')
+          : '<div class="text-[var(--muted)]">No website audit available.</div>';
 
-        requireElement<HTMLElement>('#website-audit').innerHTML =
-          audit
-            ? `
-                <div class="flex justify-between gap-4">
-                  <dt class="text-[var(--muted)]">Reachable</dt>
-                  <dd class="font-medium">
-                    ${audit.is_reachable ? 'Yes' : 'No'}
-                  </dd>
-                </div>
+        populateWorkflow(data.workflow);
+        renderHistory(data.workflow_events);
 
-                <div class="flex justify-between gap-4">
-                  <dt class="text-[var(--muted)]">HTTP status</dt>
-                  <dd class="font-medium">
-                    ${audit.http_status ?? '—'}
-                  </dd>
-                </div>
-
-                <div class="flex justify-between gap-4">
-                  <dt class="text-[var(--muted)]">SSL</dt>
-                  <dd class="font-medium">
-                    ${audit.has_ssl ? 'Yes' : 'No'}
-                  </dd>
-                </div>
-
-                <div class="flex justify-between gap-4">
-                  <dt class="text-[var(--muted)]">CMS</dt>
-                  <dd class="font-medium">
-                    ${escapeHtml(audit.cms_detected) || '—'}
-                  </dd>
-                </div>
-
-                <div class="flex justify-between gap-4">
-                  <dt class="text-[var(--muted)]">PageSpeed</dt>
-                  <dd class="font-medium">
-                    ${audit.psi_performance ?? '—'}
-                  </dd>
-                </div>
-
-                <div class="flex justify-between gap-4">
-                  <dt class="text-[var(--muted)]">Schema</dt>
-                  <dd class="font-medium">
-                    ${audit.has_localbusiness_schema ? 'Yes' : 'No'}
-                  </dd>
-                </div>
-
-                <div class="flex justify-between gap-4">
-                  <dt class="text-[var(--muted)]">Contact form</dt>
-                  <dd class="font-medium">
-                    ${audit.has_contact_form ? 'Yes' : 'No'}
-                  </dd>
-                </div>
-              `
-            : `
-                <div class="text-[var(--muted)]">
-                  No website audit available.
-                </div>
-              `;
-
-        requireElement<HTMLElement>(
-          '#detail-loading',
-        ).classList.add('hidden');
-
-        requireElement<HTMLElement>(
-          '#detail',
-        ).classList.remove('hidden');
+        required('#detail-loading').classList.add('hidden');
+        required('#detail').classList.remove('hidden');
       } catch (error) {
-        document
-          .querySelector<HTMLElement>('#detail-loading')
-          ?.classList.add('hidden');
-
-        document
-          .querySelector<HTMLElement>('#detail-error')
-          ?.classList.remove('hidden');
-
-        const message =
-          document.querySelector<HTMLElement>(
-            '#detail-error-message',
-          );
-
-        if (message) {
-          message.textContent =
-            error instanceof Error
-              ? error.message
-              : 'Unable to load prospect.';
-        }
+        document.querySelector<HTMLElement>('#detail-loading')?.classList.add('hidden');
+        document.querySelector<HTMLElement>('#detail-error')?.classList.remove('hidden');
+        const message = document.querySelector<HTMLElement>('#detail-error-message');
+        if (message) message.textContent = error instanceof Error ? error.message : 'Unable to load prospect.';
       }
     }
+
+    required<HTMLFormElement>('#workflow-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const root = required('#prospect-detail-root');
+      const placeId = root.dataset.placeId;
+      if (!placeId) return;
+
+      const form = required<HTMLFormElement>('#workflow-form');
+      const saveButton = required<HTMLButtonElement>('#workflow-save');
+      const errorBox = required('#workflow-error');
+      const saved = required('#workflow-saved');
+      saveButton.disabled = true;
+      errorBox.classList.add('hidden');
+      saved.classList.add('hidden');
+
+      const nextActionAt = required<HTMLInputElement>('#workflow-next-action-at').value;
+      const payload = {
+        status: required<HTMLSelectElement>('#workflow-status').value,
+        priority: required<HTMLSelectElement>('#workflow-priority').value,
+        owner: required<HTMLInputElement>('#workflow-owner').value.trim() || null,
+        next_action: required<HTMLInputElement>('#workflow-next-action').value.trim() || null,
+        next_action_at: nextActionAt ? new Date(nextActionAt).toISOString() : null,
+        notes: required<HTMLTextAreaElement>('#workflow-notes').value.trim() || null,
+        expected_version: Number(form.dataset.version ?? '0'),
+      };
+
+      try {
+        const response = await fetch(`/api/prospects/${encodeURIComponent(placeId)}/workflow`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+        populateWorkflow(body as WorkflowState);
+        saved.classList.remove('hidden');
+        window.setTimeout(() => saved.classList.add('hidden'), 2500);
+        await loadDetail();
+      } catch (error) {
+        errorBox.textContent = error instanceof Error ? error.message : 'Unable to save workflow.';
+        errorBox.classList.remove('hidden');
+      } finally {
+        saveButton.disabled = false;
+      }
+    });
 
     loadDetail();
   </script>

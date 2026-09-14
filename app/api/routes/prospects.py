@@ -4,14 +4,24 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.core.database import pool
 from app.repositories.prospects import ProspectRepository
-from app.schemas.prospects import ProspectDetail, ProspectFilterMeta, ProspectListResponse
-from app.services.prospects import ProspectService
+from app.schemas.prospects import (
+    ProspectDetail,
+    ProspectFilterMeta,
+    ProspectListResponse,
+    ProspectWorkflowState,
+    ProspectWorkflowUpdate,
+)
+from app.services.prospects import ProspectService, WorkflowVersionConflict
 
 
 router = APIRouter(
     prefix="/prospects",
     tags=["prospects"],
 )
+
+
+def get_service() -> ProspectService:
+    return ProspectService(ProspectRepository(pool))
 
 
 @router.get("", response_model=ProspectListResponse)
@@ -27,11 +37,7 @@ def list_prospects(
     established: bool | None = None,
     category_opportunity: bool | None = None,
 ) -> dict:
-    service = ProspectService(
-        ProspectRepository(pool)
-    )
-
-    return service.list_prospects(
+    return get_service().list_prospects(
         page=page,
         page_size=page_size,
         search=search,
@@ -45,32 +51,51 @@ def list_prospects(
     )
 
 
-@router.get(
-    "/meta",
-    response_model=ProspectFilterMeta,
-)
+@router.get("/meta", response_model=ProspectFilterMeta)
 def prospect_filter_meta() -> dict:
-    service = ProspectService(
-        ProspectRepository(pool)
-    )
-    return service.filter_meta()
+    return get_service().filter_meta()
 
 
-@router.get(
-    "/{place_id}",
-    response_model=ProspectDetail,
-)
+@router.get("/{place_id}", response_model=ProspectDetail)
 def get_prospect(place_id: str) -> dict:
-    service = ProspectService(
-        ProspectRepository(pool)
-    )
-
-    result = service.get_prospect(place_id)
+    result = get_service().get_prospect(place_id)
 
     if result is None:
         raise HTTPException(
             status_code=404,
             detail="prospect not found in latest completed run",
         )
+
+    return result
+
+
+@router.patch(
+    "/{place_id}/workflow",
+    response_model=ProspectWorkflowState,
+)
+def update_prospect_workflow(
+    place_id: str,
+    payload: ProspectWorkflowUpdate,
+) -> dict:
+    data = payload.model_dump(exclude_unset=True, mode="json")
+    expected_version = data.pop("expected_version")
+
+    try:
+        result = get_service().update_workflow(
+            place_id,
+            changes=data,
+            expected_version=expected_version,
+        )
+    except WorkflowVersionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "prospect workflow changed since it was loaded; "
+                "refresh before saving again"
+            ),
+        ) from exc
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="prospect not found")
 
     return result

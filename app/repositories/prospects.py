@@ -1,6 +1,7 @@
 from typing import Any
 
 from psycopg import sql
+from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 
@@ -78,22 +79,16 @@ class ProspectRepository:
             )
 
         if trading is not None:
-            conditions.append(
-                sql.SQL("seg.confirmed_trading = %(trading)s")
-            )
+            conditions.append(sql.SQL("seg.confirmed_trading = %(trading)s"))
             params["trading"] = trading
 
         if established is not None:
-            conditions.append(
-                sql.SQL("seg.established = %(established)s")
-            )
+            conditions.append(sql.SQL("seg.established = %(established)s"))
             params["established"] = established
 
         if category_opportunity is not None:
             conditions.append(
-                sql.SQL(
-                    "seg.category_opportunity = %(category_opportunity)s"
-                )
+                sql.SQL("seg.category_opportunity = %(category_opportunity)s")
             )
             params["category_opportunity"] = category_opportunity
 
@@ -128,35 +123,24 @@ class ProspectRepository:
                     w.name,
                     w.city,
                     w.vertical,
-
                     w.total_score,
                     w.tier,
                     w.headline_gap,
-
                     w.phone,
                     w.emails_found[1] as email,
                     w.website_url,
-
                     w.rating,
                     w.review_count,
-
                     w.psi_performance,
                     w.cms_detected,
-
                     b.business_status,
                     b.last_review_days,
                     b.recent_reviews_90d,
-
                     seg.confirmed_trading,
                     seg.category_opportunity,
                     seg.established,
                     seg.real_gap_count,
-
-                    coalesce(
-                        f.needs_manual_check,
-                        false
-                    ) as needs_manual_check,
-
+                    coalesce(f.needs_manual_check, false) as needs_manual_check,
                     w.scored_at
                 """
             )
@@ -178,7 +162,6 @@ class ProspectRepository:
             with conn.cursor() as cur:
                 cur.execute(count_query, params)
                 total = cur.fetchone()["count"]
-
                 cur.execute(list_query, params)
                 rows = cur.fetchall()
 
@@ -193,25 +176,22 @@ class ProspectRepository:
                 b.primary_type,
                 b.types,
                 b.business_status,
-
                 b.formatted_address,
                 b.city,
                 b.state,
                 b.postal_code,
                 b.lat,
                 b.lng,
-
                 b.phone,
+                w.emails_found[1] as email,
                 b.website_url,
                 b.google_maps_uri,
-
                 b.rating,
                 b.review_count,
                 b.last_review_days,
                 b.recent_reviews_90d,
                 b.has_hours,
                 b.photo_count,
-
                 w.total_score,
                 w.tier,
                 w.headline_gap,
@@ -219,30 +199,20 @@ class ProspectRepository:
                 w.website_gap_score,
                 w.reachability_score,
                 w.scored_at,
-
                 seg.confirmed_trading,
                 seg.category_opportunity,
                 seg.established,
                 seg.real_gap_count,
-
                 f.what_to_fix,
                 coalesce(f.major_issues, 0) as major_issues,
-                coalesce(
-                    f.needs_manual_check,
-                    false
-                ) as needs_manual_check
-
+                coalesce(f.needs_manual_check, false) as needs_manual_check
             from v_lead_worklist w
-
             join businesses b
               on b.place_id = w.place_id
-
             join v_lead_segments seg
               on seg.place_id = w.place_id
-
             left join v_lead_findings f
               on f.place_id = w.place_id
-
             where w.place_id = %s
         """
 
@@ -260,7 +230,6 @@ class ProspectRepository:
                 is_reachable,
                 has_ssl,
                 redirects_to,
-
                 title,
                 title_length,
                 meta_description,
@@ -269,27 +238,21 @@ class ProspectRepository:
                 h1_count,
                 word_count,
                 page_count_estimate,
-
                 has_localbusiness_schema,
                 schema_types,
-
                 nap_phone_on_site,
                 nap_address_on_site,
                 nap_matches_gbp,
-
                 has_service_pages,
                 has_city_pages,
                 has_gbp_link,
                 has_contact_form,
                 contact_page_url,
-
                 emails_found,
                 phones_found,
                 social_profiles,
-
                 cms_detected,
                 is_template_builder,
-
                 psi_performance,
                 psi_seo,
                 psi_accessibility,
@@ -297,9 +260,7 @@ class ProspectRepository:
                 psi_lcp_ms,
                 psi_cls,
                 psi_mobile_friendly,
-
                 crawl_error
-
             from website_enrichment
             where place_id = %s
         """
@@ -338,27 +299,211 @@ class ProspectRepository:
                 cur.execute(query, (place_id,))
                 return cur.fetchall()
 
+    def get_workflow(self, place_id: str) -> dict[str, Any] | None:
+        query = """
+            select
+                status,
+                priority,
+                owner,
+                next_action,
+                next_action_at,
+                notes,
+                version,
+                created_at,
+                updated_at
+            from prospect_workflow
+            where place_id = %s
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (place_id,))
+                return cur.fetchone()
+
+    def get_workflow_events(
+        self,
+        place_id: str,
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        query = """
+            select
+                id::text as id,
+                event_type,
+                changes,
+                created_at
+            from prospect_workflow_events
+            where place_id = %s
+            order by created_at desc, id desc
+            limit %s
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (place_id, limit))
+                return cur.fetchall()
+
+    def update_workflow(
+        self,
+        place_id: str,
+        *,
+        changes: dict[str, Any],
+        expected_version: int,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        editable = {
+            "status",
+            "priority",
+            "owner",
+            "next_action",
+            "next_action_at",
+            "notes",
+        }
+        safe_changes = {
+            key: value for key, value in changes.items() if key in editable
+        }
+
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "select 1 from businesses where place_id = %s",
+                        (place_id,),
+                    )
+                    if cur.fetchone() is None:
+                        return None, False
+
+                    cur.execute(
+                        """
+                        select
+                            status,
+                            priority,
+                            owner,
+                            next_action,
+                            next_action_at,
+                            notes,
+                            version,
+                            created_at,
+                            updated_at
+                        from prospect_workflow
+                        where place_id = %s
+                        for update
+                        """,
+                        (place_id,),
+                    )
+                    current = cur.fetchone()
+
+                    if current is None:
+                        if expected_version != 0:
+                            return None, True
+
+                        state = {
+                            "status": "new",
+                            "priority": "normal",
+                            "owner": None,
+                            "next_action": None,
+                            "next_action_at": None,
+                            "notes": None,
+                        }
+                        state.update(safe_changes)
+
+                        cur.execute(
+                            """
+                            insert into prospect_workflow (
+                                place_id,
+                                status,
+                                priority,
+                                owner,
+                                next_action,
+                                next_action_at,
+                                notes
+                            ) values (%s, %s, %s, %s, %s, %s, %s)
+                            returning
+                                status,
+                                priority,
+                                owner,
+                                next_action,
+                                next_action_at,
+                                notes,
+                                version,
+                                created_at,
+                                updated_at
+                            """,
+                            (
+                                place_id,
+                                state["status"],
+                                state["priority"],
+                                state["owner"],
+                                state["next_action"],
+                                state["next_action_at"],
+                                state["notes"],
+                            ),
+                        )
+                        updated = cur.fetchone()
+                        event_type = "created"
+                    else:
+                        if current["version"] != expected_version:
+                            return current, True
+
+                        state = dict(current)
+                        state.update(safe_changes)
+                        cur.execute(
+                            """
+                            update prospect_workflow
+                            set
+                                status = %s,
+                                priority = %s,
+                                owner = %s,
+                                next_action = %s,
+                                next_action_at = %s,
+                                notes = %s,
+                                version = version + 1,
+                                updated_at = now()
+                            where place_id = %s
+                            returning
+                                status,
+                                priority,
+                                owner,
+                                next_action,
+                                next_action_at,
+                                notes,
+                                version,
+                                created_at,
+                                updated_at
+                            """,
+                            (
+                                state["status"],
+                                state["priority"],
+                                state["owner"],
+                                state["next_action"],
+                                state["next_action_at"],
+                                state["notes"],
+                                place_id,
+                            ),
+                        )
+                        updated = cur.fetchone()
+                        event_type = "updated"
+
+                    cur.execute(
+                        """
+                        insert into prospect_workflow_events (
+                            place_id,
+                            event_type,
+                            changes
+                        ) values (%s, %s, %s)
+                        """,
+                        (place_id, event_type, Jsonb(safe_changes)),
+                    )
+
+        return updated, False
+
     def filter_meta(self) -> dict[str, Any]:
         query = """
             select
-                array_agg(
-                    distinct w.city
-                    order by w.city
-                ) filter (
-                    where w.city is not null
-                      and w.city <> ''
+                array_agg(distinct w.city order by w.city) filter (
+                    where w.city is not null and w.city <> ''
                 ) as cities,
-
-                array_agg(
-                    distinct w.vertical
-                    order by w.vertical
-                ) filter (
-                    where w.vertical is not null
-                      and w.vertical <> ''
+                array_agg(distinct w.vertical order by w.vertical) filter (
+                    where w.vertical is not null and w.vertical <> ''
                 ) as verticals,
-
                 count(*) as total_prospects
-
             from v_lead_worklist w
         """
 
@@ -378,83 +523,40 @@ class ProspectRepository:
         query = """
             select
                 count(*) as prospects,
-
+                count(*) filter (where w.tier = 'A') as tier_a,
+                count(*) filter (where w.tier = 'B') as tier_b,
+                count(*) filter (where w.tier = 'C') as tier_c,
+                count(*) filter (where w.tier = 'D') as tier_d,
                 count(*) filter (
-                    where w.tier = 'A'
-                ) as tier_a,
-
-                count(*) filter (
-                    where w.tier = 'B'
-                ) as tier_b,
-
-                count(*) filter (
-                    where w.tier = 'C'
-                ) as tier_c,
-
-                count(*) filter (
-                    where w.tier = 'D'
-                ) as tier_d,
-
-                count(*) filter (
-                    where cardinality(
-                        coalesce(w.emails_found, '{}'::text[])
-                    ) > 0
+                    where cardinality(coalesce(w.emails_found, '{}'::text[])) > 0
                 ) as emailable,
-
                 count(*) filter (
                     where w.phone is not null
-                      and cardinality(
-                          coalesce(w.emails_found, '{}'::text[])
-                      ) = 0
+                      and cardinality(coalesce(w.emails_found, '{}'::text[])) = 0
                 ) as phone_only,
-
                 count(*) filter (
                     where w.phone is null
-                      and cardinality(
-                          coalesce(w.emails_found, '{}'::text[])
-                      ) = 0
+                      and cardinality(coalesce(w.emails_found, '{}'::text[])) = 0
                 ) as no_contact,
-
-                count(*) filter (
-                    where w.website_url is null
-                ) as no_website,
-
-                count(*) filter (
-                    where seg.confirmed_trading
-                ) as confirmed_trading,
-
-                count(*) filter (
-                    where seg.category_opportunity
-                ) as category_opportunity,
-
-                count(*) filter (
-                    where seg.established
-                ) as established,
-
+                count(*) filter (where w.website_url is null) as no_website,
+                count(*) filter (where seg.confirmed_trading) as confirmed_trading,
+                count(*) filter (where seg.category_opportunity) as category_opportunity,
+                count(*) filter (where seg.established) as established,
                 count(*) filter (
                     where coalesce(f.needs_manual_check, false)
                 ) as manual_check,
-
                 count(*) filter (
                     where seg.established
-                      and cardinality(
-                          coalesce(w.emails_found, '{}'::text[])
-                      ) > 0
+                      and cardinality(coalesce(w.emails_found, '{}'::text[])) > 0
                 ) as established_emailable,
-
                 count(*) filter (
                     where seg.established
                       and w.phone is not null
-                      and cardinality(
-                          coalesce(w.emails_found, '{}'::text[])
-                      ) = 0
+                      and cardinality(coalesce(w.emails_found, '{}'::text[])) = 0
                 ) as established_phone_only
-
             from v_lead_worklist w
-
             join v_lead_segments seg
               on seg.place_id = w.place_id
-
             left join v_lead_findings f
               on f.place_id = w.place_id
         """
