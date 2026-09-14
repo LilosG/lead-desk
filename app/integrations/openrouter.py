@@ -17,7 +17,8 @@ class OpenRouterError(RuntimeError):
 @dataclass(frozen=True)
 class GeneratedCopy:
     subject: str
-    body: str
+    intro: str
+    cta: str
     model: str
 
 
@@ -45,24 +46,26 @@ class OpenRouterClient:
             "business_name": business_name,
             "city": city,
             "vertical": vertical,
-            "verified_claim": verified_claim,
+            "verified_claim_available": bool(verified_claim),
         }
         system = (
             "You write concise first-touch B2B outreach for LILOs Growth, a local SEO and web design agency. "
-            "You may use ONLY the facts supplied by the application. Never invent a website, ranking, review, "
-            "performance, Google Business Profile, traffic, revenue, or technical claim. If verified_claim is null, "
-            "do not make any audit claim. Keep the message plain-text, link-free, professional, specific, and under "
-            "120 words before the signature. Do not include a signature, postal address, opt-out text, or URLs; "
-            "the application adds those deterministically. Return JSON only with string keys subject and body."
+            "The application will insert any technical/audit claim itself after your intro. You must NOT mention "
+            "website condition, schema, SEO errors, rankings, reviews, PageSpeed, Google Business Profile, traffic, "
+            "revenue, map pack position, missing pages, or any other audit finding. Use only the supplied business "
+            "name, city, and vertical for light personalization. Keep it plain-text, link-free, professional, and "
+            "non-pushy. Do not include a signature, postal address, opt-out text, URLs, or invented facts. "
+            "Return JSON only with string keys subject, intro, and cta. Intro should be 1-2 short sentences and CTA "
+            "should be one short sentence asking whether they want the observation/details."
         )
         user = (
-            "Draft a first-touch email using these application-verified facts:\n"
+            "Write the non-claim portions of a first-touch email using these facts:\n"
             + json.dumps(facts, ensure_ascii=False)
         )
         payload: dict[str, Any] = {
             "model": self.model,
             "temperature": 0.2,
-            "max_tokens": 350,
+            "max_tokens": 280,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -94,21 +97,45 @@ class OpenRouterClient:
             content = data["choices"][0]["message"]["content"]
             parsed = self._parse_json_content(content)
             subject = str(parsed["subject"]).strip()
-            body = str(parsed["body"]).strip()
+            intro = str(parsed["intro"]).strip()
+            cta = str(parsed["cta"]).strip()
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise OpenRouterError("OpenRouter returned an invalid draft payload") from exc
 
-        if not subject or not body:
-            raise OpenRouterError("OpenRouter returned an empty draft")
+        if not subject or not intro or not cta:
+            raise OpenRouterError("OpenRouter returned incomplete draft copy")
         if len(subject) > 300:
             raise OpenRouterError("Generated subject exceeds the allowed length")
-        if len(body) > 12000:
-            raise OpenRouterError("Generated body exceeds the allowed length")
-        lowered = f"{subject}\n{body}".lower()
-        if "http://" in lowered or "https://" in lowered or "www." in lowered:
-            raise OpenRouterError("Generated first-touch draft contained a link")
+        combined = f"{subject}\n{intro}\n{cta}"
+        if len(combined) > 6000:
+            raise OpenRouterError("Generated copy exceeds the allowed length")
 
-        return GeneratedCopy(subject=subject, body=body, model=self.model)
+        lowered = combined.lower()
+        forbidden = (
+            "http://",
+            "https://",
+            "www.",
+            "schema",
+            "pagespeed",
+            "map pack",
+            "google business",
+            "ranking",
+            "rankings",
+            "traffic",
+            "review count",
+            "title tag",
+        )
+        if any(token in lowered for token in forbidden):
+            raise OpenRouterError(
+                "Generated copy introduced a claim or link outside verified application facts"
+            )
+
+        return GeneratedCopy(
+            subject=subject,
+            intro=intro,
+            cta=cta,
+            model=self.model,
+        )
 
     @staticmethod
     def _parse_json_content(content: Any) -> dict[str, Any]:
