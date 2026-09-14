@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any
+
+import requests
+
+
+OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+class OpenRouterError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class GeneratedCopy:
+    subject: str
+    body: str
+    model: str
+
+
+class OpenRouterClient:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        timeout_seconds: float = 45.0,
+    ) -> None:
+        self.api_key = api_key
+        self.model = model
+        self.timeout_seconds = timeout_seconds
+
+    def generate_email(
+        self,
+        *,
+        business_name: str,
+        city: str | None,
+        vertical: str | None,
+        verified_claim: str | None,
+    ) -> GeneratedCopy:
+        facts = {
+            "business_name": business_name,
+            "city": city,
+            "vertical": vertical,
+            "verified_claim": verified_claim,
+        }
+        system = (
+            "You write concise first-touch B2B outreach for LILOs Growth, a local SEO and web design agency. "
+            "You may use ONLY the facts supplied by the application. Never invent a website, ranking, review, "
+            "performance, Google Business Profile, traffic, revenue, or technical claim. If verified_claim is null, "
+            "do not make any audit claim. Keep the message plain-text, link-free, professional, specific, and under "
+            "120 words before the signature. Do not include a signature, postal address, opt-out text, or URLs; "
+            "the application adds those deterministically. Return JSON only with string keys subject and body."
+        )
+        user = (
+            "Draft a first-touch email using these application-verified facts:\n"
+            + json.dumps(facts, ensure_ascii=False)
+        )
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "temperature": 0.2,
+            "max_tokens": 350,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        try:
+            response = requests.post(
+                OPENROUTER_CHAT_URL,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://lead-desk-alpha.vercel.app",
+                    "X-Title": "LILOs Growth Lead Desk",
+                },
+                json=payload,
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            raise OpenRouterError("OpenRouter request failed") from exc
+
+        if not response.ok:
+            detail = response.text[:500]
+            raise OpenRouterError(
+                f"OpenRouter returned {response.status_code}: {detail}"
+            )
+
+        try:
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            parsed = self._parse_json_content(content)
+            subject = str(parsed["subject"]).strip()
+            body = str(parsed["body"]).strip()
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise OpenRouterError("OpenRouter returned an invalid draft payload") from exc
+
+        if not subject or not body:
+            raise OpenRouterError("OpenRouter returned an empty draft")
+        if len(subject) > 300:
+            raise OpenRouterError("Generated subject exceeds the allowed length")
+        if len(body) > 12000:
+            raise OpenRouterError("Generated body exceeds the allowed length")
+        lowered = f"{subject}\n{body}".lower()
+        if "http://" in lowered or "https://" in lowered or "www." in lowered:
+            raise OpenRouterError("Generated first-touch draft contained a link")
+
+        return GeneratedCopy(subject=subject, body=body, model=self.model)
+
+    @staticmethod
+    def _parse_json_content(content: Any) -> dict[str, Any]:
+        if not isinstance(content, str):
+            raise TypeError("message content must be text")
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        return json.loads(text)
