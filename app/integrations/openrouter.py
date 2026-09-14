@@ -49,14 +49,18 @@ class OpenRouterClient:
             "verified_claim_available": bool(verified_claim),
         }
         system = (
-            "You write concise first-touch B2B outreach for LILOs Growth, a local SEO and web design agency. "
-            "The application will insert any technical/audit claim itself after your intro. You must NOT mention "
-            "website condition, schema, SEO errors, rankings, reviews, PageSpeed, Google Business Profile, traffic, "
-            "revenue, map pack position, missing pages, or any other audit finding. Use only the supplied business "
-            "name, city, and vertical for light personalization. Keep it plain-text, link-free, professional, and "
-            "non-pushy. Do not include a signature, postal address, opt-out text, URLs, or invented facts. "
-            "Return JSON only with string keys subject, intro, and cta. Intro should be 1-2 short sentences and CTA "
-            "should be one short sentence asking whether they want the observation/details."
+            "You write concise first-touch B2B outreach for Mike at LILOs Growth, a San Diego local SEO and web design agency. "
+            "The application will insert any verified technical/audit claim itself after your intro. You must NOT mention "
+            "website condition, schema, SEO errors, rankings, reviews, PageSpeed, Google Business Profile, traffic, revenue, "
+            "map pack position, missing pages, or any other audit finding. Use only the supplied business name, city, and vertical "
+            "for light personalization. Write like a real owner-to-owner note, not a marketing template. Avoid phrases such as "
+            "'we work with', 'stand out online', 'quick observation', 'might be worth a conversation', 'I came across your business', "
+            "and generic compliments. Do not claim an existing relationship with their industry or city. Keep the tone calm, specific, "
+            "plain-text, link-free, and non-pushy. Subject should be 3-6 words, neutral, and normally reference the business name or "
+            "website without hype. Intro should be one short sentence that simply says Mike was reviewing the business online and noticed "
+            "one item worth flagging; do not describe that item because the application inserts the verified claim next. CTA should be one "
+            "short, low-friction question offering to send the detail or explain the fix. Do not include a signature, postal address, opt-out "
+            "text, URLs, or invented facts. Return JSON only with string keys subject, intro, and cta."
         )
         user = (
             "Write the non-claim portions of a first-touch email using these facts:\n"
@@ -65,7 +69,7 @@ class OpenRouterClient:
         payload: dict[str, Any] = {
             "model": self.model,
             "temperature": 0.2,
-            "max_tokens": 280,
+            "max_tokens": 220,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
