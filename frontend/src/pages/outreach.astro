@@ -4,7 +4,7 @@ import AppLayout from '../layouts/AppLayout.astro';
 
 <AppLayout
   title="Outreach"
-  description="Human-reviewed outreach queue with suppression and verification gates."
+  description="Human-reviewed outreach queue with suppression, verification, AI drafting, and Gmail draft-only delivery."
 >
   <div class="space-y-6">
     <section class="grid gap-4 md:grid-cols-4">
@@ -26,6 +26,13 @@ import AppLayout from '../layouts/AppLayout.astro';
       </div>
     </section>
 
+    <section class="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-xs">
+      <span class="font-medium">Integrations</span>
+      <span id="openrouter-status" class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[var(--muted)]">OpenRouter —</span>
+      <span id="gmail-status" class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[var(--muted)]">Gmail —</span>
+      <span class="ml-auto text-[var(--muted)]">Draft-only. Lead Desk has no email send endpoint.</span>
+    </section>
+
     <div id="outreach-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"></div>
 
     <section class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
@@ -44,7 +51,7 @@ import AppLayout from '../layouts/AppLayout.astro';
         <section class="rounded-lg border border-[var(--line)] bg-white">
           <div class="border-b border-[var(--line)] px-5 py-4">
             <div class="text-sm font-medium">Active queue</div>
-            <div class="mt-1 text-xs text-[var(--muted)]">No message is sent from this workspace.</div>
+            <div class="mt-1 text-xs text-[var(--muted)]">Generate, verify, review, then create a Gmail draft. Nothing is sent automatically.</div>
           </div>
           <div id="queue-list" class="divide-y divide-[var(--line)]"></div>
         </section>
@@ -57,6 +64,16 @@ import AppLayout from '../layouts/AppLayout.astro';
             </div>
             <span id="editor-channel" class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase"></span>
           </div>
+
+          <div class="mt-4 grid gap-2 sm:grid-cols-2">
+            <button id="generate-draft" type="button" class="rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">
+              Generate verified draft
+            </button>
+            <button id="create-gmail-draft" type="button" class="rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">
+              Create Gmail draft
+            </button>
+          </div>
+          <p id="draft-action-note" class="mt-2 text-xs leading-5 text-[var(--muted)]"></p>
 
           <form id="outreach-editor" class="mt-5 space-y-4">
             <input id="editor-id" type="hidden" />
@@ -74,7 +91,7 @@ import AppLayout from '../layouts/AppLayout.astro';
 
             <div>
               <label for="editor-body" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Draft</label>
-              <textarea id="editor-body" rows="9" maxlength="20000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
+              <textarea id="editor-body" rows="12" maxlength="20000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
             </div>
 
             <div class="grid gap-3 sm:grid-cols-2">
@@ -107,6 +124,7 @@ import AppLayout from '../layouts/AppLayout.astro';
               <textarea id="editor-verification-note" rows="3" maxlength="2000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
             </div>
 
+            <div id="editor-meta" class="rounded-md bg-[var(--surface-muted)] px-3 py-2 text-xs leading-5 text-[var(--muted)]"></div>
             <div id="editor-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
             <button type="submit" class="w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white">Save review state</button>
           </form>
@@ -143,14 +161,36 @@ import AppLayout from '../layouts/AppLayout.astro';
       to_address: string | null;
       subject: string | null;
       body: string | null;
+      claim_signal: string | null;
       verification_status: string;
       verification_note: string | null;
+      generation_model: string | null;
+      generation_prompt_version: string | null;
+      draft_generated_at: string | null;
+      gmail_draft_id: string | null;
+      gmail_message_id: string | null;
+      gmail_draft_created_at: string | null;
       suppressed: boolean;
       needs_manual_check: boolean;
       version: number;
     };
 
+    type Integrations = {
+      openrouter_configured: boolean;
+      openrouter_model: string | null;
+      gmail_configured: boolean;
+      gmail_sender_email: string | null;
+      send_enabled: boolean;
+    };
+
     let queueItems: QueueItem[] = [];
+    let integrations: Integrations = {
+      openrouter_configured: false,
+      openrouter_model: null,
+      gmail_configured: false,
+      gmail_sender_email: null,
+      send_enabled: false,
+    };
 
     const el = <T extends HTMLElement>(selector: string): T => {
       const node = document.querySelector<T>(selector);
@@ -170,6 +210,16 @@ import AppLayout from '../layouts/AppLayout.astro';
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
       return body;
+    }
+
+    function renderIntegrations(data: Integrations) {
+      integrations = data;
+      el('#openrouter-status').textContent = data.openrouter_configured
+        ? `OpenRouter · ${data.openrouter_model || 'configured'}`
+        : 'OpenRouter · not configured';
+      el('#gmail-status').textContent = data.gmail_configured
+        ? `Gmail · ${data.gmail_sender_email || 'configured'}`
+        : 'Gmail · not configured';
     }
 
     function renderCandidates(items: Candidate[]) {
@@ -229,6 +279,7 @@ import AppLayout from '../layouts/AppLayout.astro';
             <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase">${esc(item.status)}</span>
           </div>
           <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.channel)} · ${esc(item.to_address)} · verification ${esc(item.verification_status)}</div>
+          ${item.gmail_draft_id ? '<div class="mt-1 text-xs font-medium text-emerald-700">Gmail draft created</div>' : ''}
         </button>`).join('') : '<div class="p-5 text-sm text-[var(--muted)]">Queue is empty.</div>';
 
       document.querySelectorAll<HTMLButtonElement>('[data-edit-id]').forEach((button) => {
@@ -242,16 +293,53 @@ import AppLayout from '../layouts/AppLayout.astro';
       el('#editor-card').classList.remove('hidden');
       el('#editor-name').textContent = [item.name, item.city].filter(Boolean).join(' · ');
       el('#editor-channel').textContent = item.channel;
-      (el<HTMLInputElement>('#editor-id')).value = item.id;
-      (el<HTMLInputElement>('#editor-version')).value = String(item.version);
-      (el<HTMLInputElement>('#editor-to')).value = item.to_address || '';
-      (el<HTMLInputElement>('#editor-subject')).value = item.subject || '';
-      (el<HTMLTextAreaElement>('#editor-body')).value = item.body || '';
-      (el<HTMLSelectElement>('#editor-verification')).value = item.verification_status;
-      (el<HTMLSelectElement>('#editor-status')).value = item.status;
-      (el<HTMLTextAreaElement>('#editor-verification-note')).value = item.verification_note || '';
+      el<HTMLInputElement>('#editor-id').value = item.id;
+      el<HTMLInputElement>('#editor-version').value = String(item.version);
+      el<HTMLInputElement>('#editor-to').value = item.to_address || '';
+      el<HTMLInputElement>('#editor-subject').value = item.subject || '';
+      el<HTMLTextAreaElement>('#editor-body').value = item.body || '';
+      el<HTMLSelectElement>('#editor-verification').value = item.verification_status;
+      el<HTMLSelectElement>('#editor-status').value = item.status;
+      el<HTMLTextAreaElement>('#editor-verification-note').value = item.verification_note || '';
       el('#editor-error').classList.add('hidden');
+
+      const generated = item.draft_generated_at
+        ? `Generated ${new Date(item.draft_generated_at).toLocaleString()}${item.generation_model ? ` · ${item.generation_model}` : ''}`
+        : 'No AI draft generated yet.';
+      const gmail = item.gmail_draft_created_at
+        ? `Gmail draft created ${new Date(item.gmail_draft_created_at).toLocaleString()}`
+        : 'No Gmail draft created.';
+      el('#editor-meta').textContent = `${generated} · ${gmail}`;
+
+      const generateButton = el<HTMLButtonElement>('#generate-draft');
+      generateButton.disabled = !integrations.openrouter_configured || item.channel !== 'email' || Boolean(item.gmail_draft_id);
+
+      const gmailButton = el<HTMLButtonElement>('#create-gmail-draft');
+      gmailButton.disabled = !integrations.gmail_configured
+        || item.channel !== 'email'
+        || Boolean(item.gmail_draft_id)
+        || !['draft_ready', 'approved'].includes(item.status)
+        || !['verified', 'not_required'].includes(item.verification_status)
+        || !item.subject
+        || !item.body;
+
+      el('#draft-action-note').textContent = item.gmail_draft_id
+        ? 'A Gmail draft already exists. Content is locked here to prevent divergence from Gmail.'
+        : item.channel !== 'email'
+          ? 'AI generation and Gmail draft creation are email-only. Phone leads remain in the call queue.'
+          : 'Generate uses a conservative live claim verifier. Review the result, save it as Draft ready, then create the Gmail draft.';
+
+      const contentLocked = Boolean(item.gmail_draft_id);
+      el<HTMLInputElement>('#editor-to').disabled = contentLocked;
+      el<HTMLInputElement>('#editor-subject').disabled = contentLocked;
+      el<HTMLTextAreaElement>('#editor-body').disabled = contentLocked;
       el('#editor-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function editorError(error: unknown) {
+      const box = el('#editor-error');
+      box.textContent = error instanceof Error ? error.message : 'Outreach action failed.';
+      box.classList.remove('hidden');
     }
 
     function showError(error: unknown) {
@@ -262,40 +350,77 @@ import AppLayout from '../layouts/AppLayout.astro';
 
     async function loadAll() {
       el('#outreach-error').classList.add('hidden');
-      const [candidates, queue] = await Promise.all([
+      const [integrationData, candidates, queue] = await Promise.all([
+        api('/api/outreach/integrations'),
         api('/api/outreach/candidates?limit=100'),
         api('/api/outreach'),
       ]);
+      renderIntegrations(integrationData as Integrations);
       renderCandidates(candidates.items as Candidate[]);
       renderQueue(queue.items as QueueItem[]);
     }
 
     el('#refresh-outreach').addEventListener('click', () => loadAll().catch(showError));
 
+    el<HTMLButtonElement>('#generate-draft').addEventListener('click', async () => {
+      const itemId = el<HTMLInputElement>('#editor-id').value;
+      const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
+      const button = el<HTMLButtonElement>('#generate-draft');
+      button.disabled = true;
+      el('#editor-error').classList.add('hidden');
+      try {
+        await api(`/api/outreach/items/${encodeURIComponent(itemId)}/generate`, {
+          method: 'POST',
+          body: JSON.stringify({ expected_version: expectedVersion }),
+        });
+        await loadAll();
+        openEditor(itemId);
+      } catch (error) {
+        editorError(error);
+        button.disabled = false;
+      }
+    });
+
+    el<HTMLButtonElement>('#create-gmail-draft').addEventListener('click', async () => {
+      const itemId = el<HTMLInputElement>('#editor-id').value;
+      const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
+      const button = el<HTMLButtonElement>('#create-gmail-draft');
+      button.disabled = true;
+      el('#editor-error').classList.add('hidden');
+      try {
+        await api(`/api/outreach/items/${encodeURIComponent(itemId)}/gmail-draft`, {
+          method: 'POST',
+          body: JSON.stringify({ expected_version: expectedVersion }),
+        });
+        await loadAll();
+        openEditor(itemId);
+      } catch (error) {
+        editorError(error);
+        button.disabled = false;
+      }
+    });
+
     el<HTMLFormElement>('#outreach-editor').addEventListener('submit', async (event) => {
       event.preventDefault();
-      const itemId = (el<HTMLInputElement>('#editor-id')).value;
-      const expectedVersion = Number((el<HTMLInputElement>('#editor-version')).value);
+      const itemId = el<HTMLInputElement>('#editor-id').value;
+      const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
       try {
         await api(`/api/outreach/items/${encodeURIComponent(itemId)}`, {
           method: 'PATCH',
           body: JSON.stringify({
             expected_version: expectedVersion,
-            to_address: (el<HTMLInputElement>('#editor-to')).value || null,
-            subject: (el<HTMLInputElement>('#editor-subject')).value || null,
-            body: (el<HTMLTextAreaElement>('#editor-body')).value || null,
-            verification_status: (el<HTMLSelectElement>('#editor-verification')).value,
-            verification_note: (el<HTMLTextAreaElement>('#editor-verification-note')).value || null,
-            status: (el<HTMLSelectElement>('#editor-status')).value,
+            to_address: el<HTMLInputElement>('#editor-to').value || null,
+            subject: el<HTMLInputElement>('#editor-subject').value || null,
+            body: el<HTMLTextAreaElement>('#editor-body').value || null,
+            verification_status: el<HTMLSelectElement>('#editor-verification').value,
+            verification_note: el<HTMLTextAreaElement>('#editor-verification-note').value || null,
+            status: el<HTMLSelectElement>('#editor-status').value,
           }),
         });
         await loadAll();
-        const updated = queueItems.find((entry) => entry.id === itemId);
-        if (updated) openEditor(itemId);
+        openEditor(itemId);
       } catch (error) {
-        const box = el('#editor-error');
-        box.textContent = error instanceof Error ? error.message : 'Unable to save.';
-        box.classList.remove('hidden');
+        editorError(error);
       }
     });
 
