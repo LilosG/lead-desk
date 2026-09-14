@@ -8,6 +8,49 @@ class OutreachRepository:
     def __init__(self, pool: ConnectionPool):
         self.pool = pool
 
+    def list_candidates(self, limit: int = 100) -> list[dict[str, Any]]:
+        query = """
+            select
+                w.place_id,
+                w.name,
+                w.city,
+                w.vertical,
+                w.total_score,
+                w.tier,
+                w.headline_gap,
+                w.phone,
+                w.emails_found[1] as email,
+                seg.established,
+                coalesce(f.needs_manual_check, false) as needs_manual_check,
+                exists (
+                    select 1
+                    from suppression s
+                    where lower(s.email) = lower(coalesce(w.emails_found[1], ''))
+                ) as suppressed,
+                exists (
+                    select 1
+                    from outreach_queue q
+                    where q.place_id = w.place_id
+                ) as already_queued
+            from v_lead_worklist w
+            join v_lead_segments seg on seg.place_id = w.place_id
+            left join v_lead_findings f on f.place_id = w.place_id
+            where seg.established = true
+              and (
+                    cardinality(coalesce(w.emails_found, '{}'::text[])) > 0
+                    or w.phone is not null
+                  )
+            order by
+                case when cardinality(coalesce(w.emails_found, '{}'::text[])) > 0 then 0 else 1 end,
+                w.total_score desc,
+                w.review_count desc nulls last
+            limit %s
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (limit,))
+                return cur.fetchall()
+
     def list_items(self, status: str | None = None) -> tuple[list[dict[str, Any]], int]:
         where = "where q.status = %s" if status else ""
         params: tuple[Any, ...] = (status,) if status else ()
