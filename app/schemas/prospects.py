@@ -1,9 +1,24 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.common import Pagination
+
+
+WorkflowStatus = Literal[
+    "new",
+    "researching",
+    "qualified",
+    "outreach_ready",
+    "contacted",
+    "replied",
+    "won",
+    "lost",
+    "disqualified",
+]
+
+WorkflowPriority = Literal["low", "normal", "high", "urgent"]
 
 
 class ProspectListItem(BaseModel):
@@ -101,6 +116,35 @@ class WebsiteAudit(BaseModel):
     crawl_error: str | None
 
 
+class ProspectWorkflowState(BaseModel):
+    status: WorkflowStatus = "new"
+    priority: WorkflowPriority = "normal"
+    owner: str | None = None
+    next_action: str | None = None
+    next_action_at: datetime | None = None
+    notes: str | None = None
+    version: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ProspectWorkflowEvent(BaseModel):
+    id: str
+    event_type: Literal["created", "updated"]
+    changes: dict[str, Any]
+    created_at: datetime
+
+
+class ProspectWorkflowUpdate(BaseModel):
+    status: WorkflowStatus | None = None
+    priority: WorkflowPriority | None = None
+    owner: str | None = Field(default=None, max_length=120)
+    next_action: str | None = Field(default=None, max_length=500)
+    next_action_at: datetime | None = None
+    notes: str | None = Field(default=None, max_length=10000)
+    expected_version: int = Field(ge=0)
+
+
 class ProspectDetail(BaseModel):
     place_id: str
     name: str | None
@@ -117,6 +161,7 @@ class ProspectDetail(BaseModel):
     lng: float | None
 
     phone: str | None
+    email: str | None
     website_url: str | None
     google_maps_uri: str | None
 
@@ -146,6 +191,8 @@ class ProspectDetail(BaseModel):
 
     website_audit: WebsiteAudit | None
     findings: list[AuditFinding]
+    workflow: ProspectWorkflowState
+    workflow_events: list[ProspectWorkflowEvent]
 
 
 class ProspectFilterMeta(BaseModel):
