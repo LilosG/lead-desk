@@ -4,6 +4,13 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+APPROVED_OPENROUTER_MODELS = {
+    "qwen/qwen3-30b-a3b-instruct-2507",
+    "deepseek/deepseek-chat-v3.1",
+    "anthropic/claude-haiku-4.5",
+}
+
+
 class Settings(BaseSettings):
     app_name: str = "Lead Desk"
     app_version: str = "0.1.0"
@@ -15,7 +22,7 @@ class Settings(BaseSettings):
 
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_model: str = Field(
-        default="anthropic/claude-haiku-4.5",
+        default="qwen/qwen3-30b-a3b-instruct-2507",
         alias="OPENROUTER_MODEL",
     )
 
@@ -39,6 +46,14 @@ class Settings(BaseSettings):
     def validate_auth_password_hash(cls, value: str) -> str:
         if not value.startswith("pbkdf2_sha256$"):
             raise ValueError("AUTH_PASSWORD_HASH must use pbkdf2_sha256 format")
+        return value
+
+    @field_validator("openrouter_model")
+    @classmethod
+    def validate_openrouter_model(cls, value: str) -> str:
+        if value not in APPROVED_OPENROUTER_MODELS:
+            allowed = ", ".join(sorted(APPROVED_OPENROUTER_MODELS))
+            raise ValueError(f"OPENROUTER_MODEL must be one of: {allowed}")
         return value
 
     @property
