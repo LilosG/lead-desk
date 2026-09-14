@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_model: str = Field(
-        default="openai/gpt-chat-latest",
+        default="anthropic/claude-haiku-4.5",
         alias="OPENROUTER_MODEL",
     )
 
