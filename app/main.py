@@ -3,9 +3,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.routes import health, overview, prospects, runs
+from app.api.routes.outreach import router as outreach_router
+from app.api.routes.sweeps import router as sweeps_router
 from app.core.config import get_settings
 from app.core.database import close_pool, open_pool
-from app.api.routes.sweeps import router as sweeps_router
 
 
 settings = get_settings()
@@ -33,6 +34,7 @@ app.include_router(overview.router, prefix="/api")
 app.include_router(prospects.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(sweeps_router)
+app.include_router(outreach_router)
 
 
 @app.get("/", include_in_schema=False)
