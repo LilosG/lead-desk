@@ -13,6 +13,10 @@ class OutreachService:
     def __init__(self, repository: OutreachRepository):
         self.repository = repository
 
+    def list_candidates(self, limit: int = 100) -> dict:
+        items = self.repository.list_candidates(limit=limit)
+        return {'items': items, 'total': len(items)}
+
     def list_items(self, status: str | None = None) -> dict:
         items, total = self.repository.list_items(status=status)
         return {'items': items, 'total': total}
