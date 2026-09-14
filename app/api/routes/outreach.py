@@ -15,6 +15,11 @@ def get_service() -> OutreachService:
     return OutreachService(OutreachRepository(pool))
 
 
+@router.get('/candidates')
+def list_candidates(limit: int = Query(default=100, ge=1, le=250)) -> dict:
+    return get_service().list_candidates(limit=limit)
+
+
 @router.get('', response_model=OutreachQueueResponse)
 def list_outreach(
     status: Literal[
