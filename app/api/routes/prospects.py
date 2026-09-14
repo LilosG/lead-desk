@@ -77,7 +77,7 @@ def update_prospect_workflow(
     place_id: str,
     payload: ProspectWorkflowUpdate,
 ) -> dict:
-    data = payload.model_dump(exclude_unset=True)
+    data = payload.model_dump(exclude_unset=True, mode="json")
     expected_version = data.pop("expected_version")
 
     try:
