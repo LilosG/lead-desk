@@ -1,0 +1,82 @@
+---
+import '../styles/global.css';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content="Sign in to LILOs Growth Lead Desk." />
+    <title>Sign in · Lead Desk</title>
+  </head>
+  <body class="bg-[var(--surface-muted)]">
+    <main class="flex min-h-screen items-center justify-center p-6">
+      <section class="w-full max-w-md rounded-xl border border-[var(--line)] bg-white p-7 shadow-sm">
+        <div class="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--muted)]">
+          LILOs Growth
+        </div>
+        <h1 class="mt-2 text-2xl font-semibold tracking-tight">Lead Desk</h1>
+        <p class="mt-2 text-sm text-[var(--muted)]">
+          Sign in to access prospect intelligence and outreach workflows.
+        </p>
+
+        <form id="login-form" class="mt-7 space-y-4">
+          <div>
+            <label for="username" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Username</label>
+            <input id="username" name="username" autocomplete="username" required class="w-full rounded-md border border-[var(--line)] px-3 py-2.5 text-sm" />
+          </div>
+          <div>
+            <label for="password" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required class="w-full rounded-md border border-[var(--line)] px-3 py-2.5 text-sm" />
+          </div>
+          <div id="login-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"></div>
+          <button id="login-button" type="submit" class="w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+            Sign in
+          </button>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      const form = document.querySelector<HTMLFormElement>('#login-form');
+      const errorBox = document.querySelector<HTMLElement>('#login-error');
+      const button = document.querySelector<HTMLButtonElement>('#login-button');
+
+      form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        errorBox?.classList.add('hidden');
+        if (button) button.disabled = true;
+
+        const username = document.querySelector<HTMLInputElement>('#username')?.value ?? '';
+        const password = document.querySelector<HTMLInputElement>('#password')?.value ?? '';
+
+        try {
+          const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ username, password }),
+          });
+
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.detail || 'Unable to sign in.');
+          }
+
+          const requested = new URLSearchParams(window.location.search).get('next') || '/';
+          const destination = requested.startsWith('/') && !requested.startsWith('//')
+            ? requested
+            : '/';
+          window.location.assign(destination);
+        } catch (error) {
+          if (errorBox) {
+            errorBox.textContent = error instanceof Error ? error.message : 'Unable to sign in.';
+            errorBox.classList.remove('hidden');
+          }
+        } finally {
+          if (button) button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

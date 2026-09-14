@@ -4,11 +4,301 @@ import AppLayout from '../layouts/AppLayout.astro';
 
 <AppLayout
   title="Outreach"
-  description="Draft-first outreach workflow and contact queues."
+  description="Human-reviewed outreach queue with suppression and verification gates."
 >
-  <div class="rounded-lg border border-[var(--line)] bg-white p-6">
-    <p class="text-sm text-[var(--muted)]">
-      Outreach controls will be enabled after the read-only workspace is complete.
-    </p>
+  <div class="space-y-6">
+    <section class="grid gap-4 md:grid-cols-4">
+      <div class="rounded-lg border border-[var(--line)] bg-white p-5">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Candidates</div>
+        <div id="metric-candidates" class="mt-2 text-3xl font-semibold">—</div>
+      </div>
+      <div class="rounded-lg border border-[var(--line)] bg-white p-5">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Queued</div>
+        <div id="metric-queued" class="mt-2 text-3xl font-semibold">—</div>
+      </div>
+      <div class="rounded-lg border border-[var(--line)] bg-white p-5">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Draft ready</div>
+        <div id="metric-ready" class="mt-2 text-3xl font-semibold">—</div>
+      </div>
+      <div class="rounded-lg border border-[var(--line)] bg-white p-5">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Contacted</div>
+        <div id="metric-contacted" class="mt-2 text-3xl font-semibold">—</div>
+      </div>
+    </section>
+
+    <div id="outreach-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"></div>
+
+    <section class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
+      <div class="rounded-lg border border-[var(--line)] bg-white">
+        <div class="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
+          <div>
+            <div class="text-sm font-medium">Outreach candidates</div>
+            <div class="mt-1 text-xs text-[var(--muted)]">Established prospects with a reachable contact method.</div>
+          </div>
+          <button id="refresh-outreach" type="button" class="rounded-md border border-[var(--line)] px-3 py-2 text-xs font-medium">Refresh</button>
+        </div>
+        <div id="candidate-list" class="divide-y divide-[var(--line)]"></div>
+      </div>
+
+      <div class="space-y-6">
+        <section class="rounded-lg border border-[var(--line)] bg-white">
+          <div class="border-b border-[var(--line)] px-5 py-4">
+            <div class="text-sm font-medium">Active queue</div>
+            <div class="mt-1 text-xs text-[var(--muted)]">No message is sent from this workspace.</div>
+          </div>
+          <div id="queue-list" class="divide-y divide-[var(--line)]"></div>
+        </section>
+
+        <section id="editor-card" class="hidden rounded-lg border border-[var(--line)] bg-white p-5">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <div class="text-sm font-medium">Draft review</div>
+              <div id="editor-name" class="mt-1 text-xs text-[var(--muted)]"></div>
+            </div>
+            <span id="editor-channel" class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase"></span>
+          </div>
+
+          <form id="outreach-editor" class="mt-5 space-y-4">
+            <input id="editor-id" type="hidden" />
+            <input id="editor-version" type="hidden" />
+
+            <div>
+              <label for="editor-to" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">To</label>
+              <input id="editor-to" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
+            </div>
+
+            <div>
+              <label for="editor-subject" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Subject</label>
+              <input id="editor-subject" maxlength="300" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
+            </div>
+
+            <div>
+              <label for="editor-body" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Draft</label>
+              <textarea id="editor-body" rows="9" maxlength="20000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
+            </div>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label for="editor-verification" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Claim verification</label>
+                <select id="editor-verification" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
+                  <option value="pending">Pending</option>
+                  <option value="verified">Verified</option>
+                  <option value="failed">Failed</option>
+                  <option value="not_required">Not required</option>
+                </select>
+              </div>
+              <div>
+                <label for="editor-status" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Status</label>
+                <select id="editor-status" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
+                  <option value="queued">Queued</option>
+                  <option value="researching">Researching</option>
+                  <option value="review_required">Review required</option>
+                  <option value="draft_ready">Draft ready</option>
+                  <option value="approved">Approved</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="replied">Replied</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label for="editor-verification-note" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Verification note</label>
+              <textarea id="editor-verification-note" rows="3" maxlength="2000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
+            </div>
+
+            <div id="editor-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
+            <button type="submit" class="w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white">Save review state</button>
+          </form>
+        </section>
+      </div>
+    </section>
   </div>
+
+  <script>
+    type Candidate = {
+      place_id: string;
+      name: string | null;
+      city: string | null;
+      vertical: string | null;
+      total_score: number | null;
+      tier: string | null;
+      headline_gap: string | null;
+      phone: string | null;
+      email: string | null;
+      suppressed: boolean;
+      needs_manual_check: boolean;
+      already_queued: boolean;
+    };
+
+    type QueueItem = {
+      id: string;
+      place_id: string;
+      name: string | null;
+      city: string | null;
+      total_score: number | null;
+      tier: string | null;
+      channel: 'email' | 'phone' | 'form';
+      status: string;
+      to_address: string | null;
+      subject: string | null;
+      body: string | null;
+      verification_status: string;
+      verification_note: string | null;
+      suppressed: boolean;
+      needs_manual_check: boolean;
+      version: number;
+    };
+
+    let queueItems: QueueItem[] = [];
+
+    const el = <T extends HTMLElement>(selector: string): T => {
+      const node = document.querySelector<T>(selector);
+      if (!node) throw new Error(`Missing ${selector}`);
+      return node;
+    };
+
+    const esc = (value: unknown): string => String(value ?? '')
+      .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+
+    async function api(path: string, init?: RequestInit) {
+      const response = await fetch(path, {
+        ...init,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(init?.headers || {}) },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+      return body;
+    }
+
+    function renderCandidates(items: Candidate[]) {
+      el('#metric-candidates').textContent = String(items.length);
+      el('#candidate-list').innerHTML = items.length ? items.map((item) => {
+        const channel = item.email ? 'email' : item.phone ? 'phone' : null;
+        const blocked = item.suppressed || item.already_queued || !channel;
+        const warning = item.needs_manual_check ? '<span class="text-amber-700">manual check</span>' : '';
+        return `
+          <div class="p-5">
+            <div class="flex items-start justify-between gap-4">
+              <div class="min-w-0">
+                <a href="/prospects/${encodeURIComponent(item.place_id)}" class="font-medium hover:underline">${esc(item.name)}</a>
+                <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.city)} · ${esc(item.vertical)} · Tier ${esc(item.tier)} · Score ${esc(item.total_score)}</div>
+                <div class="mt-2 text-sm leading-5">${esc(item.headline_gap)}</div>
+                <div class="mt-2 flex gap-3 text-xs text-[var(--muted)]"><span>${esc(item.email || item.phone || 'No contact')}</span>${warning}</div>
+              </div>
+              <button
+                type="button"
+                data-queue-place="${esc(item.place_id)}"
+                data-queue-channel="${esc(channel)}"
+                ${blocked ? 'disabled' : ''}
+                class="shrink-0 rounded-md border border-[var(--line)] px-3 py-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
+              >${item.already_queued ? 'Queued' : item.suppressed ? 'Suppressed' : `Queue ${esc(channel)}`}</button>
+            </div>
+          </div>`;
+      }).join('') : '<div class="p-5 text-sm text-[var(--muted)]">No eligible candidates.</div>';
+
+      document.querySelectorAll<HTMLButtonElement>('[data-queue-place]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const placeId = button.dataset.queuePlace;
+          const channel = button.dataset.queueChannel;
+          if (!placeId || !channel || channel === 'null') return;
+          button.disabled = true;
+          try {
+            await api(`/api/outreach/${encodeURIComponent(placeId)}`, {
+              method: 'POST', body: JSON.stringify({ channel }),
+            });
+            await loadAll();
+          } catch (error) {
+            showError(error);
+            button.disabled = false;
+          }
+        });
+      });
+    }
+
+    function renderQueue(items: QueueItem[]) {
+      queueItems = items;
+      el('#metric-queued').textContent = String(items.filter((i) => ['queued', 'researching', 'review_required'].includes(i.status)).length);
+      el('#metric-ready').textContent = String(items.filter((i) => i.status === 'draft_ready' || i.status === 'approved').length);
+      el('#metric-contacted').textContent = String(items.filter((i) => i.status === 'contacted' || i.status === 'replied').length);
+      el('#queue-list').innerHTML = items.length ? items.map((item) => `
+        <button type="button" data-edit-id="${esc(item.id)}" class="block w-full p-5 text-left hover:bg-[var(--surface-muted)]">
+          <div class="flex items-center justify-between gap-3">
+            <div class="font-medium">${esc(item.name)}</div>
+            <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase">${esc(item.status)}</span>
+          </div>
+          <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.channel)} · ${esc(item.to_address)} · verification ${esc(item.verification_status)}</div>
+        </button>`).join('') : '<div class="p-5 text-sm text-[var(--muted)]">Queue is empty.</div>';
+
+      document.querySelectorAll<HTMLButtonElement>('[data-edit-id]').forEach((button) => {
+        button.addEventListener('click', () => openEditor(button.dataset.editId || ''));
+      });
+    }
+
+    function openEditor(id: string) {
+      const item = queueItems.find((entry) => entry.id === id);
+      if (!item) return;
+      el('#editor-card').classList.remove('hidden');
+      el('#editor-name').textContent = [item.name, item.city].filter(Boolean).join(' · ');
+      el('#editor-channel').textContent = item.channel;
+      (el<HTMLInputElement>('#editor-id')).value = item.id;
+      (el<HTMLInputElement>('#editor-version')).value = String(item.version);
+      (el<HTMLInputElement>('#editor-to')).value = item.to_address || '';
+      (el<HTMLInputElement>('#editor-subject')).value = item.subject || '';
+      (el<HTMLTextAreaElement>('#editor-body')).value = item.body || '';
+      (el<HTMLSelectElement>('#editor-verification')).value = item.verification_status;
+      (el<HTMLSelectElement>('#editor-status')).value = item.status;
+      (el<HTMLTextAreaElement>('#editor-verification-note')).value = item.verification_note || '';
+      el('#editor-error').classList.add('hidden');
+      el('#editor-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function showError(error: unknown) {
+      const box = el('#outreach-error');
+      box.textContent = error instanceof Error ? error.message : 'Outreach request failed.';
+      box.classList.remove('hidden');
+    }
+
+    async function loadAll() {
+      el('#outreach-error').classList.add('hidden');
+      const [candidates, queue] = await Promise.all([
+        api('/api/outreach/candidates?limit=100'),
+        api('/api/outreach'),
+      ]);
+      renderCandidates(candidates.items as Candidate[]);
+      renderQueue(queue.items as QueueItem[]);
+    }
+
+    el('#refresh-outreach').addEventListener('click', () => loadAll().catch(showError));
+
+    el<HTMLFormElement>('#outreach-editor').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const itemId = (el<HTMLInputElement>('#editor-id')).value;
+      const expectedVersion = Number((el<HTMLInputElement>('#editor-version')).value);
+      try {
+        await api(`/api/outreach/items/${encodeURIComponent(itemId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            expected_version: expectedVersion,
+            to_address: (el<HTMLInputElement>('#editor-to')).value || null,
+            subject: (el<HTMLInputElement>('#editor-subject')).value || null,
+            body: (el<HTMLTextAreaElement>('#editor-body')).value || null,
+            verification_status: (el<HTMLSelectElement>('#editor-verification')).value,
+            verification_note: (el<HTMLTextAreaElement>('#editor-verification-note')).value || null,
+            status: (el<HTMLSelectElement>('#editor-status')).value,
+          }),
+        });
+        await loadAll();
+        const updated = queueItems.find((entry) => entry.id === itemId);
+        if (updated) openEditor(itemId);
+      } catch (error) {
+        const box = el('#editor-error');
+        box.textContent = error instanceof Error ? error.message : 'Unable to save.';
+        box.classList.remove('hidden');
+      }
+    });
+
+    loadAll().catch(showError);
+  </script>
 </AppLayout>

@@ -77,6 +77,16 @@ function active(href: string) {
             ))
           }
         </nav>
+
+        <div class="px-3 pb-5 lg:mt-auto">
+          <button
+            id="logout-button"
+            type="button"
+            class="w-full rounded-md border border-white/10 px-3 py-2.5 text-left text-sm text-white/55 transition hover:bg-white/5 hover:text-white"
+          >
+            Sign out
+          </button>
+        </div>
       </aside>
 
       <main class="min-w-0">
@@ -98,5 +108,15 @@ function active(href: string) {
         </div>
       </main>
     </div>
+
+    <script>
+      document.querySelector<HTMLButtonElement>('#logout-button')?.addEventListener('click', async () => {
+        try {
+          await fetch('/api/auth/logout', { method: 'POST' });
+        } finally {
+          window.location.assign('/login');
+        }
+      });
+    </script>
   </body>
 </html>
