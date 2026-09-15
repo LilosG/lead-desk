@@ -262,14 +262,72 @@ class PostgresStore:
     def save_businesses(self, businesses: list, run_id: str) -> int:
         now = datetime.now(timezone.utc)
         rows = []
+        memberships = []
+
         for b in businesses:
+            matched_verticals = list(
+                dict.fromkeys(
+                    b.get("matched_verticals")
+                    or [b.get("vertical")]
+                )
+            )
+
             r = dict(b)
             r["last_seen_run"] = run_id
             r.setdefault("first_seen_run", run_id)
             r["last_seen_at"] = now
             r.pop("unique_key", None)
+            r.pop("matched_verticals", None)
             rows.append(r)
-        return self.upsert("businesses", rows, on_conflict="place_id")
+
+            for vertical in matched_verticals:
+                if not vertical:
+                    continue
+                memberships.append(
+                    {
+                        "place_id": b["place_id"],
+                        "vertical": vertical,
+                    }
+                )
+
+        saved = self.upsert(
+            "businesses",
+            rows,
+            on_conflict="place_id",
+        )
+
+        if memberships:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    insert into business_vertical_memberships (
+                        place_id,
+                        vertical,
+                        first_seen_run,
+                        last_seen_run,
+                        first_seen_at,
+                        last_seen_at
+                    )
+                    values (%s, %s, %s, %s, %s, %s)
+                    on conflict (place_id, vertical)
+                    do update set
+                        last_seen_run = excluded.last_seen_run,
+                        last_seen_at = excluded.last_seen_at
+                    """,
+                    [
+                        (
+                            item["place_id"],
+                            item["vertical"],
+                            run_id,
+                            run_id,
+                            now,
+                            now,
+                        )
+                        for item in memberships
+                    ],
+                )
+
+        return saved
 
     def save_enrichment(self, enrichment: dict) -> int:
         rows = []
