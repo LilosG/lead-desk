@@ -319,6 +319,7 @@ def normalize(place: dict, vertical: str) -> dict:
         "place_id": place.get("id"),
         "name": name,
         "vertical": vertical,
+        "matched_verticals": [vertical],
         "primary_type": place.get("primaryType"),
         "types": place.get("types") or [],
         "business_status": place.get("businessStatus"),
@@ -347,6 +348,42 @@ def normalize(place: dict, vertical: str) -> dict:
         "recent_reviews_90d": act["recent_90d"],
         "raw_places_payload": place,
     }
+
+
+def merge_vertical_memberships(
+    existing: dict,
+    candidate: dict,
+) -> dict:
+    """Merge duplicate Places results without losing vertical membership."""
+
+    memberships = set(
+        existing.get("matched_verticals")
+        or [existing.get("vertical")]
+    )
+    memberships.update(
+        candidate.get("matched_verticals")
+        or [candidate.get("vertical")]
+    )
+    memberships.discard(None)
+
+    ordered = sorted(
+        memberships,
+        key=lambda vertical: (
+            C.VERTICALS[vertical]["priority"],
+            vertical,
+        ),
+    )
+
+    existing_reviews = existing.get("review_count") or 0
+    candidate_reviews = candidate.get("review_count") or 0
+
+    richer = candidate if candidate_reviews > existing_reviews else existing
+    merged = dict(richer)
+
+    merged["matched_verticals"] = ordered
+    merged["vertical"] = ordered[0]
+
+    return merged
 
 
 # ---------------------------------------------------------------------------
