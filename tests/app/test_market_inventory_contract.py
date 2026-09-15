@@ -3,6 +3,7 @@ from pathlib import Path
 from app.services.prospects import ProspectService
 from app.services.sweeps import SweepService
 from pipeline import config as market_config
+from pipeline import verticals as vertical_config
 
 
 class FakeProspectRepository:
@@ -33,13 +34,32 @@ def test_sweep_vertical_order_is_config_driven_and_deduplicated():
     assert ordered == ["electrician", "plumber", "handyman"]
 
 
-def test_sweep_vertical_order_rejects_unknown_vertical():
-    try:
-        SweepService._ordered_verticals(["electrician", "not-real"])
-    except ValueError as exc:
-        assert "not-real" in str(exc)
-    else:
-        raise AssertionError("unknown vertical should be rejected")
+def test_sweep_vertical_order_accepts_and_normalizes_custom_verticals():
+    ordered = SweepService._ordered_verticals(
+        ["Personal Injury Attorney", "electrician", "Med Spa", "med-spa"]
+    )
+
+    assert ordered == ["electrician", "med_spa", "personal_injury_attorney"]
+
+
+def test_custom_vertical_uses_entered_phrase_as_default_query():
+    assert vertical_config.vertical_queries("Personal Injury Attorney") == [
+        "personal injury attorney"
+    ]
+    assert vertical_config.vertical_priority("Personal Injury Attorney") > max(
+        spec["priority"] for spec in market_config.VERTICALS.values()
+    )
+    assert vertical_config.vertical_profile("Personal Injury Attorney") == (
+        "generic_local_business"
+    )
+
+
+def test_custom_vertical_discovery_does_not_use_home_service_noise_exclusions():
+    discover = Path("pipeline/discover.py").read_text()
+
+    assert "if not V.is_preset(vertical):" in discover
+    assert "return False" in discover
+    assert "V.vertical_queries(vertical)" in discover
 
 
 def test_text_search_pricing_matches_atmosphere_field_mask():
@@ -77,9 +97,11 @@ def test_pipeline_records_all_matched_verticals_and_recomputes_canonical():
 
     assert '"matched_verticals": [vertical]' in discover
     assert "merge_vertical_memberships" in discover
+    assert "found[pid] = merge_vertical_memberships(found[pid], rec)" in discover
     assert 'r.pop("matched_verticals", None)' in store
     assert "insert into business_vertical_memberships" in store
     assert "canonical_vertical" in store
+    assert "V.vertical_priority(vertical)" in store
 
 
 def test_prospect_vertical_filter_uses_membership_relation():
