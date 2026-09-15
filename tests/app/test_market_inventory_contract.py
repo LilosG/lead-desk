@@ -71,11 +71,20 @@ def test_business_vertical_memberships_are_durable_and_backfilled():
     assert "from businesses b" in migration
 
 
-def test_pipeline_records_all_matched_verticals_without_overwriting_primary():
+def test_pipeline_records_all_matched_verticals_and_recomputes_canonical():
     discover = Path("pipeline/discover.py").read_text()
     store = Path("pipeline/store.py").read_text()
 
     assert '"matched_verticals": [vertical]' in discover
     assert "merge_vertical_memberships" in discover
     assert 'r.pop("matched_verticals", None)' in store
-    assert 'self.upsert("business_vertical_memberships"' in store
+    assert "insert into business_vertical_memberships" in store
+    assert "canonical_vertical" in store
+
+
+def test_prospect_vertical_filter_uses_membership_relation():
+    repository = Path("app/repositories/prospects.py").read_text()
+
+    assert "from business_vertical_memberships bvm" in repository
+    assert "bvm.vertical = %(vertical)s" in repository
+    assert 'conditions.append(sql.SQL("w.vertical = %(vertical)s"))' not in repository
