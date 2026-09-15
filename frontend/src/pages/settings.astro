@@ -6,9 +6,115 @@ import AppLayout from '../layouts/AppLayout.astro';
   title="Settings"
   description="Lead Desk integrations and application configuration."
 >
-  <div class="rounded-lg border border-[var(--line)] bg-white p-6">
-    <p class="text-sm text-[var(--muted)]">
-      Integration configuration will be added in a later phase.
-    </p>
-  </div>
+  <section class="space-y-5">
+    <div class="rounded-xl border border-[var(--line)] bg-white p-6">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Google Workspace</p>
+          <h2 class="mt-2 text-xl font-semibold text-[var(--ink)]">Gmail drafts</h2>
+          <p class="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
+            Connect mike@lilosgrowth.com so reviewed outreach can be created as Gmail drafts. Lead Desk has no email send endpoint.
+          </p>
+        </div>
+        <span id="gmail-pill" class="inline-flex w-fit rounded-full border border-[var(--line)] px-3 py-1 text-xs font-medium text-[var(--muted)]">
+          Checking…
+        </span>
+      </div>
+
+      <div class="mt-6 grid gap-4 rounded-lg border border-[var(--line)] bg-[var(--canvas)] p-4 sm:grid-cols-2">
+        <div>
+          <p class="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">Account</p>
+          <p id="gmail-account" class="mt-1 text-sm font-medium text-[var(--ink)]">—</p>
+        </div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.14em] text-[var(--muted)]">Permission</p>
+          <p class="mt-1 text-sm font-medium text-[var(--ink)]">Create/manage Gmail drafts</p>
+        </div>
+      </div>
+
+      <div id="gmail-message" class="mt-4 hidden rounded-lg border border-[var(--line)] px-4 py-3 text-sm"></div>
+
+      <div class="mt-5 flex flex-wrap gap-3">
+        <button id="gmail-connect" type="button" class="rounded-lg bg-[var(--ink)] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+          Connect Gmail
+        </button>
+        <button id="gmail-disconnect" type="button" class="hidden rounded-lg border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-[var(--ink)]">
+          Disconnect
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const pill = document.getElementById('gmail-pill');
+    const account = document.getElementById('gmail-account');
+    const connect = document.getElementById('gmail-connect');
+    const disconnect = document.getElementById('gmail-disconnect');
+    const message = document.getElementById('gmail-message');
+
+    function showMessage(text, isError = false) {
+      if (!message) return;
+      message.textContent = text;
+      message.classList.remove('hidden');
+      message.classList.toggle('text-red-700', isError);
+    }
+
+    async function loadStatus() {
+      const response = await fetch('/api/integrations/gmail/status', { credentials: 'same-origin' });
+      if (!response.ok) throw new Error('Could not load Gmail integration status.');
+      const data = await response.json();
+
+      if (pill) pill.textContent = data.connected ? 'Connected' : (data.configured ? 'Ready to connect' : 'Configuration required');
+      if (account) account.textContent = data.account_email || data.sender_email || '—';
+      if (connect) {
+        connect.classList.toggle('hidden', Boolean(data.connected));
+        connect.toggleAttribute('disabled', !data.configured);
+      }
+      if (disconnect) disconnect.classList.toggle('hidden', !data.connected);
+
+      if (!data.configured) {
+        showMessage('The server-side Google OAuth client configuration is not complete yet.', true);
+      }
+    }
+
+    connect?.addEventListener('click', async () => {
+      connect.setAttribute('disabled', '');
+      try {
+        const response = await fetch('/api/integrations/gmail/connect', {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Could not start Gmail authorization.');
+        window.location.href = data.authorization_url;
+      } catch (error) {
+        showMessage(error instanceof Error ? error.message : 'Could not start Gmail authorization.', true);
+        connect.removeAttribute('disabled');
+      }
+    });
+
+    disconnect?.addEventListener('click', async () => {
+      if (!window.confirm('Disconnect Gmail from Lead Desk? Existing Gmail drafts will not be deleted.')) return;
+      const response = await fetch('/api/integrations/gmail', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      if (!response.ok) {
+        showMessage('Could not disconnect Gmail.', true);
+        return;
+      }
+      window.location.reload();
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('gmail') === 'connected') {
+      showMessage('Gmail connected successfully.');
+      history.replaceState({}, '', '/settings');
+    } else if (params.get('gmail') === 'error') {
+      showMessage('Gmail authorization did not complete. Check the Google OAuth client configuration and try again.', true);
+      history.replaceState({}, '', '/settings');
+    }
+
+    loadStatus().catch((error) => showMessage(error.message, true));
+  </script>
 </AppLayout>
