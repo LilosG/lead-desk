@@ -84,8 +84,25 @@ def list_outreach(
 
 @router.post('/{place_id}', status_code=201)
 def queue_outreach(place_id: str, payload: OutreachCreate) -> dict:
+    service = get_service()
+    readiness = service.candidate_readiness(place_id)
+
+    if readiness is None:
+        raise HTTPException(status_code=404, detail='prospect not found')
+
+    blockers = [
+        reason
+        for reason in readiness['reasons']
+        if reason != 'Prospect is already in the outreach queue.'
+    ]
+    if blockers:
+        raise HTTPException(
+            status_code=422,
+            detail='outreach readiness blocked: ' + ' '.join(blockers),
+        )
+
     try:
-        result = get_service().create_item(
+        result = service.create_item(
             place_id,
             payload.channel,
             payload.to_address,
