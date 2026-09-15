@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     auth_password_hash: str = Field(alias="AUTH_PASSWORD_HASH")
     auth_session_secret: str = Field(alias="AUTH_SESSION_SECRET")
 
+    public_app_url: str = Field(
+        default="https://lead-desk-alpha.vercel.app",
+        alias="PUBLIC_APP_URL",
+    )
+    integration_encryption_key: str | None = Field(
+        default=None,
+        alias="INTEGRATION_ENCRYPTION_KEY",
+    )
+
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_model: str = Field(
         default="qwen/qwen3-30b-a3b-instruct-2507",
@@ -58,17 +67,35 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("public_app_url")
+    @classmethod
+    def normalize_public_app_url(cls, value: str) -> str:
+        value = value.rstrip("/")
+        if not value.startswith("https://"):
+            raise ValueError("PUBLIC_APP_URL must use https")
+        return value
+
     @property
     def openrouter_configured(self) -> bool:
         return bool(self.openrouter_api_key and self.openrouter_model)
 
     @property
-    def gmail_configured(self) -> bool:
+    def gmail_legacy_configured(self) -> bool:
         return bool(
             self.gmail_client_id
             and self.gmail_client_secret
             and self.gmail_refresh_token
             and self.gmail_sender_email
+        )
+
+    @property
+    def gmail_oauth_configured(self) -> bool:
+        return bool(
+            self.gmail_client_id
+            and self.gmail_client_secret
+            and self.integration_encryption_key
+            and self.gmail_sender_email
+            and self.public_app_url
         )
 
     model_config = SettingsConfigDict(
