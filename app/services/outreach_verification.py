@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import requests
 from bs4 import BeautifulSoup
@@ -59,15 +59,19 @@ class OutreachClaimVerifier:
                     continue
                 final_url, html = live
 
-                if signal == "no_localbusiness_schema" and not self._has_localbusiness_schema(html):
-                    return VerifiedClaim(
-                        signal=signal,
-                        text=(
-                            "I noticed the homepage does not appear to include LocalBusiness schema markup."
-                        ),
-                        status="verified",
-                        note=f"Re-checked live homepage before drafting: {final_url}",
-                    )
+                if signal == "no_localbusiness_schema":
+                    schema_state = self._localbusiness_schema_state(html)
+                    if schema_state == "absent":
+                        return VerifiedClaim(
+                            signal=signal,
+                            text=(
+                                "I noticed the homepage does not appear to include LocalBusiness schema markup."
+                            ),
+                            status="verified",
+                            note=f"Re-checked live homepage before drafting: {final_url}",
+                        )
+                    if schema_state == "ambiguous":
+                        continue
 
                 if signal == "no_title" and not self._has_title(html):
                     return VerifiedClaim(
@@ -112,22 +116,14 @@ class OutreachClaimVerifier:
         return bool(soup.title and soup.title.get_text(strip=True))
 
     @staticmethod
-    def _has_localbusiness_schema(html: str) -> bool:
-        soup = BeautifulSoup(html, "html.parser")
-        for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
-            raw = script.string or script.get_text()
-            if not raw.strip():
-                continue
-            try:
-                payload = json.loads(raw)
-            except (TypeError, ValueError, json.JSONDecodeError):
-                continue
-            if OutreachClaimVerifier._contains_localbusiness_type(payload):
-                return True
-        return False
+    def _localbusiness_schema_state(
+        html: str,
+    ) -> Literal["present", "absent", "ambiguous"]:
+        """Return a conservative assessment of homepage JSON-LD.
 
-    @staticmethod
-    def _contains_localbusiness_type(value: Any) -> bool:
+        Unknown or malformed structured-data types are treated as ambiguous so
+        they can never become evidence for a cold-outreach claim.
+        """
         local_types = {
             "LocalBusiness",
             "ProfessionalService",
@@ -137,19 +133,86 @@ class OutreachClaimVerifier:
             "HVACBusiness",
             "RoofingContractor",
             "GeneralContractor",
+            "HousePainter",
+            "Locksmith",
+            "MovingCompany",
+            "AutoRepair",
+            "AutoBodyShop",
+            "Dentist",
+            "LegalService",
+            "RealEstateAgent",
+            "MedicalBusiness",
+            "HealthAndBeautyBusiness",
+            "Store",
+            "FoodEstablishment",
+            "LodgingBusiness",
         }
+        neutral_types = {
+            "WebSite",
+            "WebPage",
+            "CollectionPage",
+            "AboutPage",
+            "ContactPage",
+            "FAQPage",
+            "ItemList",
+            "BreadcrumbList",
+            "Organization",
+            "Corporation",
+            "Person",
+            "ImageObject",
+            "VideoObject",
+            "Article",
+            "BlogPosting",
+            "Product",
+            "Offer",
+            "Service",
+            "SearchAction",
+            "EntryPoint",
+        }
+
+        soup = BeautifulSoup(html, "html.parser")
+        scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
+        if not scripts:
+            return "absent"
+
+        saw_valid_payload = False
+        saw_ambiguous = False
+
+        for script in scripts:
+            raw = script.string or script.get_text()
+            if not raw.strip():
+                continue
+            try:
+                payload = json.loads(raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                saw_ambiguous = True
+                continue
+
+            saw_valid_payload = True
+            schema_types = OutreachClaimVerifier._collect_schema_types(payload)
+            if schema_types & local_types:
+                return "present"
+            if schema_types - neutral_types:
+                saw_ambiguous = True
+
+        if saw_ambiguous:
+            return "ambiguous"
+        if saw_valid_payload:
+            return "absent"
+        return "ambiguous"
+
+    @staticmethod
+    def _collect_schema_types(value: Any) -> set[str]:
+        found: set[str] = set()
         if isinstance(value, dict):
             raw_type = value.get("@type")
-            types = raw_type if isinstance(raw_type, list) else [raw_type]
-            if any(item in local_types for item in types):
-                return True
-            return any(
-                OutreachClaimVerifier._contains_localbusiness_type(item)
-                for item in value.values()
-            )
-        if isinstance(value, list):
-            return any(
-                OutreachClaimVerifier._contains_localbusiness_type(item)
-                for item in value
-            )
-        return False
+            if isinstance(raw_type, str):
+                found.add(raw_type)
+            elif isinstance(raw_type, list):
+                found.update(item for item in raw_type if isinstance(item, str))
+            for item in value.values():
+                found.update(OutreachClaimVerifier._collect_schema_types(item))
+        elif isinstance(value, list):
+            for item in value:
+                found.update(OutreachClaimVerifier._collect_schema_types(item))
+        return found
