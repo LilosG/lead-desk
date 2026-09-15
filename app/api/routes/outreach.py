@@ -4,8 +4,8 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import get_settings
 from app.core.database import pool
-from app.integrations.gmail import GmailDraftClient
 from app.integrations.openrouter import OpenRouterClient
+from app.repositories.integrations import IntegrationRepository
 from app.repositories.outreach import OutreachRepository
 from app.schemas.outreach import (
     OutreachCreate,
@@ -13,6 +13,7 @@ from app.schemas.outreach import (
     OutreachUpdate,
     OutreachVersionAction,
 )
+from app.services.integrations import GmailIntegrationService, IntegrationConfigurationError
 from app.services.outreach import (
     OutreachBlocked,
     OutreachConflict,
@@ -34,13 +35,13 @@ def get_service() -> OutreachService:
         )
 
     gmail = None
-    if settings.gmail_configured:
-        gmail = GmailDraftClient(
-            client_id=settings.gmail_client_id or '',
-            client_secret=settings.gmail_client_secret or '',
-            refresh_token=settings.gmail_refresh_token or '',
-            sender_email=settings.gmail_sender_email,
-        )
+    try:
+        gmail = GmailIntegrationService(
+            IntegrationRepository(pool),
+            settings,
+        ).gmail_client()
+    except IntegrationConfigurationError:
+        gmail = None
 
     return OutreachService(
         OutreachRepository(pool),
