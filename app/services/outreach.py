@@ -8,7 +8,7 @@ from app.repositories.outreach import OutreachOperationLocked, OutreachRepositor
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v3"
+PROMPT_VERSION = "outreach-v4"
 CAN_SPAM_FOOTER = (
     "Mike\n"
     "LILOs Growth\n"
