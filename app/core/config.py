@@ -52,8 +52,10 @@ class Settings(BaseSettings):
     @classmethod
     def validate_openrouter_model(cls, value: str) -> str:
         if value not in APPROVED_OPENROUTER_MODELS:
-            allowed = ", ".join(sorted(APPROVED_OPENROUTER_MODELS))
-            raise ValueError(f"OPENROUTER_MODEL must be one of: {allowed}")
+            approved = ", ".join(sorted(APPROVED_OPENROUTER_MODELS))
+            raise ValueError(
+                f"OPENROUTER_MODEL must be an approved model: {approved}"
+            )
         return value
 
     @property
