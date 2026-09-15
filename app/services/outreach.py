@@ -141,10 +141,17 @@ class OutreachService:
             raise OutreachConflict('outreach item changed since it was loaded')
         if context['channel'] != 'email':
             raise OutreachBlocked('AI draft generation is currently available for email only')
-        if context.get('gmail_draft_id'):
+
+        current = self.repository.get_item(item_id)
+        if current is None:
+            return None
+        if current['version'] != expected_version:
+            raise OutreachConflict('outreach item changed since it was loaded')
+        if current.get('gmail_draft_id'):
             raise OutreachBlocked(
                 'a Gmail draft already exists for this queue item; create a new queue item before regenerating'
             )
+
         if not context.get('to_address'):
             raise OutreachBlocked('email queue item has no recipient address')
         if self.repository.is_suppressed(context['to_address']):
