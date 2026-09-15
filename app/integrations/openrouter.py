@@ -43,33 +43,115 @@ class OpenRouterClient:
         vertical: str | None,
         verified_claim: str | None,
     ) -> GeneratedCopy:
-        # City and vertical are deliberately NOT supplied to the language model.
-        # They are useful operational metadata, but letting the model see them
-        # encouraged prospect-list phrasing such as "checking out electricians
-        # in Oceanside." The first-touch note should be anchored to this one
-        # business and the one application-verified finding only.
+        # City and vertical are deliberately excluded from model context. They
+        # are operational metadata, not recipient-facing personalization.
         facts = {
             "business_name": business_name,
             "verified_claim_available": bool(verified_claim),
         }
-        system = f"""
+        system = self._system_prompt()
+        user = (
+            "Write one restrained, genuinely human note using only these facts:\n"
+            + json.dumps(facts, ensure_ascii=False)
+        )
+
+        subject, body = self._request_copy(
+            system=system,
+            user=user,
+            temperature=0.45,
+        )
+        subject, body = self._ensure_finding_slot(
+            subject=subject,
+            body=body,
+            system=system,
+            user=user,
+            has_verified_claim=bool(verified_claim),
+        )
+
+        try:
+            self._validate_copy(
+                subject=subject,
+                body=body,
+                has_verified_claim=bool(verified_claim),
+                business_name=business_name,
+                city=city,
+                vertical=vertical,
+            )
+        except OpenRouterError as exc:
+            # One quality-repair pass is allowed. Model noncompliance should not
+            # leak into a draft as invented personalization or unsupported impact.
+            repair_user = (
+                user
+                + "\n\nThe previous draft violated this constraint: "
+                + str(exc)
+                + ". Rewrite it from scratch. Before the verified-finding token, "
+                + "you may only greet the recipient and neutrally say you looked at this business's site. "
+                + "Do not mention any page detail, service area, service, hours, reviews, contact information, "
+                + "or anything else you observed. The verified token is the ONLY finding. After the token, "
+                + "do not add a benefit, consequence, prediction, or second observation."
+            )
+            subject, body = self._request_copy(
+                system=system,
+                user=repair_user,
+                temperature=0.15,
+            )
+            subject, body = self._ensure_finding_slot(
+                subject=subject,
+                body=body,
+                system=system,
+                user=repair_user,
+                has_verified_claim=bool(verified_claim),
+            )
+            try:
+                self._validate_copy(
+                    subject=subject,
+                    body=body,
+                    has_verified_claim=bool(verified_claim),
+                    business_name=business_name,
+                    city=city,
+                    vertical=vertical,
+                )
+            except OpenRouterError:
+                subject, body = self._safe_fallback(
+                    business_name=business_name,
+                    has_verified_claim=bool(verified_claim),
+                )
+                self._validate_copy(
+                    subject=subject,
+                    body=body,
+                    has_verified_claim=bool(verified_claim),
+                    business_name=business_name,
+                    city=city,
+                    vertical=vertical,
+                )
+
+        return GeneratedCopy(
+            subject=subject,
+            body=body,
+            model=self.model,
+        )
+
+    @staticmethod
+    def _system_prompt() -> str:
+        return f"""
 You write one short first-touch email from Mike at LILOs Growth to one real local business owner.
 
 This must feel like Mike personally opened this specific business's website/profile and sent a normal note. It must NOT read like a cold-email sequence, lead-gen template, audit pitch, prospecting list, mail merge, or AI copy.
 
-Use only the supplied business name and the existence of one verified finding. Do not invent a contact name, relationship, result, urgency, customer impact, ranking impact, revenue impact, or any second finding. Do not imply Mike was browsing, comparing, researching, or "checking out" other businesses in the same industry or city.
+Use only the supplied business name and the existence of one verified finding. Do not invent a contact name, relationship, result, urgency, customer impact, ranking impact, revenue impact, or ANY second finding. Do not imply Mike was browsing, comparing, researching, or checking out other businesses.
 
-The verified finding itself is controlled by the application. If verified_claim_available is true, place the exact token {CLAIM_TOKEN} exactly once inside the body where the observation naturally belongs. Do not explain or paraphrase the token. Do not add a benefit, harm, prediction, significance claim, or consequence before or after it. The application replaces it after generation. If no verified finding is available, do not use the token.
+The verified finding itself is controlled by the application. If verified_claim_available is true, place the exact token {CLAIM_TOKEN} exactly once in the body. That token is the ONLY website/profile observation you are allowed to make. Do not describe any service area, service, page, contact detail, hours, review, content, design, or other site detail before or after the token. Do not explain or paraphrase the token. Do not add a benefit, harm, prediction, significance claim, or consequence. If no verified finding is available, do not use the token.
 
-Write the WHOLE note as one coherent message. Do not output separate intro / finding / CTA blocks.
+The words before the token may do only two things: greet the recipient and neutrally state that Mike looked at this business's site/profile. Nothing else. Put the token early in the note, no later than the first substantive paragraph.
+
+Write the WHOLE note as one coherent message. Do not output separate intro / finding / CTA fields.
 
 STYLE:
 - Subject should usually just be the business name, or at most the business name plus one ordinary word such as "website". No city, industry, urgency, or sales language.
 - Body: 30-65 words before Mike's signature/footer, usually 2 short paragraphs.
 - A simple "Hi," is fine, but do not use fake familiarity.
 - Use contractions and normal spoken business English.
-- Outside the verified-finding token, the only business-specific factual statement you may make is that Mike looked at the business's site/profile.
-- The closing should be incidental and concrete: offer to point to the exact spot, send a screenshot, or leave it there. Do not pitch services, predict an outcome, or explain why the finding matters.
+- The closing should be incidental and concrete: offer to point to the exact spot, send a screenshot, or leave it there. Do not pitch services or explain why the finding matters.
 - Vary syntax naturally. Do not force the same opening or closing pattern every time.
 - Plain text only.
 
@@ -86,47 +168,33 @@ Do not include Mike's name, company, postal address, opt-out language, or a sign
 
 Return JSON only with string keys "subject" and "body".
 """.strip()
-        user = (
-            "Write one restrained, genuinely human note using only these facts:\n"
-            + json.dumps(facts, ensure_ascii=False)
-        )
 
+    def _ensure_finding_slot(
+        self,
+        *,
+        subject: str,
+        body: str,
+        system: str,
+        user: str,
+        has_verified_claim: bool,
+    ) -> tuple[str, str]:
+        if not has_verified_claim or body.count(CLAIM_TOKEN) == 1:
+            return subject, body
+
+        repair_user = (
+            user
+            + "\n\nYour previous draft omitted or altered the required verified-finding slot. "
+            + f"Rewrite the note and include the exact literal token {CLAIM_TOKEN} exactly once. "
+            + "Do not paraphrase it, quote it, add a consequence, or add another finding."
+        )
         subject, body = self._request_copy(
             system=system,
-            user=user,
-            temperature=0.45,
+            user=repair_user,
+            temperature=0.2,
         )
-
-        if verified_claim and body.count(CLAIM_TOKEN) != 1:
-            repair_user = (
-                user
-                + "\n\nYour previous draft omitted or altered the required verified-finding slot. "
-                + f"Rewrite the note and include the exact literal token {CLAIM_TOKEN} exactly once. "
-                + "Do not paraphrase it, quote it, add a consequence, or add another finding."
-            )
-            subject, body = self._request_copy(
-                system=system,
-                user=repair_user,
-                temperature=0.2,
-            )
-
-        if verified_claim and body.count(CLAIM_TOKEN) != 1:
+        if body.count(CLAIM_TOKEN) != 1:
             body = self._insert_verified_finding_slot(body)
-
-        self._validate_copy(
-            subject=subject,
-            body=body,
-            has_verified_claim=bool(verified_claim),
-            business_name=business_name,
-            city=city,
-            vertical=vertical,
-        )
-
-        return GeneratedCopy(
-            subject=subject,
-            body=body,
-            model=self.model,
-        )
+        return subject, body
 
     def _request_copy(
         self,
@@ -179,13 +247,6 @@ Return JSON only with string keys "subject" and "body".
 
     @staticmethod
     def _insert_verified_finding_slot(body: str) -> str:
-        """Guarantee the immutable finding slot without surfacing model-format errors.
-
-        The model gets one repair attempt first. If it still omits the token,
-        insert the token after the first complete sentence in the first real
-        content paragraph. This keeps the finding inside the note rather than
-        falling back to a fixed intro/finding/CTA template.
-        """
         cleaned = body.replace(CLAIM_TOKEN, "").strip()
         paragraphs = [part.strip() for part in re.split(r"\n\s*\n", cleaned) if part.strip()]
         if not paragraphs:
@@ -213,6 +274,23 @@ Return JSON only with string keys "subject" and "body".
         return "\n\n".join(paragraphs)
 
     @staticmethod
+    def _safe_fallback(*, business_name: str, has_verified_claim: bool) -> tuple[str, str]:
+        subject = business_name
+        if has_verified_claim:
+            body = (
+                f"Hi,\n\nI was on {business_name}'s website earlier. {CLAIM_TOKEN}\n\n"
+                "If you want, I can point to the exact place I'm referring to or send a screenshot. "
+                "No need to reply if it's already on your list."
+            )
+        else:
+            body = (
+                f"Hi,\n\nI was on {business_name}'s website earlier. "
+                "If you want, I can send over the specific thing I was looking at. "
+                "No need to reply if it's already on your list."
+            )
+        return subject, body
+
+    @staticmethod
     def _validate_copy(
         *,
         subject: str,
@@ -236,6 +314,40 @@ Return JSON only with string keys "subject" and "body".
             raise OpenRouterError("Generated body did not preserve the verified finding slot")
         if not has_verified_claim and token_count:
             raise OpenRouterError("Generated body inserted an unsupported finding slot")
+
+        if has_verified_claim:
+            prefix = body.split(CLAIM_TOKEN, 1)[0].lower()
+            # Before the immutable finding, the model may only establish that
+            # Mike looked at this business's site. Any separate observation is
+            # unverified personalization and must be rejected.
+            unverified_observation_terms = (
+                "noticed",
+                "saw ",
+                "found ",
+                "spotted",
+                "specific about",
+                "service area",
+                "services are",
+                "listed",
+                "hours",
+                "reviews",
+                "contact page",
+                "contact info",
+                "pricing",
+                "menu",
+                "photos",
+                "content",
+                "design",
+            )
+            if any(term in prefix for term in unverified_observation_terms):
+                raise OpenRouterError(
+                    "Generated copy introduced an unverified observation before the verified finding"
+                )
+            prefix_words = len(prefix.replace("hi,", "").replace("hello,", "").split())
+            if prefix_words > 24:
+                raise OpenRouterError(
+                    "Generated copy delayed the verified finding behind unsupported setup language"
+                )
 
         combined = f"{subject}\n{body}"
         lowered = combined.lower()
