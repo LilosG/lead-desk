@@ -62,6 +62,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Dependency security audit
+        run: npm audit --audit-level=high
+
       - name: Astro validation
         run: npm run check
 
