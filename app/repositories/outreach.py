@@ -4,6 +4,10 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 
+class OutreachOperationLocked(RuntimeError):
+    pass
+
+
 class OutreachRepository:
     def __init__(self, pool: ConnectionPool):
         self.pool = pool
@@ -74,11 +78,22 @@ class OutreachRepository:
                 q.claim_signal,
                 q.verification_status,
                 q.verification_note,
+                q.generation_model,
+                q.generation_prompt_version,
+                q.draft_generated_at,
+                q.gmail_draft_id,
+                q.gmail_message_id,
+                q.gmail_draft_created_at,
                 exists (
                     select 1
                     from suppression s
                     where lower(s.email) = lower(coalesce(q.to_address, we.emails_found[1], ''))
                 ) as suppressed,
+                exists (
+                    select 1
+                    from gmail_draft_operations gdo
+                    where gdo.queue_id = q.id and gdo.state = 'pending'
+                ) as gmail_draft_pending,
                 coalesce(f.needs_manual_check, false) as needs_manual_check,
                 q.version,
                 q.created_at,
@@ -127,6 +142,60 @@ class OutreachRepository:
                 cur.execute(query, (place_id,))
                 return cur.fetchone()
 
+    def draft_context(self, item_id: str) -> dict[str, Any] | None:
+        query = """
+            select
+                q.id::text as id,
+                q.place_id,
+                q.channel,
+                q.status,
+                q.to_address,
+                q.version,
+                b.name,
+                b.city,
+                b.vertical,
+                b.website_url,
+                w.headline_gap,
+                w.total_score,
+                w.tier,
+                we.resolved_url,
+                we.contact_page_url,
+                we.crawl_error,
+                coalesce(f.needs_manual_check, false) as needs_manual_check
+            from outreach_queue q
+            join businesses b on b.place_id = q.place_id
+            left join v_lead_worklist w on w.place_id = q.place_id
+            left join website_enrichment we on we.place_id = q.place_id
+            left join v_lead_findings f on f.place_id = q.place_id
+            where q.id = %s::uuid
+        """
+        findings_query = """
+            select signal, finding, observed, severity, points
+            from v_lead_audit_detail
+            where place_id = %s
+            order by
+                case severity
+                    when 'critical' then 1
+                    when 'high' then 2
+                    when 'medium' then 3
+                    when 'low' then 4
+                    else 5
+                end,
+                points desc,
+                signal
+            limit 12
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (item_id,))
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                result = dict(row)
+                cur.execute(findings_query, (row['place_id'],))
+                result['findings'] = cur.fetchall()
+                return result
+
     def is_suppressed(self, email: str | None) -> bool:
         if not email:
             return False
@@ -137,35 +206,50 @@ class OutreachRepository:
                 return cur.fetchone() is not None
 
     def create_item(self, place_id: str, channel: str, to_address: str | None) -> dict[str, Any]:
-        query = """
+        insert_query = """
             insert into outreach_queue (place_id, channel, to_address)
             values (%s, %s, %s)
-            on conflict (place_id, channel) do update
-            set to_address = coalesce(excluded.to_address, outreach_queue.to_address),
-                updated_at = now()
+            on conflict (place_id, channel) do nothing
             returning id::text as id, place_id, channel, status, to_address,
                       subject, body, claim_signal, verification_status,
                       verification_note, version, created_at, updated_at
         """
+        select_query = """
+            select id::text as id, place_id, channel, status, to_address,
+                   subject, body, claim_signal, verification_status,
+                   verification_note, version, created_at, updated_at
+            from outreach_queue
+            where place_id = %s and channel = %s
+        """
         with self.pool.connection() as conn:
             with conn.transaction():
                 with conn.cursor() as cur:
-                    cur.execute(query, (place_id, channel, to_address))
+                    cur.execute(insert_query, (place_id, channel, to_address))
                     row = cur.fetchone()
-                    cur.execute(
-                        """
-                        insert into outreach_queue_events (queue_id, place_id, event_type, changes)
-                        values (%s::uuid, %s, 'queued', %s)
-                        """,
-                        (row['id'], place_id, Jsonb({'channel': channel, 'to_address': to_address})),
-                    )
-        return row
+                    if row is not None:
+                        cur.execute(
+                            """
+                            insert into outreach_queue_events (queue_id, place_id, event_type, changes)
+                            values (%s::uuid, %s, 'queued', %s)
+                            """,
+                            (row['id'], place_id, Jsonb({'channel': channel, 'to_address': to_address})),
+                        )
+                        return row
+
+                    # Queue creation is idempotent. Existing rows are never
+                    # silently mutated by a second create request; edits go
+                    # through the versioned update path.
+                    cur.execute(select_query, (place_id, channel))
+                    return cur.fetchone()
 
     def get_item(self, item_id: str) -> dict[str, Any] | None:
         query = """
             select id::text as id, place_id, channel, status, to_address,
                    subject, body, claim_signal, verification_status,
-                   verification_note, version, created_at, updated_at
+                   verification_note, generation_model,
+                   generation_prompt_version, draft_generated_at,
+                   gmail_draft_id, gmail_message_id, gmail_draft_created_at,
+                   version, created_at, updated_at
             from outreach_queue
             where id = %s::uuid
         """
@@ -173,6 +257,36 @@ class OutreachRepository:
             with conn.cursor() as cur:
                 cur.execute(query, (item_id,))
                 return cur.fetchone()
+
+    def has_pending_gmail_operation(self, item_id: str) -> bool:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select 1
+                    from gmail_draft_operations
+                    where queue_id = %s::uuid and state = 'pending'
+                    limit 1
+                    """,
+                    (item_id,),
+                )
+                return cur.fetchone() is not None
+
+    @staticmethod
+    def _assert_no_pending_gmail_operation(cur, item_id: str) -> None:
+        cur.execute(
+            """
+            select 1
+            from gmail_draft_operations
+            where queue_id = %s::uuid and state = 'pending'
+            limit 1
+            """,
+            (item_id,),
+        )
+        if cur.fetchone() is not None:
+            raise OutreachOperationLocked(
+                'outreach item is locked while Gmail draft creation is being reconciled'
+            )
 
     def update_item(self, item_id: str, *, changes: dict[str, Any], expected_version: int) -> tuple[dict[str, Any] | None, bool]:
         editable = {
@@ -200,6 +314,7 @@ class OutreachRepository:
                         return None, False
                     if current['version'] != expected_version:
                         return current, True
+                    self._assert_no_pending_gmail_operation(cur, item_id)
 
                     state = dict(current)
                     state.update(safe)
@@ -214,6 +329,9 @@ class OutreachRepository:
                         returning id::text as id, place_id, channel, status,
                                   to_address, subject, body, claim_signal,
                                   verification_status, verification_note,
+                                  generation_model, generation_prompt_version,
+                                  draft_generated_at, gmail_draft_id,
+                                  gmail_message_id, gmail_draft_created_at,
                                   version, created_at, updated_at
                         """,
                         (
@@ -232,3 +350,318 @@ class OutreachRepository:
                         (item_id, updated['place_id'], Jsonb(safe)),
                     )
         return updated, False
+
+    def record_generated_draft(
+        self,
+        item_id: str,
+        *,
+        expected_version: int,
+        subject: str,
+        body: str,
+        claim_signal: str | None,
+        verification_status: str,
+        verification_note: str,
+        generation_model: str,
+        prompt_version: str,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        select id::text as id, place_id, version
+                        from outreach_queue
+                        where id = %s::uuid
+                        for update
+                        """,
+                        (item_id,),
+                    )
+                    current = cur.fetchone()
+                    if current is None:
+                        return None, False
+                    if current['version'] != expected_version:
+                        return current, True
+                    self._assert_no_pending_gmail_operation(cur, item_id)
+
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set subject = %s,
+                            body = %s,
+                            claim_signal = %s,
+                            verification_status = %s,
+                            verification_note = %s,
+                            status = 'review_required',
+                            generation_model = %s,
+                            generation_prompt_version = %s,
+                            draft_generated_at = now(),
+                            gmail_draft_id = null,
+                            gmail_message_id = null,
+                            gmail_draft_created_at = null,
+                            version = version + 1,
+                            updated_at = now()
+                        where id = %s::uuid
+                        returning id::text as id, place_id, channel, status,
+                                  to_address, subject, body, claim_signal,
+                                  verification_status, verification_note,
+                                  generation_model, generation_prompt_version,
+                                  draft_generated_at, gmail_draft_id,
+                                  gmail_message_id, gmail_draft_created_at,
+                                  version, created_at, updated_at
+                        """,
+                        (
+                            subject,
+                            body,
+                            claim_signal,
+                            verification_status,
+                            verification_note,
+                            generation_model,
+                            prompt_version,
+                            item_id,
+                        ),
+                    )
+                    updated = cur.fetchone()
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (queue_id, place_id, event_type, changes)
+                        values (%s::uuid, %s, 'draft_generated', %s)
+                        """,
+                        (
+                            item_id,
+                            updated['place_id'],
+                            Jsonb({
+                                'claim_signal': claim_signal,
+                                'verification_status': verification_status,
+                                'generation_model': generation_model,
+                                'prompt_version': prompt_version,
+                            }),
+                        ),
+                    )
+        return updated, False
+
+    def begin_gmail_draft_operation(
+        self,
+        item_id: str,
+        *,
+        expected_version: int,
+        message_id_header: str,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        """Persist intent before the external Gmail side effect.
+
+        Returns (operation, version_conflict). Existing operations for the same
+        queue/version are returned instead of creating a second side effect.
+        """
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        select id::text as id, place_id, version, gmail_draft_id
+                        from outreach_queue
+                        where id = %s::uuid
+                        for update
+                        """,
+                        (item_id,),
+                    )
+                    current = cur.fetchone()
+                    if current is None:
+                        return None, False
+                    if current['version'] != expected_version:
+                        return {'queue_version': current['version']}, True
+
+                    cur.execute(
+                        """
+                        select id::text as id, queue_id::text as queue_id,
+                               queue_version, message_id_header, state,
+                               gmail_draft_id, gmail_message_id, error_message,
+                               created_at, updated_at, completed_at
+                        from gmail_draft_operations
+                        where queue_id = %s::uuid and queue_version = %s
+                        order by created_at desc
+                        limit 1
+                        """,
+                        (item_id, expected_version),
+                    )
+                    existing = cur.fetchone()
+                    if existing is not None:
+                        operation = dict(existing)
+                        operation['created_now'] = False
+                        return operation, False
+
+                    if current.get('gmail_draft_id'):
+                        raise OutreachOperationLocked('a Gmail draft already exists for this queue item')
+
+                    cur.execute(
+                        """
+                        insert into gmail_draft_operations (
+                            queue_id, queue_version, message_id_header
+                        ) values (%s::uuid, %s, %s)
+                        returning id::text as id, queue_id::text as queue_id,
+                                  queue_version, message_id_header, state,
+                                  gmail_draft_id, gmail_message_id, error_message,
+                                  created_at, updated_at, completed_at
+                        """,
+                        (item_id, expected_version, message_id_header),
+                    )
+                    operation = dict(cur.fetchone())
+                    operation['created_now'] = True
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (queue_id, place_id, event_type, changes)
+                        values (%s::uuid, %s, 'gmail_draft_pending', %s)
+                        """,
+                        (
+                            item_id,
+                            current['place_id'],
+                            Jsonb({
+                                'operation_id': operation['id'],
+                                'message_id_header': message_id_header,
+                                'queue_version': expected_version,
+                            }),
+                        ),
+                    )
+                    return operation, False
+
+    def reopen_gmail_draft_operation(self, operation_id: str) -> dict[str, Any] | None:
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        update gmail_draft_operations
+                        set state = 'pending', error_message = null, updated_at = now()
+                        where id = %s::uuid and state = 'failed'
+                        returning id::text as id, queue_id::text as queue_id,
+                                  queue_version, message_id_header, state,
+                                  gmail_draft_id, gmail_message_id, error_message,
+                                  created_at, updated_at, completed_at
+                        """,
+                        (operation_id,),
+                    )
+                    return cur.fetchone()
+
+    def record_gmail_operation_error(
+        self,
+        operation_id: str,
+        *,
+        error_message: str,
+        uncertain: bool,
+    ) -> None:
+        state = 'pending' if uncertain else 'failed'
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        update gmail_draft_operations
+                        set state = %s, error_message = %s, updated_at = now()
+                        where id = %s::uuid and state <> 'created'
+                        """,
+                        (state, error_message[:1000], operation_id),
+                    )
+
+    def complete_gmail_draft_operation(
+        self,
+        operation_id: str,
+        *,
+        draft_id: str,
+        message_id: str | None,
+    ) -> dict[str, Any] | None:
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        select id::text as id, queue_id::text as queue_id,
+                               queue_version, message_id_header, state,
+                               gmail_draft_id, gmail_message_id
+                        from gmail_draft_operations
+                        where id = %s::uuid
+                        for update
+                        """,
+                        (operation_id,),
+                    )
+                    operation = cur.fetchone()
+                    if operation is None:
+                        return None
+
+                    cur.execute(
+                        """
+                        select id::text as id, place_id, channel, status,
+                               to_address, subject, body, claim_signal,
+                               verification_status, verification_note,
+                               generation_model, generation_prompt_version,
+                               draft_generated_at, gmail_draft_id,
+                               gmail_message_id, gmail_draft_created_at,
+                               version, created_at, updated_at
+                        from outreach_queue
+                        where id = %s::uuid
+                        for update
+                        """,
+                        (operation['queue_id'],),
+                    )
+                    current = cur.fetchone()
+                    if current is None:
+                        return None
+
+                    if operation['state'] == 'created':
+                        return current
+                    if operation['state'] != 'pending':
+                        raise OutreachOperationLocked(
+                            'Gmail draft operation is not pending and cannot be completed'
+                        )
+
+                    # The queue is locked against edits while an operation is
+                    # pending, so the payload associated with queue_version is
+                    # still the exact payload that was sent to Gmail.
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set gmail_draft_id = %s,
+                            gmail_message_id = %s,
+                            gmail_draft_created_at = now(),
+                            version = version + 1,
+                            updated_at = now()
+                        where id = %s::uuid
+                        returning id::text as id, place_id, channel, status,
+                                  to_address, subject, body, claim_signal,
+                                  verification_status, verification_note,
+                                  generation_model, generation_prompt_version,
+                                  draft_generated_at, gmail_draft_id,
+                                  gmail_message_id, gmail_draft_created_at,
+                                  version, created_at, updated_at
+                        """,
+                        (draft_id, message_id, operation['queue_id']),
+                    )
+                    updated = cur.fetchone()
+
+                    cur.execute(
+                        """
+                        update gmail_draft_operations
+                        set state = 'created',
+                            gmail_draft_id = %s,
+                            gmail_message_id = %s,
+                            error_message = null,
+                            completed_at = now(),
+                            updated_at = now()
+                        where id = %s::uuid
+                        """,
+                        (draft_id, message_id, operation_id),
+                    )
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (queue_id, place_id, event_type, changes)
+                        values (%s::uuid, %s, 'gmail_draft_created', %s)
+                        """,
+                        (
+                            operation['queue_id'],
+                            updated['place_id'],
+                            Jsonb({
+                                'operation_id': operation_id,
+                                'gmail_draft_id': draft_id,
+                                'gmail_message_id': message_id,
+                                'message_id_header': operation['message_id_header'],
+                            }),
+                        ),
+                    )
+                    return updated

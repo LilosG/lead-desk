@@ -2,17 +2,59 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.core.config import get_settings
 from app.core.database import pool
+from app.integrations.openrouter import OpenRouterClient
+from app.repositories.integrations import IntegrationRepository
 from app.repositories.outreach import OutreachRepository
-from app.schemas.outreach import OutreachCreate, OutreachQueueResponse, OutreachUpdate
-from app.services.outreach import OutreachBlocked, OutreachConflict, OutreachService
+from app.schemas.outreach import (
+    OutreachCreate,
+    OutreachQueueResponse,
+    OutreachUpdate,
+    OutreachVersionAction,
+)
+from app.services.integrations import GmailIntegrationService, IntegrationConfigurationError
+from app.services.outreach import (
+    OutreachBlocked,
+    OutreachConflict,
+    OutreachIntegrationUnavailable,
+    OutreachService,
+)
 
 
 router = APIRouter(prefix='/api/outreach', tags=['outreach'])
 
 
 def get_service() -> OutreachService:
-    return OutreachService(OutreachRepository(pool))
+    settings = get_settings()
+    generator = None
+    if settings.openrouter_configured:
+        generator = OpenRouterClient(
+            api_key=settings.openrouter_api_key or '',
+            model=settings.openrouter_model,
+        )
+
+    gmail = None
+    try:
+        gmail = GmailIntegrationService(
+            IntegrationRepository(pool),
+            settings,
+        ).gmail_client()
+    except IntegrationConfigurationError:
+        gmail = None
+
+    return OutreachService(
+        OutreachRepository(pool),
+        generator=generator,
+        gmail=gmail,
+        generation_model=settings.openrouter_model if generator else None,
+        gmail_sender_email=settings.gmail_sender_email if gmail else None,
+    )
+
+
+@router.get('/integrations')
+def integration_status() -> dict:
+    return get_service().integration_status()
 
 
 @router.get('/candidates')
@@ -60,6 +102,44 @@ def update_outreach(item_id: str, payload: OutreachUpdate) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OutreachBlocked as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if result is None:
+        raise HTTPException(status_code=404, detail='outreach item not found')
+    return result
+
+
+@router.post('/items/{item_id}/generate')
+def generate_outreach_draft(item_id: str, payload: OutreachVersionAction) -> dict:
+    try:
+        result = get_service().generate_draft(
+            item_id,
+            expected_version=payload.expected_version,
+        )
+    except OutreachConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OutreachBlocked as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OutreachIntegrationUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if result is None:
+        raise HTTPException(status_code=404, detail='outreach item not found')
+    return result
+
+
+@router.post('/items/{item_id}/gmail-draft')
+def create_gmail_draft(item_id: str, payload: OutreachVersionAction) -> dict:
+    try:
+        result = get_service().create_gmail_draft(
+            item_id,
+            expected_version=payload.expected_version,
+        )
+    except OutreachConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OutreachBlocked as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OutreachIntegrationUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     if result is None:
         raise HTTPException(status_code=404, detail='outreach item not found')

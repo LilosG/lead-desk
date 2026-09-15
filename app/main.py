@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import health, overview, prospects, runs
 from app.api.routes.auth import router as auth_router
+from app.api.routes.integrations import router as integrations_router
 from app.api.routes.outreach import router as outreach_router
 from app.api.routes.sweeps import router as sweeps_router
 from app.core.auth import session_from_request
@@ -39,6 +40,7 @@ PUBLIC_API_PATHS = {
     "/api/auth/login",
     "/api/auth/session",
     "/api/auth/logout",
+    "/api/integrations/gmail/callback",
 }
 
 
@@ -63,6 +65,7 @@ app.include_router(prospects.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(sweeps_router)
 app.include_router(outreach_router)
+app.include_router(integrations_router)
 
 
 @app.get("/", include_in_schema=False)
