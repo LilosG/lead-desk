@@ -8,6 +8,7 @@ APPROVED_OPENROUTER_MODELS = {
     "qwen/qwen3-30b-a3b-instruct-2507",
     "deepseek/deepseek-chat-v3.1",
     "anthropic/claude-haiku-4.5",
+    "openai/gpt-5-mini",
 }
 
 
