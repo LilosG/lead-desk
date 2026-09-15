@@ -42,6 +42,12 @@ def test_sweep_vertical_order_rejects_unknown_vertical():
         raise AssertionError("unknown vertical should be rejected")
 
 
+def test_text_search_pricing_matches_atmosphere_field_mask():
+    assert "places.reviews" in market_config.SEARCH_FIELD_MASK
+    assert market_config.COST_PER_1K["text_search_enterprise"] == 40.00
+    assert market_config.FREE_TIER_MONTHLY["enterprise"] == 1_000
+
+
 def test_operational_views_use_latest_completed_score_per_prospect():
     views = Path("sql/views.sql").read_text()
     migration = Path("sql/migrations/012_cumulative_market_inventory.sql").read_text()
