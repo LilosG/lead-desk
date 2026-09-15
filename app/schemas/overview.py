@@ -37,6 +37,7 @@ class OverviewResponse(BaseModel):
     confirmed_trading: int
     category_opportunity: int
     established: int
+    outreach_candidates: int
     manual_check: int
 
     established_emailable: int
