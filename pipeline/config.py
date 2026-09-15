@@ -61,7 +61,7 @@ SEARCH_FIELD_MASK = ",".join([
 
 # Cost model, verified Aug 2026. Per 1,000 requests, first volume tier.
 COST_PER_1K = {
-    "text_search_enterprise":   35.00,
+    "text_search_enterprise":   40.00,
     "text_search_pro":          32.00,
     "place_details_enterprise": 20.00,
     "place_details_pro":        17.00,
