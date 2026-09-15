@@ -12,7 +12,7 @@ def test_missing_verified_finding_slot_is_inserted_inside_note():
 
     assert repaired.count(CLAIM_TOKEN) == 1
     assert repaired.startswith("Hi,\n\nI was on Example Electric's site earlier")
-    assert "earlier. [[VERIFIED_FINDING]] If it's already on your list" in repaired
+    assert "mention. [[VERIFIED_FINDING]] If it's already on your list" in repaired
 
 
 def test_slot_repair_removes_duplicate_existing_tokens_before_inserting_one():
