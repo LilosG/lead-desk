@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -83,9 +84,53 @@ Return JSON only with string keys "subject" and "body".
             "Write one restrained, genuinely human note using only these facts:\n"
             + json.dumps(facts, ensure_ascii=False)
         )
+
+        subject, body = self._request_copy(
+            system=system,
+            user=user,
+            temperature=0.55,
+        )
+
+        if verified_claim and body.count(CLAIM_TOKEN) != 1:
+            repair_user = (
+                user
+                + "\n\nYour previous draft omitted or altered the required verified-finding slot. "
+                + f"Rewrite the note and include the exact literal token {CLAIM_TOKEN} exactly once. "
+                + "Do not paraphrase it, quote it, or add another finding."
+            )
+            subject, body = self._request_copy(
+                system=system,
+                user=repair_user,
+                temperature=0.2,
+            )
+
+        if verified_claim and body.count(CLAIM_TOKEN) != 1:
+            body = self._insert_verified_finding_slot(body)
+
+        self._validate_copy(
+            subject=subject,
+            body=body,
+            has_verified_claim=bool(verified_claim),
+            business_name=business_name,
+            city=city,
+        )
+
+        return GeneratedCopy(
+            subject=subject,
+            body=body,
+            model=self.model,
+        )
+
+    def _request_copy(
+        self,
+        *,
+        system: str,
+        user: str,
+        temperature: float,
+    ) -> tuple[str, str]:
         payload: dict[str, Any] = {
             "model": self.model,
-            "temperature": 0.55,
+            "temperature": temperature,
             "max_tokens": 220,
             "messages": [
                 {"role": "system", "content": system},
@@ -123,19 +168,42 @@ Return JSON only with string keys "subject" and "body".
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise OpenRouterError("OpenRouter returned an invalid draft payload") from exc
 
-        self._validate_copy(
-            subject=subject,
-            body=body,
-            has_verified_claim=bool(verified_claim),
-            business_name=business_name,
-            city=city,
-        )
+        return subject, body
 
-        return GeneratedCopy(
-            subject=subject,
-            body=body,
-            model=self.model,
-        )
+    @staticmethod
+    def _insert_verified_finding_slot(body: str) -> str:
+        """Guarantee the immutable finding slot without surfacing model-format errors.
+
+        The model gets one repair attempt first. If it still omits the token,
+        insert the token after the first complete sentence in the first real
+        content paragraph. This keeps the finding inside the note rather than
+        falling back to a fixed intro/finding/CTA template.
+        """
+        cleaned = body.replace(CLAIM_TOKEN, "").strip()
+        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", cleaned) if part.strip()]
+        if not paragraphs:
+            return CLAIM_TOKEN
+
+        target_index = 0
+        if paragraphs[0].lower().rstrip() in {"hi", "hi,", "hello", "hello,"} and len(paragraphs) > 1:
+            target_index = 1
+
+        target = paragraphs[target_index]
+        match = re.search(r"[.!?](?:\s|$)", target)
+        if match:
+            insert_at = match.end()
+            target = (
+                target[:insert_at].rstrip()
+                + " "
+                + CLAIM_TOKEN
+                + " "
+                + target[insert_at:].lstrip()
+            ).strip()
+        else:
+            target = f"{target} {CLAIM_TOKEN}".strip()
+
+        paragraphs[target_index] = target
+        return "\n\n".join(paragraphs)
 
     @staticmethod
     def _validate_copy(

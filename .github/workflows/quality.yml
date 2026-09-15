@@ -39,6 +39,7 @@ jobs:
           pytest -q \
             tests/app/test_integrations.py \
             tests/app/test_outreach_integrations.py \
+            tests/app/test_outreach_slot_repair.py \
             tests/app/test_sweep_request_validation.py \
             tests/app/test_market_inventory_contract.py
 
