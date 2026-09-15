@@ -84,6 +84,52 @@ const { place_id } = Astro.params;
           <section class="rounded-lg border border-[var(--line)] bg-white p-5">
             <div class="flex items-start justify-between gap-4">
               <div>
+                <div class="text-sm font-medium">Outreach readiness</div>
+                <div class="mt-1 text-xs text-[var(--muted)]">
+                  Centralized eligibility check before this prospect enters outreach.
+                </div>
+              </div>
+
+              <span
+                id="outreach-readiness-badge"
+                class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-medium"
+              >
+                Checking
+              </span>
+            </div>
+
+            <div
+              id="outreach-readiness-summary"
+              class="mt-4 text-sm leading-6"
+            ></div>
+
+            <div
+              id="outreach-readiness-signals"
+              class="mt-3 flex flex-wrap gap-1.5"
+            ></div>
+
+            <ul
+              id="outreach-readiness-reasons"
+              class="mt-3 space-y-1.5 text-xs leading-5 text-[var(--muted)]"
+            ></ul>
+
+            <div
+              id="outreach-readiness-error"
+              class="mt-3 hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+            ></div>
+
+            <button
+              id="outreach-readiness-action"
+              type="button"
+              class="mt-4 w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Queue for outreach
+            </button>
+          </section>
+
+          <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+            <div class="flex items-start justify-between gap-4">
+              <div>
                 <div class="text-sm font-medium">Workflow</div>
                 <div class="mt-1 text-xs text-[var(--muted)]">Human-controlled prospect state. Saving never sends outreach.</div>
               </div>
@@ -198,6 +244,19 @@ const { place_id } = Astro.params;
       created_at: string;
     };
 
+    type OutreachReadiness = {
+      eligible: boolean;
+      reasons: string[];
+      preferred_channel: 'email' | 'phone' | null;
+      review_count: number;
+      strong_review_base: boolean;
+      confirmed_trading: boolean;
+      established: boolean;
+      needs_manual_check: boolean;
+      suppressed: boolean;
+      already_queued: boolean;
+    };
+
     type ProspectDetail = {
       place_id: string;
       name: string | null;
@@ -297,12 +356,28 @@ const { place_id } = Astro.params;
         const placeId = root.dataset.placeId;
         if (!placeId) throw new Error('Prospect place ID is missing');
 
-        const response = await fetch(`/api/prospects/${encodeURIComponent(placeId)}`, {
-          headers: { Accept: 'application/json' },
-        });
-        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const [response, readinessResponse] = await Promise.all([
+          fetch(`/api/prospects/${encodeURIComponent(placeId)}`, {
+            headers: { Accept: 'application/json' },
+          }),
+          fetch(`/api/outreach/readiness/${encodeURIComponent(placeId)}`, {
+            headers: { Accept: 'application/json' },
+          }),
+        ]);
+
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+
+        if (!readinessResponse.ok) {
+          throw new Error(
+            `Readiness API returned ${readinessResponse.status}`,
+          );
+        }
 
         const data = (await response.json()) as ProspectDetail;
+        const readiness =
+          (await readinessResponse.json()) as OutreachReadiness;
         setText('#business-name', data.name);
         setText('#business-location', [data.city, data.state, data.vertical].filter(Boolean).join(' · '));
         setText('#detail-score', data.total_score);
@@ -327,6 +402,139 @@ const { place_id } = Astro.params;
         if (data.website_url) links.push(`<a href="${escapeHtml(data.website_url)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Website</a>`);
         if (data.google_maps_uri) links.push(`<a href="${escapeHtml(data.google_maps_uri)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Google Maps</a>`);
         required('#business-links').innerHTML = links.join('');
+
+        const readinessBadge =
+          required('#outreach-readiness-badge');
+
+        const readinessSummary =
+          required('#outreach-readiness-summary');
+
+        const readinessSignals =
+          required('#outreach-readiness-signals');
+
+        const readinessReasons =
+          required('#outreach-readiness-reasons');
+
+        const readinessAction =
+          required<HTMLButtonElement>('#outreach-readiness-action');
+
+        const readinessError =
+          required('#outreach-readiness-error');
+
+        readinessError.classList.add('hidden');
+
+        readinessSignals.innerHTML = [
+          readiness.strong_review_base
+            ? '<span class="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800">15+ reviews</span>'
+            : '',
+          readiness.confirmed_trading
+            ? '<span class="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-800">Confirmed trading</span>'
+            : '',
+          readiness.preferred_channel
+            ? `<span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium">${escapeHtml(readiness.preferred_channel)} ready</span>`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('');
+
+        if (readiness.already_queued) {
+          readinessBadge.textContent = 'Queued';
+
+          readinessBadge.className =
+            'rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-800';
+
+          readinessSummary.textContent =
+            'This prospect is already in the human-reviewed outreach workflow.';
+
+          readinessReasons.innerHTML = '';
+
+          readinessAction.disabled = false;
+          readinessAction.textContent = 'Open outreach queue';
+
+          readinessAction.onclick = () => {
+            window.location.href = '/outreach';
+          };
+        } else if (
+          readiness.eligible &&
+          readiness.preferred_channel
+        ) {
+          readinessBadge.textContent = 'Ready';
+
+          readinessBadge.className =
+            'rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800';
+
+          readinessSummary.textContent =
+            `Eligible for ${readiness.preferred_channel} outreach under the current viability contract.`;
+
+          readinessReasons.innerHTML = '';
+
+          readinessAction.disabled = false;
+
+          readinessAction.textContent =
+            `Queue ${readiness.preferred_channel} outreach`;
+
+          readinessAction.onclick = async () => {
+            readinessAction.disabled = true;
+            readinessError.classList.add('hidden');
+
+            try {
+              const queueResponse = await fetch(
+                `/api/outreach/${encodeURIComponent(placeId)}`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'content-type': 'application/json',
+                    Accept: 'application/json',
+                  },
+                  body: JSON.stringify({
+                    channel: readiness.preferred_channel,
+                  }),
+                },
+              );
+
+              const queueBody =
+                await queueResponse.json().catch(() => ({}));
+
+              if (!queueResponse.ok) {
+                throw new Error(
+                  queueBody.detail ||
+                    `API returned ${queueResponse.status}`,
+                );
+              }
+
+              window.location.href = '/outreach';
+            } catch (error) {
+              readinessError.textContent =
+                error instanceof Error
+                  ? error.message
+                  : 'Unable to queue prospect.';
+
+              readinessError.classList.remove('hidden');
+              readinessAction.disabled = false;
+            }
+          };
+        } else {
+          readinessBadge.textContent = 'Blocked';
+
+          readinessBadge.className =
+            'rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800';
+
+          readinessSummary.textContent =
+            'This prospect should not enter outreach yet.';
+
+          readinessReasons.innerHTML = readiness.reasons
+            .map(
+              (reason) =>
+                `<li>• ${escapeHtml(reason)}</li>`,
+            )
+            .join('');
+
+          readinessAction.disabled = true;
+          readinessAction.textContent =
+            'Not ready for outreach';
+
+          readinessAction.onclick = null;
+        }
 
         required('#findings').innerHTML = data.findings.length
           ? data.findings.map((finding) => `
