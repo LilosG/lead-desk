@@ -1,7 +1,10 @@
+from pydantic import ValidationError
+
 from app.integrations.gmail import GmailDraftResult
 from app.integrations.openrouter import GeneratedCopy
+from app.schemas.prospects import ProspectWorkflowUpdate
 from app.services.outreach import OutreachBlocked, OutreachService
-from app.services.outreach_verification import VerifiedClaim
+from app.services.outreach_verification import OutreachClaimVerifier, VerifiedClaim
 
 
 class FakeGenerator:
@@ -112,6 +115,25 @@ def test_generation_uses_verified_claim_and_deterministic_footer():
     assert repo.generated["generation_model"] == "test/model"
 
 
+def test_generation_blocks_when_gmail_draft_already_exists():
+    repo = FakeRepository()
+    repo.item["gmail_draft_id"] = "draft-existing"
+    service = OutreachService(
+        repo,
+        generator=FakeGenerator(),
+        verifier=FakeVerifier(),
+    )
+
+    try:
+        service.generate_draft(repo.item["id"], expected_version=1)
+    except OutreachBlocked as exc:
+        assert "Gmail draft already exists" in str(exc)
+    else:
+        raise AssertionError("expected regeneration after Gmail draft to be blocked")
+
+    assert repo.generated is None
+
+
 def test_gmail_creation_requires_human_ready_state_and_never_sends():
     repo = FakeRepository()
     repo.item.update({
@@ -164,3 +186,49 @@ def test_explicit_null_status_is_rejected_before_repository_write():
         assert "status cannot be null" in str(exc)
     else:
         raise AssertionError("expected null status to be rejected")
+
+
+def test_workflow_required_fields_reject_explicit_null():
+    for field_name in ("status", "priority"):
+        try:
+            ProspectWorkflowUpdate.model_validate({
+                field_name: None,
+                "expected_version": 0,
+            })
+        except ValidationError as exc:
+            assert f"{field_name} cannot be null" in str(exc)
+        else:
+            raise AssertionError(f"expected null {field_name} to be rejected")
+
+
+def test_schema_verifier_detects_known_localbusiness_type():
+    html = '''
+    <html><head>
+      <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Electrician","name":"Example Electric"}
+      </script>
+    </head></html>
+    '''
+    assert OutreachClaimVerifier._localbusiness_schema_state(html) == "present"
+
+
+def test_schema_verifier_treats_unknown_business_type_as_ambiguous():
+    html = '''
+    <html><head>
+      <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"SomeFutureLocalBusinessSubtype","name":"Example"}
+      </script>
+    </head></html>
+    '''
+    assert OutreachClaimVerifier._localbusiness_schema_state(html) == "ambiguous"
+
+
+def test_schema_verifier_only_calls_absent_when_safe():
+    html = '''
+    <html><head>
+      <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"WebSite","name":"Example"}
+      </script>
+    </head></html>
+    '''
+    assert OutreachClaimVerifier._localbusiness_schema_state(html) == "absent"
