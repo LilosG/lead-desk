@@ -10,6 +10,7 @@ from app.services.sweeps import (
     SweepExecutionDisabledError,
     SweepService,
 )
+from pipeline import config as market_config
 
 
 router = APIRouter(
@@ -32,12 +33,20 @@ class SweepCreateRequest(BaseModel):
         if value is None:
             return None
 
+        configured_by_lower = {
+            city.lower(): city
+            for city in market_config.TARGET_CITIES
+        }
+        geo_label = market_config.GEO_LABEL.lower()
         normalized: list[str] = []
 
         for raw_city in value:
             city = raw_city.strip()
             if not city:
                 continue
+
+            if city.lower() == geo_label:
+                return None
 
             if city.lower() in {"ca", "california"}:
                 continue
@@ -48,8 +57,18 @@ class SweepCreateRequest(BaseModel):
                     city = city[: -len(suffix)].strip()
                     break
 
-            if city and city not in normalized:
-                normalized.append(city)
+            if not city:
+                continue
+
+            canonical = configured_by_lower.get(city.lower())
+            if canonical is None:
+                raise ValueError(
+                    f"unsupported sweep city: {city}. "
+                    f"Use configured cities or {market_config.GEO_LABEL} for full coverage."
+                )
+
+            if canonical not in normalized:
+                normalized.append(canonical)
 
         return normalized or None
 

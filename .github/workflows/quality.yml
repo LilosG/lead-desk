@@ -35,7 +35,11 @@ jobs:
         run: python -m compileall -q app pipeline sql tests
 
       - name: Run integration unit tests
-        run: pytest -q tests/app/test_integrations.py tests/app/test_outreach_integrations.py
+        run: |
+          pytest -q \
+            tests/app/test_integrations.py \
+            tests/app/test_outreach_integrations.py \
+            tests/app/test_sweep_request_validation.py
 
       - name: Run deterministic pipeline regressions
         run: |
