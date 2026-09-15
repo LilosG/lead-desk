@@ -5,10 +5,11 @@ from uuid import uuid4
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.integrations.openrouter import OpenRouterClient, OpenRouterError
 from app.repositories.outreach import OutreachOperationLocked, OutreachRepository
+from app.services.outreach_copy import client_facing_claim
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v4"
+PROMPT_VERSION = "outreach-v5"
 CAN_SPAM_FOOTER = (
     "Mike\n"
     "LILOs Growth\n"
@@ -59,76 +60,69 @@ class OutreachService:
 
     def list_candidates(self, limit: int = 100) -> dict:
         items = self.repository.list_candidates(limit=limit)
-        return {'items': items, 'total': len(items)}
+        return {"items": items, "total": len(items)}
 
     def candidate_readiness(self, place_id: str) -> dict | None:
         item = self.repository.candidate_readiness(place_id)
         if item is None:
             return None
 
-        review_count = int(item.get('review_count') or 0)
-        email = item.get('email')
-        phone = item.get('phone')
-        suppressed = bool(item.get('suppressed'))
-        already_queued = bool(item.get('already_queued'))
+        review_count = int(item.get("review_count") or 0)
+        email = item.get("email")
+        phone = item.get("phone")
+        suppressed = bool(item.get("suppressed"))
+        already_queued = bool(item.get("already_queued"))
 
         reasons: list[str] = []
 
-        if not item.get('established'):
-            reasons.append('Business is not in the established prospect segment.')
-
+        if not item.get("established"):
+            reasons.append("Business is not in the established prospect segment.")
         if review_count < 10:
-            reasons.append('Business has fewer than 10 Google reviews.')
-
-        if item.get('needs_manual_check'):
-            reasons.append('Manual verification is required before outreach.')
-
+            reasons.append("Business has fewer than 10 Google reviews.")
+        if item.get("needs_manual_check"):
+            reasons.append("Manual verification is required before outreach.")
         if not email and not phone:
-            reasons.append(
-                'No reachable email address or phone number is available.'
-            )
-
+            reasons.append("No reachable email address or phone number is available.")
         if email and suppressed:
-            reasons.append('The prospect email address is suppressed.')
-
+            reasons.append("The prospect email address is suppressed.")
         if already_queued:
-            reasons.append('Prospect is already in the outreach queue.')
+            reasons.append("Prospect is already in the outreach queue.")
 
-        preferred_channel = 'email' if email else ('phone' if phone else None)
+        preferred_channel = "email" if email else ("phone" if phone else None)
 
         return {
-            'eligible': not reasons,
-            'reasons': reasons,
-            'preferred_channel': preferred_channel,
-            'review_count': review_count,
-            'strong_review_base': review_count >= 15,
-            'confirmed_trading': bool(item.get('confirmed_trading')),
-            'established': bool(item.get('established')),
-            'needs_manual_check': bool(item.get('needs_manual_check')),
-            'suppressed': suppressed,
-            'already_queued': already_queued,
+            "eligible": not reasons,
+            "reasons": reasons,
+            "preferred_channel": preferred_channel,
+            "review_count": review_count,
+            "strong_review_base": review_count >= 15,
+            "confirmed_trading": bool(item.get("confirmed_trading")),
+            "established": bool(item.get("established")),
+            "needs_manual_check": bool(item.get("needs_manual_check")),
+            "suppressed": suppressed,
+            "already_queued": already_queued,
         }
 
     def list_items(self, status: str | None = None) -> dict:
         items, total = self.repository.list_items(status=status)
-        return {'items': items, 'total': total}
+        return {"items": items, "total": total}
 
     def create_item(self, place_id: str, channel: str, to_address: str | None) -> dict | None:
         prospect = self.repository.prospect_context(place_id)
         if prospect is None:
             return None
 
-        if channel == 'email':
-            address = to_address or ((prospect.get('emails_found') or [None])[0])
+        if channel == "email":
+            address = to_address or ((prospect.get("emails_found") or [None])[0])
             if not address:
-                raise OutreachBlocked('prospect has no usable email address')
+                raise OutreachBlocked("prospect has no usable email address")
             if self.repository.is_suppressed(address):
-                raise OutreachBlocked('email address is suppressed')
+                raise OutreachBlocked("email address is suppressed")
             to_address = address
-        elif channel == 'phone':
-            if not prospect.get('phone'):
-                raise OutreachBlocked('prospect has no phone number')
-            to_address = to_address or prospect['phone']
+        elif channel == "phone":
+            if not prospect.get("phone"):
+                raise OutreachBlocked("prospect has no phone number")
+            to_address = to_address or prospect["phone"]
 
         return self.repository.create_item(place_id, channel, to_address)
 
@@ -136,39 +130,37 @@ class OutreachService:
         current = self.repository.get_item(item_id)
         if current is None:
             return None
+        if current["version"] != expected_version:
+            raise OutreachConflict("outreach item changed since it was loaded")
 
-        if current['version'] != expected_version:
-            raise OutreachConflict('outreach item changed since it was loaded')
-
-        for required_field in ('status', 'verification_status'):
+        for required_field in ("status", "verification_status"):
             if required_field in changes and changes[required_field] is None:
-                raise OutreachBlocked(f'{required_field} cannot be null')
+                raise OutreachBlocked(f"{required_field} cannot be null")
 
-        effective_address = changes.get('to_address', current.get('to_address'))
-        if current['channel'] == 'email' and self.repository.is_suppressed(effective_address):
-            raise OutreachBlocked('email address is suppressed')
+        effective_address = changes.get("to_address", current.get("to_address"))
+        if current["channel"] == "email" and self.repository.is_suppressed(effective_address):
+            raise OutreachBlocked("email address is suppressed")
 
-        if current.get('gmail_draft_id') and any(
+        if current.get("gmail_draft_id") and any(
             key in changes and changes[key] != current.get(key)
-            for key in ('to_address', 'subject', 'body')
+            for key in ("to_address", "subject", "body")
         ):
             raise OutreachBlocked(
-                'content is locked because a Gmail draft already exists for this queue item'
+                "content is locked because a Gmail draft already exists for this queue item"
             )
 
-        next_status = changes.get('status', current['status'])
-        verification = changes.get(
-            'verification_status',
-            current['verification_status'],
-        )
-        subject = changes.get('subject', current.get('subject'))
-        body = changes.get('body', current.get('body'))
+        next_status = changes.get("status", current["status"])
+        verification = changes.get("verification_status", current["verification_status"])
+        subject = changes.get("subject", current.get("subject"))
+        body = changes.get("body", current.get("body"))
 
-        if next_status in {'draft_ready', 'approved'}:
-            if current['channel'] == 'email' and (not subject or not body):
-                raise OutreachBlocked('email draft requires both subject and body')
-            if verification not in {'verified', 'not_required'}:
-                raise OutreachBlocked('claim verification is required before a draft can be ready')
+        if next_status in {"draft_ready", "approved"}:
+            if current["channel"] == "email" and (not subject or not body):
+                raise OutreachBlocked("email draft requires both subject and body")
+            if verification not in {"verified", "not_required"}:
+                raise OutreachBlocked(
+                    "claim verification is required before a draft can be ready"
+                )
 
         try:
             updated, conflict = self.repository.update_item(
@@ -179,52 +171,59 @@ class OutreachService:
         except OutreachOperationLocked as exc:
             raise OutreachBlocked(str(exc)) from exc
         if conflict:
-            raise OutreachConflict('outreach item changed since it was loaded')
+            raise OutreachConflict("outreach item changed since it was loaded")
         return updated
 
     def generate_draft(self, item_id: str, *, expected_version: int) -> dict | None:
         if self.generator is None:
-            raise OutreachIntegrationUnavailable('OpenRouter draft generation is not configured')
+            raise OutreachIntegrationUnavailable(
+                "OpenRouter draft generation is not configured"
+            )
 
         context = self.repository.draft_context(item_id)
         if context is None:
             return None
-        if context['version'] != expected_version:
-            raise OutreachConflict('outreach item changed since it was loaded')
-        if context['channel'] != 'email':
-            raise OutreachBlocked('AI draft generation is currently available for email only')
+        if context["version"] != expected_version:
+            raise OutreachConflict("outreach item changed since it was loaded")
+        if context["channel"] != "email":
+            raise OutreachBlocked(
+                "AI draft generation is currently available for email only"
+            )
 
         current = self.repository.get_item(item_id)
         if current is None:
             return None
-        if current['version'] != expected_version:
-            raise OutreachConflict('outreach item changed since it was loaded')
-        if current.get('gmail_draft_id'):
+        if current["version"] != expected_version:
+            raise OutreachConflict("outreach item changed since it was loaded")
+        if current.get("gmail_draft_id"):
             raise OutreachBlocked(
-                'a Gmail draft already exists for this queue item; create a new queue item before regenerating'
+                "a Gmail draft already exists for this queue item; create a new queue item before regenerating"
             )
-
-        if not context.get('to_address'):
-            raise OutreachBlocked('email queue item has no recipient address')
-        if self.repository.is_suppressed(context['to_address']):
-            raise OutreachBlocked('email address is suppressed')
+        if not context.get("to_address"):
+            raise OutreachBlocked("email queue item has no recipient address")
+        if self.repository.is_suppressed(context["to_address"]):
+            raise OutreachBlocked("email address is suppressed")
 
         claim = self.verifier.verify(context)
+        visible_claim = client_facing_claim(claim.signal, claim.text)
+
         try:
             copy = self.generator.generate_email(
-                business_name=context.get('name') or 'your business',
-                city=context.get('city'),
-                vertical=context.get('vertical'),
-                verified_claim=claim.text,
+                business_name=context.get("name") or "your business",
+                city=context.get("city"),
+                vertical=context.get("vertical"),
+                verified_claim=visible_claim,
             )
         except OpenRouterError as exc:
             raise OutreachIntegrationUnavailable(str(exc)) from exc
 
-        body_parts = [copy.intro]
-        if claim.text:
-            body_parts.append(claim.text)
+        body_parts = ["Hi,", copy.intro]
+        if visible_claim:
+            body_parts.append(visible_claim)
         body_parts.extend([copy.cta, CAN_SPAM_FOOTER])
-        body = "\n\n".join(part.strip() for part in body_parts if part and part.strip())
+        body = "\n\n".join(
+            part.strip() for part in body_parts if part and part.strip()
+        )
 
         try:
             updated, conflict = self.repository.record_generated_draft(
@@ -241,30 +240,40 @@ class OutreachService:
         except OutreachOperationLocked as exc:
             raise OutreachBlocked(str(exc)) from exc
         if conflict:
-            raise OutreachConflict('outreach item changed while the draft was being generated')
+            raise OutreachConflict(
+                "outreach item changed while the draft was being generated"
+            )
         return updated
 
     def create_gmail_draft(self, item_id: str, *, expected_version: int) -> dict | None:
         if self.gmail is None:
-            raise OutreachIntegrationUnavailable('Gmail draft integration is not configured')
+            raise OutreachIntegrationUnavailable(
+                "Gmail draft integration is not configured"
+            )
 
         current = self.repository.get_item(item_id)
         if current is None:
             return None
-        if current['version'] != expected_version:
-            raise OutreachConflict('outreach item changed since it was loaded')
-        if current['channel'] != 'email':
-            raise OutreachBlocked('Gmail drafts are available for email queue items only')
-        if current.get('gmail_draft_id'):
-            raise OutreachBlocked('a Gmail draft already exists for this queue item')
-        if current['status'] not in {'draft_ready', 'approved'}:
-            raise OutreachBlocked('mark the draft ready after human review before creating it in Gmail')
-        if current['verification_status'] not in {'verified', 'not_required'}:
-            raise OutreachBlocked('claim verification is required before creating a Gmail draft')
-        if not current.get('to_address') or not current.get('subject') or not current.get('body'):
-            raise OutreachBlocked('recipient, subject, and body are required for a Gmail draft')
-        if self.repository.is_suppressed(current['to_address']):
-            raise OutreachBlocked('email address is suppressed')
+        if current["version"] != expected_version:
+            raise OutreachConflict("outreach item changed since it was loaded")
+        if current["channel"] != "email":
+            raise OutreachBlocked("Gmail drafts are available for email queue items only")
+        if current.get("gmail_draft_id"):
+            raise OutreachBlocked("a Gmail draft already exists for this queue item")
+        if current["status"] not in {"draft_ready", "approved"}:
+            raise OutreachBlocked(
+                "mark the draft ready after human review before creating it in Gmail"
+            )
+        if current["verification_status"] not in {"verified", "not_required"}:
+            raise OutreachBlocked(
+                "claim verification is required before creating a Gmail draft"
+            )
+        if not current.get("to_address") or not current.get("subject") or not current.get("body"):
+            raise OutreachBlocked(
+                "recipient, subject, and body are required for a Gmail draft"
+            )
+        if self.repository.is_suppressed(current["to_address"]):
+            raise OutreachBlocked("email address is suppressed")
 
         message_id_header = f"<{uuid4()}@lead-desk.lilosgrowth.com>"
         try:
@@ -276,58 +285,58 @@ class OutreachService:
         except OutreachOperationLocked as exc:
             raise OutreachBlocked(str(exc)) from exc
         if conflict:
-            raise OutreachConflict('outreach item changed since it was loaded')
+            raise OutreachConflict("outreach item changed since it was loaded")
         if operation is None:
             return None
 
-        if not operation['created_now']:
-            if operation['state'] == 'created':
+        if not operation["created_now"]:
+            if operation["state"] == "created":
                 return self.repository.get_item(item_id)
-            if operation['state'] == 'pending':
+            if operation["state"] == "pending":
                 try:
                     recovered = self.gmail.find_draft_by_message_id(
-                        operation['message_id_header']
+                        operation["message_id_header"]
                     )
                 except GmailDraftError as exc:
                     raise OutreachIntegrationUnavailable(str(exc)) from exc
                 if recovered is not None:
                     return self.repository.complete_gmail_draft_operation(
-                        operation['id'],
+                        operation["id"],
                         draft_id=recovered.draft_id,
                         message_id=recovered.message_id,
                     )
                 raise OutreachIntegrationUnavailable(
-                    'Gmail draft creation is pending reconciliation; Lead Desk will not create a duplicate draft'
+                    "Gmail draft creation is pending reconciliation; Lead Desk will not create a duplicate draft"
                 )
-            if operation['state'] == 'failed':
-                reopened = self.repository.reopen_gmail_draft_operation(operation['id'])
+            if operation["state"] == "failed":
+                reopened = self.repository.reopen_gmail_draft_operation(operation["id"])
                 if reopened is None:
                     raise OutreachIntegrationUnavailable(
-                        'Gmail draft operation could not be reopened safely'
+                        "Gmail draft operation could not be reopened safely"
                     )
-                operation = {**reopened, 'created_now': False}
+                operation = {**reopened, "created_now": False}
 
         try:
             result = self.gmail.create_draft(
-                to_address=current['to_address'],
-                subject=current['subject'],
-                body=current['body'],
-                message_id_header=operation['message_id_header'],
+                to_address=current["to_address"],
+                subject=current["subject"],
+                body=current["body"],
+                message_id_header=operation["message_id_header"],
             )
         except GmailDraftError as exc:
             self.repository.record_gmail_operation_error(
-                operation['id'],
+                operation["id"],
                 error_message=str(exc),
                 uncertain=exc.uncertain_side_effect,
             )
             if exc.uncertain_side_effect:
                 raise OutreachIntegrationUnavailable(
-                    'Gmail draft request outcome is uncertain; the durable operation was preserved for reconciliation and no retry will create a duplicate'
+                    "Gmail draft request outcome is uncertain; the durable operation was preserved for reconciliation and no retry will create a duplicate"
                 ) from exc
             raise OutreachIntegrationUnavailable(str(exc)) from exc
 
         return self.repository.complete_gmail_draft_operation(
-            operation['id'],
+            operation["id"],
             draft_id=result.draft_id,
             message_id=result.message_id,
         )
