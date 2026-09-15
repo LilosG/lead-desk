@@ -46,28 +46,35 @@ import AppLayout from '../layouts/AppLayout.astro';
   </section>
 
   <script>
+    type GmailStatus = {
+      configured: boolean;
+      connected: boolean;
+      account_email: string | null;
+      sender_email: string;
+    };
+
     const pill = document.getElementById('gmail-pill');
     const account = document.getElementById('gmail-account');
-    const connect = document.getElementById('gmail-connect');
-    const disconnect = document.getElementById('gmail-disconnect');
+    const connect = document.getElementById('gmail-connect') as HTMLButtonElement | null;
+    const disconnect = document.getElementById('gmail-disconnect') as HTMLButtonElement | null;
     const message = document.getElementById('gmail-message');
 
-    function showMessage(text, isError = false) {
+    function showMessage(text: string, isError = false): void {
       if (!message) return;
       message.textContent = text;
       message.classList.remove('hidden');
       message.classList.toggle('text-red-700', isError);
     }
 
-    async function loadStatus() {
+    async function loadStatus(): Promise<void> {
       const response = await fetch('/api/integrations/gmail/status', { credentials: 'same-origin' });
       if (!response.ok) throw new Error('Could not load Gmail integration status.');
-      const data = await response.json();
+      const data = await response.json() as GmailStatus;
 
       if (pill) pill.textContent = data.connected ? 'Connected' : (data.configured ? 'Ready to connect' : 'Configuration required');
       if (account) account.textContent = data.account_email || data.sender_email || '—';
       if (connect) {
-        connect.classList.toggle('hidden', Boolean(data.connected));
+        connect.classList.toggle('hidden', data.connected);
         connect.toggleAttribute('disabled', !data.configured);
       }
       if (disconnect) disconnect.classList.toggle('hidden', !data.connected);
@@ -84,10 +91,12 @@ import AppLayout from '../layouts/AppLayout.astro';
           method: 'POST',
           credentials: 'same-origin',
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Could not start Gmail authorization.');
-        window.location.href = data.authorization_url;
-      } catch (error) {
+        const data = await response.json() as { authorization_url?: string; detail?: string };
+        if (!response.ok || !data.authorization_url) {
+          throw new Error(data.detail || 'Could not start Gmail authorization.');
+        }
+        window.location.assign(data.authorization_url);
+      } catch (error: unknown) {
         showMessage(error instanceof Error ? error.message : 'Could not start Gmail authorization.', true);
         connect.removeAttribute('disabled');
       }
@@ -115,6 +124,8 @@ import AppLayout from '../layouts/AppLayout.astro';
       history.replaceState({}, '', '/settings');
     }
 
-    loadStatus().catch((error) => showMessage(error.message, true));
+    loadStatus().catch((error: unknown) => {
+      showMessage(error instanceof Error ? error.message : 'Could not load Gmail integration status.', true);
+    });
   </script>
 </AppLayout>
