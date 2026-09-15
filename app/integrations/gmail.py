@@ -43,6 +43,7 @@ class GmailDraftClient:
         to_address: str,
         subject: str,
         body: str,
+        message_id_header: str,
     ) -> GmailDraftResult:
         access_token = self._access_token()
 
@@ -50,6 +51,7 @@ class GmailDraftClient:
         message["To"] = to_address
         message["From"] = self.sender_email
         message["Subject"] = subject
+        message["Message-ID"] = message_id_header
         message.set_content(body)
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii").rstrip("=")
@@ -78,6 +80,58 @@ class GmailDraftClient:
             message_id = data.get("message", {}).get("id")
         except (KeyError, TypeError, ValueError) as exc:
             raise GmailDraftError("Gmail returned an invalid draft response") from exc
+
+        return GmailDraftResult(
+            draft_id=draft_id,
+            message_id=str(message_id) if message_id else None,
+        )
+
+    def find_draft_by_message_id(self, message_id_header: str) -> GmailDraftResult | None:
+        """Find a previously-created draft by its deterministic RFC 5322 Message-ID.
+
+        Draft creation is an external side effect and Gmail does not expose an
+        idempotency key on drafts.create. Lead Desk therefore writes a unique
+        Message-ID before creation and can reconcile a pending local operation
+        after a process/database failure without creating a duplicate draft.
+        """
+        access_token = self._access_token()
+        try:
+            response = requests.get(
+                GMAIL_DRAFTS_URL,
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={
+                    "q": f"rfc822msgid:{message_id_header}",
+                    "maxResults": 2,
+                },
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            raise GmailDraftError("Gmail draft reconciliation request failed") from exc
+
+        if not response.ok:
+            raise GmailDraftError(
+                f"Gmail draft reconciliation returned {response.status_code}: "
+                f"{response.text[:500]}"
+            )
+
+        try:
+            drafts = response.json().get("drafts") or []
+        except (TypeError, ValueError) as exc:
+            raise GmailDraftError("Gmail returned an invalid draft list response") from exc
+
+        if not drafts:
+            return None
+        if len(drafts) > 1:
+            raise GmailDraftError(
+                "Gmail returned multiple drafts for one Lead Desk Message-ID; manual review required"
+            )
+
+        draft = drafts[0]
+        try:
+            draft_id = str(draft["id"])
+            message_id = draft.get("message", {}).get("id")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GmailDraftError("Gmail returned an invalid reconciled draft") from exc
 
         return GmailDraftResult(
             draft_id=draft_id,
