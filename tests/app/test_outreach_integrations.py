@@ -11,9 +11,9 @@ class FakeGenerator:
     def generate_email(self, **kwargs):
         assert kwargs["business_name"] == "Example Electric"
         return GeneratedCopy(
-            subject="Quick question for Example Electric",
-            intro="Hi there — I work with local electrical companies in San Diego.",
-            cta="Want me to send over the observation?",
+            subject="Example Electric - one thing",
+            intro="I was reviewing Example Electric online and noticed one thing worth flagging.",
+            cta="Want me to send over the detail on that?",
             model="test/model",
         )
 
