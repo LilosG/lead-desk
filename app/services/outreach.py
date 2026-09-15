@@ -142,6 +142,8 @@ class OutreachService:
         if context['channel'] != 'email':
             raise OutreachBlocked('AI draft generation is currently available for email only')
 
+        # Re-read the queue row before generation so direct API callers cannot
+        # overwrite content after a Gmail draft has been materialized.
         current = self.repository.get_item(item_id)
         if current is None:
             return None
