@@ -43,35 +43,41 @@ class OpenRouterClient:
         vertical: str | None,
         verified_claim: str | None,
     ) -> GeneratedCopy:
+        # City and vertical are deliberately NOT supplied to the language model.
+        # They are useful operational metadata, but letting the model see them
+        # encouraged prospect-list phrasing such as "checking out electricians
+        # in Oceanside." The first-touch note should be anchored to this one
+        # business and the one application-verified finding only.
         facts = {
             "business_name": business_name,
-            "city": city,
-            "vertical": vertical,
             "verified_claim_available": bool(verified_claim),
         }
         system = f"""
-You write one short first-touch email from Mike at LILOs Growth to a real local business owner.
+You write one short first-touch email from Mike at LILOs Growth to one real local business owner.
 
-This must feel like Mike personally opened the business's website/profile and sent a normal note. It must NOT read like a cold-email sequence, lead-gen template, audit pitch, mail merge, or AI copy.
+This must feel like Mike personally opened this specific business's website/profile and sent a normal note. It must NOT read like a cold-email sequence, lead-gen template, audit pitch, prospecting list, mail merge, or AI copy.
 
-You may use only the supplied business name, city, vertical, and the existence of a verified finding. Do not invent a contact name, relationship, result, urgency, customer impact, ranking impact, revenue impact, or any second finding.
+Use only the supplied business name and the existence of one verified finding. Do not invent a contact name, relationship, result, urgency, customer impact, ranking impact, revenue impact, or any second finding. Do not imply Mike was browsing, comparing, researching, or "checking out" other businesses in the same industry or city.
 
-The verified finding itself is controlled by the application. If verified_claim_available is true, place the exact token {CLAIM_TOKEN} exactly once inside the body where the observation naturally belongs. Do not explain or paraphrase the token and do not add a consequence to it. The application replaces it after generation. If no verified finding is available, do not use the token.
+The verified finding itself is controlled by the application. If verified_claim_available is true, place the exact token {CLAIM_TOKEN} exactly once inside the body where the observation naturally belongs. Do not explain or paraphrase the token. Do not add a benefit, harm, prediction, significance claim, or consequence before or after it. The application replaces it after generation. If no verified finding is available, do not use the token.
 
 Write the WHOLE note as one coherent message. Do not output separate intro / finding / CTA blocks.
 
 STYLE:
-- Subject should usually just be the business name, or at most the business name plus one ordinary word such as "website". Do not stuff the city into the subject.
-- Body: 35-75 words before Mike's signature/footer, usually 2 short paragraphs.
+- Subject should usually just be the business name, or at most the business name plus one ordinary word such as "website". No city, industry, urgency, or sales language.
+- Body: 30-65 words before Mike's signature/footer, usually 2 short paragraphs.
 - A simple "Hi," is fine, but do not use fake familiarity.
 - Use contractions and normal spoken business English.
-- The closing should feel incidental, not like a conversion CTA. It can offer to point out the exact change, send a screenshot, or leave it there. It does not need to be a question.
+- Outside the verified-finding token, the only business-specific factual statement you may make is that Mike looked at the business's site/profile.
+- The closing should be incidental and concrete: offer to point to the exact spot, send a screenshot, or leave it there. Do not pitch services, predict an outcome, or explain why the finding matters.
 - Vary syntax naturally. Do not force the same opening or closing pattern every time.
 - Plain text only.
 
 DO NOT USE:
 - "quick note", "quick observation", "worth flagging", "noticed one thing", "I was reviewing", "I came across your business", "hope you're well"
+- "checking out", "looking at other", "researching", "comparing", or any wording that reveals a prospecting list or category search
 - "Want me to send over", "Would you be open to", "Would it be useful if", "Happy to send over", "book a call", "schedule a call"
+- "quick fix", "small thing", "easy fix", "could help", "might help", "may help", "should help", "could improve", "make it easier", or any other claim about the effect or value of the finding
 - "online presence", "grow your business", "increase leads", "you're losing customers", "rankings", "traffic", "free audit"
 - SEO jargon in your own words such as schema, PageSpeed, map pack, title tag, or Google Business Profile
 - generic compliments, hype, exclamation points, links, or marketing language
@@ -88,7 +94,7 @@ Return JSON only with string keys "subject" and "body".
         subject, body = self._request_copy(
             system=system,
             user=user,
-            temperature=0.55,
+            temperature=0.45,
         )
 
         if verified_claim and body.count(CLAIM_TOKEN) != 1:
@@ -96,7 +102,7 @@ Return JSON only with string keys "subject" and "body".
                 user
                 + "\n\nYour previous draft omitted or altered the required verified-finding slot. "
                 + f"Rewrite the note and include the exact literal token {CLAIM_TOKEN} exactly once. "
-                + "Do not paraphrase it, quote it, or add another finding."
+                + "Do not paraphrase it, quote it, add a consequence, or add another finding."
             )
             subject, body = self._request_copy(
                 system=system,
@@ -113,6 +119,7 @@ Return JSON only with string keys "subject" and "body".
             has_verified_claim=bool(verified_claim),
             business_name=business_name,
             city=city,
+            vertical=vertical,
         )
 
         return GeneratedCopy(
@@ -213,6 +220,7 @@ Return JSON only with string keys "subject" and "body".
         has_verified_claim: bool,
         business_name: str | None = None,
         city: str | None = None,
+        vertical: str | None = None,
     ) -> None:
         if not subject or not body:
             raise OpenRouterError("OpenRouter returned incomplete draft copy")
@@ -220,7 +228,7 @@ Return JSON only with string keys "subject" and "body".
             raise OpenRouterError("Generated subject exceeds the outreach copy limit")
 
         body_words = len(body.split())
-        if body_words < 25 or body_words > 90:
+        if body_words < 25 or body_words > 80:
             raise OpenRouterError("Generated body is outside the first-touch length range")
 
         token_count = body.count(CLAIM_TOKEN)
@@ -261,6 +269,9 @@ Return JSON only with string keys "subject" and "body".
             "i came across your business",
             "quick observation",
             "quick note",
+            "quick fix",
+            "easy fix",
+            "small thing",
             "worth flagging",
             "noticed one thing",
             "i was reviewing",
@@ -271,10 +282,29 @@ Return JSON only with string keys "subject" and "body".
             "would it be useful if",
             "happy to send over",
             "online presence",
+            "checking out",
+            "looking at other",
+            "researching businesses",
+            "comparing businesses",
+            "could help",
+            "might help",
+            "may help",
+            "should help",
+            "could improve",
+            "might improve",
+            "may improve",
+            "should improve",
+            "help people",
+            "help customers",
+            "help google",
+            "make it easier",
+            "get the right info",
+            "get found",
+            "show up better",
         )
         if any(token in lowered for token in forbidden):
             raise OpenRouterError(
-                "Generated copy introduced a sales cliché, jargon, or disallowed outreach pattern"
+                "Generated copy introduced prospect-list language, an unsupported consequence, sales cliché, jargon, or disallowed outreach pattern"
             )
         if "!" in combined:
             raise OpenRouterError("Generated copy used promotional punctuation")
@@ -283,6 +313,17 @@ Return JSON only with string keys "subject" and "body".
 
         if city and city.lower() in subject.lower():
             raise OpenRouterError("Generated subject added an unnecessary city qualifier")
+
+        body_scope = body.lower()
+        if business_name:
+            body_scope = body_scope.replace(business_name.lower(), "")
+        if city and city.lower() in body_scope:
+            raise OpenRouterError("Generated body exposed geographic prospecting context")
+        if vertical:
+            vertical_terms = {vertical.lower(), vertical.lower().replace("_", " ")}
+            for term in vertical_terms:
+                if term and term in body_scope:
+                    raise OpenRouterError("Generated body exposed category prospecting context")
 
         if business_name and business_name.lower() not in subject.lower():
             if len(subject.split()) > 2:
