@@ -44,7 +44,6 @@ class OutreachRepository:
         order by
             case when cardinality(coalesce(w.emails_found, '{}'::text[])) > 0 then 0 else 1 end,
             case when coalesce(w.review_count, 0) >= 15 then 0 else 1 end,
-            case when seg.confirmed_trading then 0 else 1 end,
             w.total_score desc,
             w.review_count desc nulls last,
             w.name asc nulls last
