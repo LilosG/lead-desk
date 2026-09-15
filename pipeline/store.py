@@ -16,6 +16,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 import config as C
+import verticals as V
 
 
 JSONB_COLUMNS = {
@@ -278,6 +279,8 @@ class PostgresStore:
             r["last_seen_at"] = now
             r.pop("unique_key", None)
             r.pop("matched_verticals", None)
+            if r.get("vertical"):
+                r["vertical"] = V.normalize_vertical_key(r["vertical"])
             rows.append(r)
 
             for vertical in matched_verticals:
@@ -286,7 +289,7 @@ class PostgresStore:
                 memberships.append(
                     {
                         "place_id": b["place_id"],
-                        "vertical": vertical,
+                        "vertical": V.normalize_vertical_key(vertical),
                     }
                 )
 
@@ -353,19 +356,14 @@ class PostgresStore:
                 canonical_updates = []
 
                 for place_id, verticals in memberships_by_place.items():
-                    supported = [
-                        vertical
-                        for vertical in verticals
-                        if vertical in C.VERTICALS
-                    ]
-
-                    if not supported:
+                    candidates = [vertical for vertical in verticals if vertical]
+                    if not candidates:
                         continue
 
                     canonical_vertical = min(
-                        supported,
+                        candidates,
                         key=lambda vertical: (
-                            C.VERTICALS[vertical]["priority"],
+                            V.vertical_priority(vertical),
                             vertical,
                         ),
                     )
