@@ -63,7 +63,9 @@ jobs:
         run: npm ci
 
       - name: Dependency security audit
-        run: npm audit --audit-level=high
+        run: |
+          npm audit --json > npm-audit.json || true
+          node scripts/verify-audit.mjs npm-audit.json
 
       - name: Astro validation
         run: npm run check
