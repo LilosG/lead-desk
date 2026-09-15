@@ -24,30 +24,42 @@ class OutreachRepository:
                 w.headline_gap,
                 w.phone,
                 w.emails_found[1] as email,
+                w.review_count,
+                seg.confirmed_trading,
                 seg.established,
-                coalesce(f.needs_manual_check, false) as needs_manual_check,
-                exists (
-                    select 1
-                    from suppression s
-                    where lower(s.email) = lower(coalesce(w.emails_found[1], ''))
-                ) as suppressed,
-                exists (
-                    select 1
-                    from outreach_queue q
-                    where q.place_id = w.place_id
-                ) as already_queued
+                false as needs_manual_check,
+                false as suppressed,
+                false as already_queued
             from v_lead_worklist w
             join v_lead_segments seg on seg.place_id = w.place_id
             left join v_lead_findings f on f.place_id = w.place_id
             where seg.established = true
+              and coalesce(w.review_count, 0) >= 10
+              and coalesce(f.needs_manual_check, false) = false
               and (
                     cardinality(coalesce(w.emails_found, '{}'::text[])) > 0
                     or w.phone is not null
                   )
+              and not exists (
+                    select 1
+                    from outreach_queue q
+                    where q.place_id = w.place_id
+                  )
+              and (
+                    cardinality(coalesce(w.emails_found, '{}'::text[])) = 0
+                    or not exists (
+                        select 1
+                        from suppression s
+                        where lower(s.email) = lower(coalesce(w.emails_found[1], ''))
+                    )
+                  )
             order by
                 case when cardinality(coalesce(w.emails_found, '{}'::text[])) > 0 then 0 else 1 end,
+                case when coalesce(w.review_count, 0) >= 15 then 0 else 1 end,
+                case when seg.confirmed_trading then 0 else 1 end,
                 w.total_score desc,
-                w.review_count desc nulls last
+                w.review_count desc nulls last,
+                w.name asc nulls last
             limit %s
         """
         with self.pool.connection() as conn:
