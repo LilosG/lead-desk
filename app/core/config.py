@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     auth_password_hash: str = Field(alias="AUTH_PASSWORD_HASH")
     auth_session_secret: str = Field(alias="AUTH_SESSION_SECRET")
 
+    # Keep the inexpensive Qwen model as the production default. More costly
+    # alternatives must be explicitly selected from the approved allowlist.
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_model: str = Field(
         default="qwen/qwen3-30b-a3b-instruct-2507",
