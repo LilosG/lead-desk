@@ -146,6 +146,8 @@ class ProspectWorkflowUpdate(BaseModel):
 
     @model_validator(mode="after")
     def reject_null_required_fields(self) -> "ProspectWorkflowUpdate":
+        # Omitted status/priority mean "leave unchanged"; explicitly sending
+        # null is invalid because the persisted columns are required states.
         for field_name in ("status", "priority"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")
