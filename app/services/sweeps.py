@@ -10,6 +10,7 @@ from app.repositories.sweeps import (
     SweepRepository,
 )
 from pipeline import config as market_config
+from pipeline import verticals as vertical_config
 
 
 class SweepExecutionDisabledError(RuntimeError):
@@ -45,6 +46,7 @@ class SweepService:
             "geo_label": market_config.GEO_LABEL,
             "cities": list(market_config.TARGET_CITIES),
             "verticals": verticals,
+            "custom_verticals_enabled": True,
             "pricing": {
                 "text_search_per_1000": market_config.COST_PER_1K[
                     "text_search_enterprise"
@@ -58,22 +60,7 @@ class SweepService:
 
     @staticmethod
     def _ordered_verticals(verticals: list[str]) -> list[str]:
-        unique_verticals = set(verticals)
-        unknown_verticals = sorted(
-            unique_verticals - set(market_config.VERTICALS)
-        )
-        if unknown_verticals:
-            raise ValueError(
-                "unsupported sweep verticals: " + ", ".join(unknown_verticals)
-            )
-
-        return sorted(
-            unique_verticals,
-            key=lambda key: (
-                market_config.VERTICALS[key]["priority"],
-                key,
-            ),
-        )
+        return vertical_config.ordered_verticals(verticals)
 
     def create(
         self,
