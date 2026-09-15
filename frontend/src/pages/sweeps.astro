@@ -2,18 +2,18 @@
 import AppLayout from "../layouts/AppLayout.astro";
 ---
 
-<AppLayout title="New Sweep">
-  <main class="mx-auto max-w-6xl space-y-8 p-6 lg:p-10">
+<AppLayout title="Market Sweeps">
+  <main class="mx-auto max-w-7xl space-y-8 p-6 lg:p-10">
     <section>
       <p class="text-sm uppercase tracking-[0.18em] text-neutral-500">
         Lead Desk
       </p>
       <h1 class="mt-2 text-3xl font-semibold text-neutral-950">
-        New Sweep
+        Market Sweeps
       </h1>
-      <p class="mt-2 max-w-3xl text-sm leading-6 text-neutral-600">
-        Start and monitor the complete discovery, crawl, PageSpeed,
-        scoring, and finalize workflow.
+      <p class="mt-2 max-w-4xl text-sm leading-6 text-neutral-600">
+        Refresh the configured market inventory without replacing prior prospect coverage.
+        Sweeps run discovery, crawl, PageSpeed, scoring, and finalize as one staged job.
       </p>
     </section>
 
@@ -21,122 +21,113 @@ import AppLayout from "../layouts/AppLayout.astro";
       id="execution-warning"
       class="hidden rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
     >
-      Sweep execution is currently disabled. The interface is installed,
-      but no Google/API sweep can start until execution is enabled.
+      Sweep execution is currently disabled. Existing prospect inventory remains available,
+      but no new market refresh can start until execution is enabled.
     </section>
 
-    <div class="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
+    <section class="grid gap-4 md:grid-cols-3">
+      <div class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <p class="text-xs uppercase tracking-wider text-neutral-500">Market</p>
+        <p id="market-label" class="mt-2 text-lg font-semibold text-neutral-950">Loading…</p>
+      </div>
+      <div class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <p class="text-xs uppercase tracking-wider text-neutral-500">Configured cities</p>
+        <p id="market-city-count" class="mt-2 text-lg font-semibold text-neutral-950">—</p>
+      </div>
+      <div class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+        <p class="text-xs uppercase tracking-wider text-neutral-500">Configured verticals</p>
+        <p id="market-vertical-count" class="mt-2 text-lg font-semibold text-neutral-950">—</p>
+      </div>
+    </section>
+
+    <div class="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
       <section class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <h2 class="text-lg font-semibold text-neutral-950">
-          Sweep configuration
-        </h2>
-
-        <form id="sweep-form" class="mt-6 space-y-5">
+        <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <label
-              for="verticals"
-              class="block text-sm font-medium text-neutral-800"
-            >
-              Verticals
-            </label>
-
-            <input
-              id="verticals"
-              name="verticals"
-              value="electrician"
-              class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-            />
-
-            <p class="mt-1 text-xs text-neutral-500">
-              Comma-separated.
+            <h2 class="text-lg font-semibold text-neutral-950">Sweep scope</h2>
+            <p class="mt-1 text-sm text-neutral-500">
+              Full configured coverage is selected by default. Narrow the scope only when you intentionally want a slice refresh.
             </p>
           </div>
+          <button
+            id="select-full-market"
+            type="button"
+            class="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-700 hover:border-neutral-500"
+          >
+            Select full market
+          </button>
+        </div>
+
+        <form id="sweep-form" class="mt-6 space-y-6">
+          <div>
+            <div class="flex items-center justify-between gap-3">
+              <label class="text-sm font-medium text-neutral-800">Verticals</label>
+              <span id="vertical-selection-count" class="text-xs text-neutral-500">—</span>
+            </div>
+            <div id="vertical-options" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"></div>
+          </div>
 
           <div>
-            <label
-              for="cities"
-              class="block text-sm font-medium text-neutral-800"
-            >
-              Cities
-            </label>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <label class="text-sm font-medium text-neutral-800">Cities</label>
+                <p class="mt-1 text-xs text-neutral-500">
+                  Use every configured city or select a deliberate local slice.
+                </p>
+              </div>
+              <label class="flex items-center gap-2 text-xs font-medium text-neutral-700">
+                <input id="all-cities" type="checkbox" checked />
+                All configured cities
+              </label>
+            </div>
+            <div id="city-options" class="mt-3 hidden max-h-64 grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-neutral-200 p-3 sm:grid-cols-3 lg:grid-cols-4"></div>
+          </div>
 
-            <input
-              id="cities"
-              name="cities"
-              placeholder="Optional — comma-separated"
-              class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-            />
+          <div class="rounded-xl bg-neutral-50 p-4">
+            <div class="grid gap-4 sm:grid-cols-3">
+              <div>
+                <p class="text-xs uppercase tracking-wider text-neutral-500">Scope</p>
+                <p id="scope-summary" class="mt-1 text-sm font-medium text-neutral-900">Loading…</p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wider text-neutral-500">Base search requests</p>
+                <p id="base-query-count" class="mt-1 text-sm font-medium text-neutral-900">—</p>
+              </div>
+              <div>
+                <p class="text-xs uppercase tracking-wider text-neutral-500">Max with pagination</p>
+                <p id="max-query-count" class="mt-1 text-sm font-medium text-neutral-900">—</p>
+              </div>
+            </div>
           </div>
 
           <div class="grid gap-4 sm:grid-cols-2">
             <label class="flex items-center gap-3 rounded-lg border border-neutral-200 p-3">
-              <input
-                id="merge"
-                type="checkbox"
-                checked
-              />
-              <span class="text-sm text-neutral-700">
-                Merge prior discovery coverage
-              </span>
+              <input id="merge" type="checkbox" checked />
+              <span class="text-sm text-neutral-700">Merge prior discovery coverage</span>
             </label>
-
             <label class="flex items-center gap-3 rounded-lg border border-neutral-200 p-3">
-              <input
-                id="grid"
-                type="checkbox"
-              />
-              <span class="text-sm text-neutral-700">
-                Include grid search
-              </span>
+              <input id="grid" type="checkbox" />
+              <span class="text-sm text-neutral-700">Include grid search</span>
             </label>
           </div>
 
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
-              <label
-                for="crawl-batch"
-                class="block text-sm font-medium text-neutral-800"
-              >
-                Crawl batch
-              </label>
-
-              <input
-                id="crawl-batch"
-                type="number"
-                min="1"
-                max="500"
-                value="80"
-                class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-              />
+              <label for="crawl-batch" class="block text-sm font-medium text-neutral-800">Crawl batch</label>
+              <input id="crawl-batch" type="number" min="1" max="500" value="80" class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" />
             </div>
-
             <div>
-              <label
-                for="psi-batch"
-                class="block text-sm font-medium text-neutral-800"
-              >
-                PageSpeed batch
-              </label>
-
-              <input
-                id="psi-batch"
-                type="number"
-                min="1"
-                max="200"
-                value="20"
-                class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-              />
+              <label for="psi-batch" class="block text-sm font-medium text-neutral-800">PageSpeed batch</label>
+              <input id="psi-batch" type="number" min="1" max="200" value="20" class="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" />
             </div>
           </div>
 
-          <div
-            id="form-message"
-            class="hidden rounded-lg border p-3 text-sm"
-          ></div>
+          <div id="form-message" class="hidden rounded-lg border p-3 text-sm"></div>
 
           <button
             id="start-button"
             type="submit"
+            disabled
             class="rounded-lg bg-neutral-950 px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             Start sweep
@@ -144,274 +135,345 @@ import AppLayout from "../layouts/AppLayout.astro";
         </form>
       </section>
 
-      <section class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <div class="flex items-center justify-between gap-4">
-          <h2 class="text-lg font-semibold text-neutral-950">
-            Current sweep
-          </h2>
+      <div class="space-y-6">
+        <section class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+          <div class="flex items-center justify-between gap-4">
+            <h2 class="text-lg font-semibold text-neutral-950">Current sweep</h2>
+            <button id="refresh-button" type="button" class="text-sm font-medium text-neutral-600 hover:text-neutral-950">Refresh</button>
+          </div>
+          <div id="current-job" class="mt-6">
+            <p class="text-sm text-neutral-500">Loading…</p>
+          </div>
+        </section>
 
-          <button
-            id="refresh-button"
-            type="button"
-            class="text-sm font-medium text-neutral-600 hover:text-neutral-950"
-          >
-            Refresh
-          </button>
-        </div>
-
-        <div id="current-job" class="mt-6">
-          <p class="text-sm text-neutral-500">
-            Loading…
-          </p>
-        </div>
-      </section>
+        <section class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+          <div>
+            <h2 class="text-lg font-semibold text-neutral-950">Recent sweeps</h2>
+            <p class="mt-1 text-sm text-neutral-500">Completed and failed jobs stay visible here.</p>
+          </div>
+          <div id="recent-jobs" class="mt-5 space-y-3">
+            <p class="text-sm text-neutral-500">Loading…</p>
+          </div>
+        </section>
+      </div>
     </div>
   </main>
 
   <script>
-  function required<T extends HTMLElement>(
-    selector: string,
-  ): T {
-    const element = document.querySelector<T>(selector);
+    type VerticalConfig = {
+      key: string;
+      priority: number;
+      query_count: number;
+      has_case_study: boolean;
+    };
 
-    if (!element) {
-      throw new Error(`Missing required element: ${selector}`);
+    type MarketConfig = {
+      geo_label: string;
+      cities: string[];
+      verticals: VerticalConfig[];
+      execution_enabled: boolean;
+    };
+
+    type SweepJob = {
+      id: string;
+      run_id?: string | null;
+      status: string;
+      stage: string | null;
+      verticals: string[];
+      cities: string[] | null;
+      use_grid: boolean;
+      crawl_batch: number;
+      psi_batch: number;
+      created_at?: string;
+      started_at?: string | null;
+      finished_at?: string | null;
+      error_message?: string | null;
+    };
+
+    const required = <T extends HTMLElement>(selector: string): T => {
+      const element = document.querySelector<T>(selector);
+      if (!element) throw new Error(`Missing required element: ${selector}`);
+      return element;
+    };
+
+    const form = required<HTMLFormElement>("#sweep-form");
+    const startButton = required<HTMLButtonElement>("#start-button");
+    const warning = required<HTMLElement>("#execution-warning");
+    const currentJob = required<HTMLElement>("#current-job");
+    const recentJobs = required<HTMLElement>("#recent-jobs");
+    const message = required<HTMLElement>("#form-message");
+    const refreshButton = required<HTMLButtonElement>("#refresh-button");
+    const selectFullMarket = required<HTMLButtonElement>("#select-full-market");
+    const verticalOptions = required<HTMLElement>("#vertical-options");
+    const cityOptions = required<HTMLElement>("#city-options");
+    const allCitiesInput = required<HTMLInputElement>("#all-cities");
+    const gridInput = required<HTMLInputElement>("#grid");
+    const mergeInput = required<HTMLInputElement>("#merge");
+    const crawlBatchInput = required<HTMLInputElement>("#crawl-batch");
+    const psiBatchInput = required<HTMLInputElement>("#psi-batch");
+
+    let marketConfig: MarketConfig | null = null;
+
+    const escapeHtml = (value: unknown): string =>
+      String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+
+    const checkedVerticals = (): string[] =>
+      Array.from(document.querySelectorAll<HTMLInputElement>('input[data-vertical]:checked'))
+        .map((input) => input.value);
+
+    const checkedCities = (): string[] =>
+      Array.from(document.querySelectorAll<HTMLInputElement>('input[data-city]:checked'))
+        .map((input) => input.value);
+
+    function renderMarketConfig(config: MarketConfig): void {
+      required<HTMLElement>("#market-label").textContent = config.geo_label;
+      required<HTMLElement>("#market-city-count").textContent = String(config.cities.length);
+      required<HTMLElement>("#market-vertical-count").textContent = String(config.verticals.length);
+
+      verticalOptions.innerHTML = config.verticals
+        .map((vertical) => `
+          <label class="flex items-center gap-2 rounded-lg border border-neutral-200 p-3 text-sm text-neutral-800">
+            <input data-vertical type="checkbox" value="${escapeHtml(vertical.key)}" checked />
+            <span>
+              <span class="font-medium">${escapeHtml(vertical.key.replaceAll("_", " "))}</span>
+              ${vertical.has_case_study ? '<span class="ml-1 text-xs text-neutral-500">case study</span>' : ''}
+            </span>
+          </label>
+        `)
+        .join("");
+
+      cityOptions.innerHTML = config.cities
+        .map((city) => `
+          <label class="flex items-center gap-2 text-sm text-neutral-700">
+            <input data-city type="checkbox" value="${escapeHtml(city)}" checked />
+            <span>${escapeHtml(city)}</span>
+          </label>
+        `)
+        .join("");
+
+      document.querySelectorAll<HTMLInputElement>('input[data-vertical], input[data-city]')
+        .forEach((input) => input.addEventListener("change", updateScopeSummary));
+
+      allCitiesInput.addEventListener("change", () => {
+        cityOptions.classList.toggle("hidden", allCitiesInput.checked);
+        cityOptions.classList.toggle("grid", !allCitiesInput.checked);
+        updateScopeSummary();
+      });
+
+      warning.classList.toggle("hidden", config.execution_enabled);
+      updateScopeSummary();
+      updateStartButton();
     }
 
-    return element;
-  }
+    function updateScopeSummary(): void {
+      if (!marketConfig) return;
 
-  const form = required<HTMLFormElement>("#sweep-form");
-  const startButton =
-    required<HTMLButtonElement>("#start-button");
-  const warning =
-    required<HTMLElement>("#execution-warning");
-  const currentJob =
-    required<HTMLElement>("#current-job");
-  const message =
-    required<HTMLElement>("#form-message");
-  const refreshButton =
-    required<HTMLButtonElement>("#refresh-button");
+      const verticals = checkedVerticals();
+      const cities = allCitiesInput.checked ? marketConfig.cities : checkedCities();
+      const queryCount = marketConfig.verticals
+        .filter((vertical) => verticals.includes(vertical.key))
+        .reduce((sum, vertical) => sum + vertical.query_count, 0);
+      const baseRequests = queryCount * cities.length;
 
-  const verticalsInput =
-    required<HTMLInputElement>("#verticals");
-  const citiesInput =
-    required<HTMLInputElement>("#cities");
-  const gridInput =
-    required<HTMLInputElement>("#grid");
-  const mergeInput =
-    required<HTMLInputElement>("#merge");
-  const crawlBatchInput =
-    required<HTMLInputElement>("#crawl-batch");
-  const psiBatchInput =
-    required<HTMLInputElement>("#psi-batch");
+      required<HTMLElement>("#vertical-selection-count").textContent = `${verticals.length} of ${marketConfig.verticals.length} selected`;
+      required<HTMLElement>("#scope-summary").textContent = `${verticals.length} verticals × ${cities.length} cities`;
+      required<HTMLElement>("#base-query-count").textContent = baseRequests.toLocaleString();
+      required<HTMLElement>("#max-query-count").textContent = (baseRequests * 3).toLocaleString();
 
-  function splitValues(value: string): string[] {
-    return value
-      .split(",")
-      .map((item: string) => item.trim())
-      .filter(Boolean);
-  }
-
-  function escapeHtml(value: unknown): string {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
-  async function cancelJob(id: string): Promise<void> {
-    const response = await fetch(
-      `/api/sweeps/${encodeURIComponent(id)}/cancel`,
-      {
-        method: "POST",
-      },
-    );
-
-    if (!response.ok) {
-      const body = await response
-        .json()
-        .catch(() => ({}));
-
-      window.alert(
-        body.detail || "Unable to cancel sweep.",
-      );
+      updateStartButton();
     }
 
-    await loadCurrent();
-  }
-
-  async function loadCurrent(): Promise<void> {
-    const response = await fetch(
-      "/api/sweeps/current",
-    );
-
-    if (!response.ok) {
-      currentJob.innerHTML = `
-        <p class="text-sm text-red-700">
-          Unable to load sweep state.
-        </p>
-      `;
-      return;
+    function updateStartButton(): void {
+      const hasScope = Boolean(marketConfig && checkedVerticals().length);
+      const hasCities = Boolean(marketConfig && (allCitiesInput.checked || checkedCities().length));
+      const activeJob = currentJob.dataset.active === "true";
+      startButton.disabled = !marketConfig?.execution_enabled || !hasScope || !hasCities || activeJob;
     }
 
-    const data = await response.json();
-
-    warning.classList.toggle(
-      "hidden",
-      Boolean(data.execution_enabled),
-    );
-
-    startButton.disabled =
-      !data.execution_enabled ||
-      Boolean(data.job);
-
-    if (!data.job) {
-      currentJob.innerHTML = `
-        <div class="rounded-xl bg-neutral-50 p-5">
-          <p class="text-sm font-medium text-neutral-900">
-            No active sweep
-          </p>
-          <p class="mt-1 text-sm text-neutral-500">
-            The worker is idle.
-          </p>
-        </div>
-      `;
-      return;
+    function selectEverything(): void {
+      document.querySelectorAll<HTMLInputElement>('input[data-vertical], input[data-city]')
+        .forEach((input) => { input.checked = true; });
+      allCitiesInput.checked = true;
+      cityOptions.classList.add("hidden");
+      cityOptions.classList.remove("grid");
+      updateScopeSummary();
     }
 
-    const job = data.job;
+    async function cancelJob(id: string): Promise<void> {
+      const response = await fetch(`/api/sweeps/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        window.alert(body.detail || "Unable to cancel sweep.");
+      }
+      await refreshState();
+    }
 
-    currentJob.innerHTML = `
-      <div class="space-y-4 rounded-xl bg-neutral-50 p-5">
-        <div>
-          <p class="text-xs uppercase tracking-wider text-neutral-500">
-            Status
-          </p>
-          <p class="mt-1 text-lg font-semibold text-neutral-950">
-            ${escapeHtml(job.status)}
-          </p>
-        </div>
+    function renderCurrent(job: SweepJob | null): void {
+      currentJob.dataset.active = job ? "true" : "false";
 
-        <div class="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p class="text-neutral-500">Stage</p>
-            <p class="font-medium text-neutral-900">
-              ${escapeHtml(job.stage)}
-            </p>
+      if (!job) {
+        currentJob.innerHTML = `
+          <div class="rounded-xl bg-neutral-50 p-5">
+            <p class="text-sm font-medium text-neutral-900">No active sweep</p>
+            <p class="mt-1 text-sm text-neutral-500">The worker is idle. Recent outcomes remain below.</p>
           </div>
+        `;
+        updateStartButton();
+        return;
+      }
 
-          <div>
-            <p class="text-neutral-500">Verticals</p>
-            <p class="font-medium text-neutral-900">
-              ${escapeHtml(
-                (job.verticals || []).join(", "),
-              )}
-            </p>
+      const cityLabel = job.cities?.length ? `${job.cities.length} selected cities` : "All configured cities";
+      currentJob.innerHTML = `
+        <div class="space-y-4 rounded-xl bg-neutral-50 p-5">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-xs uppercase tracking-wider text-neutral-500">Status</p>
+              <p class="mt-1 text-lg font-semibold text-neutral-950">${escapeHtml(job.status)}</p>
+            </div>
+            <span class="rounded-full bg-white px-2.5 py-1 text-xs text-neutral-600">${escapeHtml(job.stage || "queued")}</span>
           </div>
+          <div class="space-y-2 text-sm">
+            <p><span class="text-neutral-500">Verticals:</span> <span class="font-medium">${escapeHtml(job.verticals.join(", "))}</span></p>
+            <p><span class="text-neutral-500">Cities:</span> <span class="font-medium">${escapeHtml(cityLabel)}</span></p>
+          </div>
+          <button id="cancel-active-job" type="button" class="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Stop sweep</button>
         </div>
+      `;
 
-        <button
-          id="cancel-active-job"
-          type="button"
-          class="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-        >
-          Stop sweep
-        </button>
-      </div>
-    `;
+      document.querySelector<HTMLButtonElement>("#cancel-active-job")
+        ?.addEventListener("click", () => cancelJob(job.id));
+      updateStartButton();
+    }
 
-    const cancelButton =
-      document.querySelector<HTMLButtonElement>(
-        "#cancel-active-job",
-      );
+    function formatDate(value: string | null | undefined): string {
+      if (!value) return "—";
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    }
 
-    cancelButton?.addEventListener(
-      "click",
-      () => cancelJob(String(job.id)),
-    );
-  }
+    function renderHistory(items: SweepJob[]): void {
+      if (!items.length) {
+        recentJobs.innerHTML = '<p class="text-sm text-neutral-500">No sweep history yet.</p>';
+        return;
+      }
 
-  form.addEventListener(
-    "submit",
-    async (event: SubmitEvent) => {
+      recentJobs.innerHTML = items.slice(0, 8).map((job) => {
+        const statusClass = job.status === "completed"
+          ? "bg-emerald-50 text-emerald-800"
+          : job.status === "failed"
+            ? "bg-red-50 text-red-700"
+            : "bg-neutral-100 text-neutral-700";
+        const cityLabel = job.cities?.length ? job.cities.join(", ") : "All configured cities";
+
+        return `
+          <div class="rounded-xl border border-neutral-200 p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-sm font-medium text-neutral-950">${escapeHtml(job.verticals.join(", "))}</p>
+                <p class="mt-1 text-xs text-neutral-500">${escapeHtml(cityLabel)}</p>
+              </div>
+              <span class="rounded-full px-2.5 py-1 text-xs font-medium ${statusClass}">${escapeHtml(job.status)}</span>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-neutral-500">
+              <span>Created ${escapeHtml(formatDate(job.created_at))}</span>
+              <span>Stage ${escapeHtml(job.stage || "—")}</span>
+            </div>
+            ${job.error_message ? `<p class="mt-3 text-xs leading-5 text-red-700">${escapeHtml(job.error_message)}</p>` : ""}
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function loadConfig(): Promise<void> {
+      const response = await fetch("/api/sweeps/config");
+      if (!response.ok) throw new Error("Unable to load market configuration.");
+      marketConfig = await response.json();
+      renderMarketConfig(marketConfig as MarketConfig);
+    }
+
+    async function refreshState(): Promise<void> {
+      const [currentResponse, historyResponse] = await Promise.all([
+        fetch("/api/sweeps/current"),
+        fetch("/api/sweeps?limit=8"),
+      ]);
+
+      if (currentResponse.ok) {
+        const data = await currentResponse.json();
+        warning.classList.toggle("hidden", Boolean(data.execution_enabled));
+        renderCurrent(data.job || null);
+      } else {
+        currentJob.innerHTML = '<p class="text-sm text-red-700">Unable to load sweep state.</p>';
+      }
+
+      if (historyResponse.ok) {
+        const data = await historyResponse.json();
+        renderHistory(data.items || []);
+      } else {
+        recentJobs.innerHTML = '<p class="text-sm text-red-700">Unable to load sweep history.</p>';
+      }
+    }
+
+    form.addEventListener("submit", async (event: SubmitEvent) => {
       event.preventDefault();
+      if (!marketConfig) return;
+
+      const verticals = checkedVerticals();
+      const cities = allCitiesInput.checked ? null : checkedCities();
+      const cityCount = cities?.length ?? marketConfig.cities.length;
+
+      const confirmed = window.confirm(
+        `Start sweep for ${verticals.length} vertical(s) across ${cityCount} city target(s)?`,
+      );
+      if (!confirmed) return;
 
       message.classList.add("hidden");
-
-      const cities = splitValues(
-        citiesInput.value,
-      );
-
-      const payload = {
-        verticals: splitValues(
-          verticalsInput.value,
-        ),
-        cities: cities.length ? cities : null,
-        use_grid: gridInput.checked,
-        merge_results: mergeInput.checked,
-        crawl_batch: Number(
-          crawlBatchInput.value,
-        ),
-        psi_batch: Number(
-          psiBatchInput.value,
-        ),
-      };
-
       startButton.disabled = true;
 
-      const response = await fetch(
-        "/api/sweeps",
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        },
-      );
+      const response = await fetch("/api/sweeps", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          verticals,
+          cities,
+          use_grid: gridInput.checked,
+          merge_results: mergeInput.checked,
+          crawl_batch: Number(crawlBatchInput.value),
+          psi_batch: Number(psiBatchInput.value),
+        }),
+      });
 
-      const body = await response
-        .json()
-        .catch(() => ({}));
+      const body = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        message.textContent =
-          body.detail ||
-          "Unable to start sweep.";
-
-        message.className =
-          "rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800";
-
-        startButton.disabled = false;
+        message.textContent = body.detail || "Unable to start sweep.";
+        message.className = "rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800";
+        updateStartButton();
         return;
       }
 
       message.textContent = "Sweep queued.";
+      message.className = "rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800";
+      await refreshState();
+    });
 
-      message.className =
-        "rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800";
+    selectFullMarket.addEventListener("click", selectEverything);
+    refreshButton.addEventListener("click", () => void refreshState());
 
-      await loadCurrent();
-    },
-  );
+    void (async () => {
+      try {
+        await loadConfig();
+        await refreshState();
+      } catch (error) {
+        message.textContent = error instanceof Error ? error.message : "Unable to initialize sweep workspace.";
+        message.className = "rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800";
+      }
+    })();
 
-  refreshButton.addEventListener(
-    "click",
-    () => {
-      void loadCurrent();
-    },
-  );
-
-  void loadCurrent();
-
-  window.setInterval(
-    () => {
-      void loadCurrent();
-    },
-    5000,
-  );
-</script>
+    window.setInterval(() => void refreshState(), 5000);
+  </script>
 </AppLayout>
