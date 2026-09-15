@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.core.database import pool
+from app.repositories.outreach import OutreachRepository
 from app.repositories.prospects import ProspectRepository
 from app.repositories.runs import RunRepository
 from app.schemas.overview import OverviewResponse
@@ -15,5 +16,6 @@ def overview() -> dict:
     service = OverviewService(
         ProspectRepository(pool),
         RunRepository(pool),
+        OutreachRepository(pool),
     )
     return service.get_overview()
