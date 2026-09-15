@@ -1,9 +1,13 @@
 from pydantic import ValidationError
 
-from app.integrations.gmail import GmailDraftResult
+from app.integrations.gmail import GmailDraftError, GmailDraftResult
 from app.integrations.openrouter import GeneratedCopy
 from app.schemas.prospects import ProspectWorkflowUpdate
-from app.services.outreach import OutreachBlocked, OutreachService
+from app.services.outreach import (
+    OutreachBlocked,
+    OutreachIntegrationUnavailable,
+    OutreachService,
+)
 from app.services.outreach_verification import OutreachClaimVerifier, VerifiedClaim
 
 
@@ -29,17 +33,41 @@ class FakeVerifier:
 
 
 class FakeGmail:
+    def __init__(self):
+        self.create_calls = 0
+        self.recovered = None
+
     def create_draft(self, **kwargs):
+        self.create_calls += 1
         assert kwargs["to_address"] == "owner@example.com"
         assert kwargs["subject"] == "Reviewed subject"
         assert "1440 Columbia St" in kwargs["body"]
+        assert kwargs["message_id_header"].startswith("<")
+        assert kwargs["message_id_header"].endswith("@lead-desk.lilosgrowth.com>")
         return GmailDraftResult(draft_id="draft-123", message_id="message-123")
+
+    def find_draft_by_message_id(self, message_id_header):
+        return self.recovered
+
+
+class UncertainThenRecoveringGmail(FakeGmail):
+    def create_draft(self, **kwargs):
+        self.create_calls += 1
+        self.recovered = GmailDraftResult(
+            draft_id="draft-recovered",
+            message_id="message-recovered",
+        )
+        raise GmailDraftError(
+            "transport outcome uncertain",
+            uncertain_side_effect=True,
+        )
 
 
 class FakeRepository:
     def __init__(self):
         self.generated = None
         self.gmail = None
+        self.operation = None
         self.item = {
             "id": "11111111-1111-1111-1111-111111111111",
             "place_id": "place-1",
@@ -82,17 +110,57 @@ class FakeRepository:
     def get_item(self, item_id):
         return dict(self.item)
 
-    def record_gmail_draft(self, item_id, **kwargs):
-        self.gmail = kwargs
-        return {
-            **self.item,
-            "gmail_draft_id": kwargs["draft_id"],
-            "gmail_message_id": kwargs["message_id"],
-            "version": 2,
-        }, False
-
     def update_item(self, item_id, *, changes, expected_version):
         return {**self.item, **changes, "version": expected_version + 1}, False
+
+    def begin_gmail_draft_operation(self, item_id, *, expected_version, message_id_header):
+        if expected_version != self.item["version"]:
+            return {"queue_version": self.item["version"]}, True
+        if self.operation is not None:
+            return {**self.operation, "created_now": False}, False
+        self.operation = {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "queue_id": item_id,
+            "queue_version": expected_version,
+            "message_id_header": message_id_header,
+            "state": "pending",
+            "gmail_draft_id": None,
+            "gmail_message_id": None,
+            "error_message": None,
+        }
+        return {**self.operation, "created_now": True}, False
+
+    def reopen_gmail_draft_operation(self, operation_id):
+        if not self.operation or self.operation["id"] != operation_id:
+            return None
+        self.operation["state"] = "pending"
+        self.operation["error_message"] = None
+        return dict(self.operation)
+
+    def record_gmail_operation_error(self, operation_id, *, error_message, uncertain):
+        assert self.operation and self.operation["id"] == operation_id
+        self.operation["state"] = "pending" if uncertain else "failed"
+        self.operation["error_message"] = error_message
+
+    def complete_gmail_draft_operation(self, operation_id, *, draft_id, message_id):
+        assert self.operation and self.operation["id"] == operation_id
+        self.operation.update({
+            "state": "created",
+            "gmail_draft_id": draft_id,
+            "gmail_message_id": message_id,
+            "error_message": None,
+        })
+        self.gmail = {
+            "draft_id": draft_id,
+            "message_id": message_id,
+            "operation_id": operation_id,
+        }
+        self.item.update({
+            "gmail_draft_id": draft_id,
+            "gmail_message_id": message_id,
+            "version": self.item["version"] + 1,
+        })
+        return dict(self.item)
 
 
 def test_generation_uses_verified_claim_and_deterministic_footer():
@@ -142,9 +210,10 @@ def test_gmail_creation_requires_human_ready_state_and_never_sends():
         "body": "Reviewed body\n\n1440 Columbia St",
         "verification_status": "verified",
     })
+    gmail = FakeGmail()
     service = OutreachService(
         repo,
-        gmail=FakeGmail(),
+        gmail=gmail,
         gmail_sender_email="mike@lilosgrowth.com",
     )
 
@@ -152,7 +221,36 @@ def test_gmail_creation_requires_human_ready_state_and_never_sends():
 
     assert result["gmail_draft_id"] == "draft-123"
     assert repo.gmail["draft_id"] == "draft-123"
+    assert gmail.create_calls == 1
     assert service.integration_status()["send_enabled"] is False
+
+
+def test_uncertain_gmail_result_reconciles_without_duplicate_creation():
+    repo = FakeRepository()
+    repo.item.update({
+        "status": "draft_ready",
+        "subject": "Reviewed subject",
+        "body": "Reviewed body\n\n1440 Columbia St",
+        "verification_status": "verified",
+    })
+    gmail = UncertainThenRecoveringGmail()
+    service = OutreachService(repo, gmail=gmail)
+
+    try:
+        service.create_gmail_draft(repo.item["id"], expected_version=1)
+    except OutreachIntegrationUnavailable as exc:
+        assert "preserved for reconciliation" in str(exc)
+    else:
+        raise AssertionError("expected uncertain Gmail response to remain pending")
+
+    assert gmail.create_calls == 1
+    assert repo.operation["state"] == "pending"
+
+    result = service.create_gmail_draft(repo.item["id"], expected_version=1)
+
+    assert result["gmail_draft_id"] == "draft-recovered"
+    assert gmail.create_calls == 1
+    assert repo.operation["state"] == "created"
 
 
 def test_gmail_creation_blocks_unreviewed_queue_item():
@@ -232,3 +330,8 @@ def test_schema_verifier_only_calls_absent_when_safe():
     </head></html>
     '''
     assert OutreachClaimVerifier._localbusiness_schema_state(html) == "absent"
+
+
+def test_live_verifier_rejects_private_network_targets():
+    assert OutreachClaimVerifier._is_public_http_url("http://127.0.0.1/") is False
+    assert OutreachClaimVerifier._is_public_http_url("http://[::1]/") is False
