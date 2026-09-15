@@ -9,6 +9,7 @@ from app.repositories.sweeps import (
     SweepAlreadyActiveError,
     SweepRepository,
 )
+from pipeline import config as market_config
 
 
 class SweepExecutionDisabledError(RuntimeError):
@@ -26,6 +27,27 @@ class SweepService:
             "false",
         ).lower() in {"1", "true", "yes", "on"}
 
+    @staticmethod
+    def market_configuration() -> dict[str, Any]:
+        verticals = []
+
+        for key, spec in market_config.VERTICALS.items():
+            verticals.append(
+                {
+                    "key": key,
+                    "priority": spec["priority"],
+                    "query_count": len(spec["queries"]),
+                    "has_case_study": bool(spec.get("case_study")),
+                }
+            )
+
+        return {
+            "geo_label": market_config.GEO_LABEL,
+            "cities": list(market_config.TARGET_CITIES),
+            "verticals": verticals,
+            "execution_enabled": SweepService.execution_enabled(),
+        }
+
     def create(
         self,
         *,
@@ -39,6 +61,14 @@ class SweepService:
         if not self.execution_enabled():
             raise SweepExecutionDisabledError(
                 "Sweep execution is currently disabled."
+            )
+
+        unknown_verticals = sorted(
+            set(verticals) - set(market_config.VERTICALS)
+        )
+        if unknown_verticals:
+            raise ValueError(
+                "unsupported sweep verticals: " + ", ".join(unknown_verticals)
             )
 
         return self.repo.create_job(
