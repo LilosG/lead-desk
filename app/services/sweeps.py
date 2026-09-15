@@ -48,6 +48,25 @@ class SweepService:
             "execution_enabled": SweepService.execution_enabled(),
         }
 
+    @staticmethod
+    def _ordered_verticals(verticals: list[str]) -> list[str]:
+        unique_verticals = set(verticals)
+        unknown_verticals = sorted(
+            unique_verticals - set(market_config.VERTICALS)
+        )
+        if unknown_verticals:
+            raise ValueError(
+                "unsupported sweep verticals: " + ", ".join(unknown_verticals)
+            )
+
+        return sorted(
+            unique_verticals,
+            key=lambda key: (
+                market_config.VERTICALS[key]["priority"],
+                key,
+            ),
+        )
+
     def create(
         self,
         *,
@@ -63,16 +82,10 @@ class SweepService:
                 "Sweep execution is currently disabled."
             )
 
-        unknown_verticals = sorted(
-            set(verticals) - set(market_config.VERTICALS)
-        )
-        if unknown_verticals:
-            raise ValueError(
-                "unsupported sweep verticals: " + ", ".join(unknown_verticals)
-            )
+        ordered_verticals = self._ordered_verticals(verticals)
 
         return self.repo.create_job(
-            verticals=verticals,
+            verticals=ordered_verticals,
             cities=cities,
             use_grid=use_grid,
             merge_results=merge_results,
