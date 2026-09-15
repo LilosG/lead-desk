@@ -262,14 +262,129 @@ class PostgresStore:
     def save_businesses(self, businesses: list, run_id: str) -> int:
         now = datetime.now(timezone.utc)
         rows = []
+        memberships = []
+
         for b in businesses:
+            matched_verticals = list(
+                dict.fromkeys(
+                    b.get("matched_verticals")
+                    or [b.get("vertical")]
+                )
+            )
+
             r = dict(b)
             r["last_seen_run"] = run_id
             r.setdefault("first_seen_run", run_id)
             r["last_seen_at"] = now
             r.pop("unique_key", None)
+            r.pop("matched_verticals", None)
             rows.append(r)
-        return self.upsert("businesses", rows, on_conflict="place_id")
+
+            for vertical in matched_verticals:
+                if not vertical:
+                    continue
+                memberships.append(
+                    {
+                        "place_id": b["place_id"],
+                        "vertical": vertical,
+                    }
+                )
+
+        saved = self.upsert(
+            "businesses",
+            rows,
+            on_conflict="place_id",
+        )
+
+        if memberships:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    insert into business_vertical_memberships (
+                        place_id,
+                        vertical,
+                        first_seen_run,
+                        last_seen_run,
+                        first_seen_at,
+                        last_seen_at
+                    )
+                    values (%s, %s, %s, %s, %s, %s)
+                    on conflict (place_id, vertical)
+                    do update set
+                        last_seen_run = excluded.last_seen_run,
+                        last_seen_at = excluded.last_seen_at
+                    """,
+                    [
+                        (
+                            item["place_id"],
+                            item["vertical"],
+                            run_id,
+                            run_id,
+                            now,
+                            now,
+                        )
+                        for item in memberships
+                    ],
+                )
+
+        if memberships:
+            place_ids = sorted(
+                {item["place_id"] for item in memberships}
+            )
+
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select place_id, vertical
+                    from business_vertical_memberships
+                    where place_id = any(%s)
+                    """,
+                    (place_ids,),
+                )
+
+                memberships_by_place = {}
+
+                for row in cur.fetchall():
+                    memberships_by_place.setdefault(
+                        row["place_id"],
+                        [],
+                    ).append(row["vertical"])
+
+                canonical_updates = []
+
+                for place_id, verticals in memberships_by_place.items():
+                    supported = [
+                        vertical
+                        for vertical in verticals
+                        if vertical in C.VERTICALS
+                    ]
+
+                    if not supported:
+                        continue
+
+                    canonical_vertical = min(
+                        supported,
+                        key=lambda vertical: (
+                            C.VERTICALS[vertical]["priority"],
+                            vertical,
+                        ),
+                    )
+
+                    canonical_updates.append(
+                        (canonical_vertical, place_id)
+                    )
+
+                if canonical_updates:
+                    cur.executemany(
+                        """
+                        update businesses
+                        set vertical = %s
+                        where place_id = %s
+                        """,
+                        canonical_updates,
+                    )
+
+        return saved
 
     def save_enrichment(self, enrichment: dict) -> int:
         rows = []

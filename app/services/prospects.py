@@ -2,6 +2,7 @@ from math import ceil
 from typing import Any
 
 from app.repositories.prospects import ProspectRepository
+from pipeline import config as market_config
 
 
 class WorkflowVersionConflict(Exception):
@@ -50,7 +51,25 @@ class ProspectService:
         }
 
     def filter_meta(self) -> dict:
-        return self.repository.filter_meta()
+        meta = self.repository.filter_meta()
+
+        configured_cities = list(market_config.TARGET_CITIES)
+        observed_cities = [
+            city for city in meta["cities"] if city not in configured_cities
+        ]
+
+        configured_verticals = list(market_config.VERTICALS)
+        observed_verticals = [
+            vertical
+            for vertical in meta["verticals"]
+            if vertical not in configured_verticals
+        ]
+
+        return {
+            **meta,
+            "cities": configured_cities + sorted(observed_cities),
+            "verticals": configured_verticals + sorted(observed_verticals),
+        }
 
     @staticmethod
     def default_workflow() -> dict[str, Any]:

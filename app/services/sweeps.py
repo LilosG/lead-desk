@@ -9,6 +9,7 @@ from app.repositories.sweeps import (
     SweepAlreadyActiveError,
     SweepRepository,
 )
+from pipeline import config as market_config
 
 
 class SweepExecutionDisabledError(RuntimeError):
@@ -26,6 +27,54 @@ class SweepService:
             "false",
         ).lower() in {"1", "true", "yes", "on"}
 
+    @staticmethod
+    def market_configuration() -> dict[str, Any]:
+        verticals = []
+
+        for key, spec in market_config.VERTICALS.items():
+            verticals.append(
+                {
+                    "key": key,
+                    "priority": spec["priority"],
+                    "query_count": len(spec["queries"]),
+                    "has_case_study": bool(spec.get("case_study")),
+                }
+            )
+
+        return {
+            "geo_label": market_config.GEO_LABEL,
+            "cities": list(market_config.TARGET_CITIES),
+            "verticals": verticals,
+            "pricing": {
+                "text_search_per_1000": market_config.COST_PER_1K[
+                    "text_search_enterprise"
+                ],
+                "enterprise_free_monthly": market_config.FREE_TIER_MONTHLY[
+                    "enterprise"
+                ],
+            },
+            "execution_enabled": SweepService.execution_enabled(),
+        }
+
+    @staticmethod
+    def _ordered_verticals(verticals: list[str]) -> list[str]:
+        unique_verticals = set(verticals)
+        unknown_verticals = sorted(
+            unique_verticals - set(market_config.VERTICALS)
+        )
+        if unknown_verticals:
+            raise ValueError(
+                "unsupported sweep verticals: " + ", ".join(unknown_verticals)
+            )
+
+        return sorted(
+            unique_verticals,
+            key=lambda key: (
+                market_config.VERTICALS[key]["priority"],
+                key,
+            ),
+        )
+
     def create(
         self,
         *,
@@ -41,8 +90,10 @@ class SweepService:
                 "Sweep execution is currently disabled."
             )
 
+        ordered_verticals = self._ordered_verticals(verticals)
+
         return self.repo.create_job(
-            verticals=verticals,
+            verticals=ordered_verticals,
             cities=cities,
             use_grid=use_grid,
             merge_results=merge_results,

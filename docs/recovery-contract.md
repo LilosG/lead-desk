@@ -15,11 +15,14 @@ This document records the existing behavioral contract that the production Lead 
 - Preserve geographic bounding-box verification; Google `locationBias` is not a geofence.
 - Preserve contact-email filtering that rejects unrelated developer/footer domains.
 - Preserve durable crawl/run state and `blocked_` classifications so blocked crawls cannot become false `site_down` claims.
-- Keep Google sweep execution disabled until the existing unresolved sweep-execution issue is explicitly resolved and validated. Recovery work does not silently re-enable it.
+- Google sweep execution is enabled only through the staged worker path. Production validation on 2026-09-15 completed discovery, crawl, PageSpeed, scoring, and finalize successfully after the execution gate, discovery timestamp dependency, and city-input normalization were corrected.
+- Partial sweeps refresh a market slice; they must never replace or hide prospect inventory from other completed market slices.
 
 ## Architecture rules
 
 - PostgreSQL remains the durable source of application workflow state.
+- Operational prospect inventory uses the newest score per prospect from completed non-dry-run sweeps. A single narrow latest run is not the market universe.
+- Market geography and supported verticals remain centralized in `pipeline/config.py`; dashboard filter options and sweep configuration derive from that contract rather than from whichever rows happen to be visible in the latest run.
 - Migrations are append-only, checksummed, transactional, and applied through `sql/migrate.py`.
 - Cross-system side effects must be recoverable. Gmail draft creation records durable intent before the external call and reconciles ambiguous outcomes before any retry.
 - External prospect URLs are untrusted input. Live verification does not access private, loopback, link-local, or otherwise non-public destinations.

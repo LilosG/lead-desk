@@ -54,6 +54,11 @@ class SweepCreateRequest(BaseModel):
         return normalized or None
 
 
+@router.get("/config")
+def sweep_configuration():
+    return SweepService.market_configuration()
+
+
 @router.get("/current")
 def current_sweep():
     service = SweepService()
@@ -96,6 +101,12 @@ def create_sweep(payload: SweepCreateRequest):
     except SweepAlreadyActiveError as exc:
         raise HTTPException(
             status_code=409,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
             detail=str(exc),
         ) from exc
 

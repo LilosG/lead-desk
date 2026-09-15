@@ -50,7 +50,18 @@ class ProspectRepository:
             params["city"] = city
 
         if vertical:
-            conditions.append(sql.SQL("w.vertical = %(vertical)s"))
+            conditions.append(
+                sql.SQL(
+                    """
+                    exists (
+                        select 1
+                        from business_vertical_memberships bvm
+                        where bvm.place_id = w.place_id
+                          and bvm.vertical = %(vertical)s
+                    )
+                    """
+                )
+            )
             params["vertical"] = vertical
 
         if contact == "email":

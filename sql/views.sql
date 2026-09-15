@@ -1,7 +1,8 @@
 -- Lilos Growth — Lead Desk operational views
 --
 -- Current clean-install representation of the validated PostgreSQL schema.
--- Operational lead views scope to the latest completed non-dry-run sweep.
+-- Operational lead views use the latest completed score per prospect across
+-- all completed non-dry-run sweeps, so partial refreshes never hide inventory.
 -- Lead segmentation semantics are centralized in v_lead_segments.
 
 -- ================================================================
@@ -37,7 +38,8 @@ SELECT id,
 -- v_latest_score
 -- ================================================================
 create or replace view v_latest_score as
-SELECT s.id AS score_id,
+SELECT DISTINCT ON (s.place_id)
+    s.id AS score_id,
     s.place_id,
     s.run_id,
     s.model_version,
@@ -49,7 +51,11 @@ SELECT s.id AS score_id,
     s.tier,
     s.headline_gap
    FROM scores s
-     JOIN v_latest_completed_run r ON r.id = s.run_id;
+     JOIN runs r ON r.id = s.run_id
+  WHERE r.finished_at IS NOT NULL
+    AND r.dry_run = false
+    AND r.status = 'completed'::text
+  ORDER BY s.place_id, s.scored_at DESC, r.finished_at DESC, s.id DESC;
 
 -- ================================================================
 -- v_lead_findings
