@@ -12,8 +12,46 @@ class OutreachRepository:
     def __init__(self, pool: ConnectionPool):
         self.pool = pool
 
+    _CANDIDATE_FROM_WHERE = """
+        from v_lead_worklist w
+        join v_lead_segments seg
+          on seg.place_id = w.place_id
+        left join v_lead_findings f
+          on f.place_id = w.place_id
+        where seg.established = true
+          and coalesce(w.review_count, 0) >= 10
+          and coalesce(f.needs_manual_check, false) = false
+          and (
+                cardinality(coalesce(w.emails_found, '{}'::text[])) > 0
+                or w.phone is not null
+              )
+          and not exists (
+                select 1
+                from outreach_queue q
+                where q.place_id = w.place_id
+              )
+          and (
+                cardinality(coalesce(w.emails_found, '{}'::text[])) = 0
+                or not exists (
+                    select 1
+                    from suppression s
+                    where lower(s.email) = lower(coalesce(w.emails_found[1], ''))
+                )
+              )
+    """
+
+    _CANDIDATE_ORDER_BY = """
+        order by
+            case when cardinality(coalesce(w.emails_found, '{}'::text[])) > 0 then 0 else 1 end,
+            case when coalesce(w.review_count, 0) >= 15 then 0 else 1 end,
+            case when seg.confirmed_trading then 0 else 1 end,
+            w.total_score desc,
+            w.review_count desc nulls last,
+            w.name asc nulls last
+    """
+
     def list_candidates(self, limit: int = 100) -> list[dict[str, Any]]:
-        query = """
+        query = f"""
             select
                 w.place_id,
                 w.name,
@@ -30,42 +68,26 @@ class OutreachRepository:
                 false as needs_manual_check,
                 false as suppressed,
                 false as already_queued
-            from v_lead_worklist w
-            join v_lead_segments seg on seg.place_id = w.place_id
-            left join v_lead_findings f on f.place_id = w.place_id
-            where seg.established = true
-              and coalesce(w.review_count, 0) >= 10
-              and coalesce(f.needs_manual_check, false) = false
-              and (
-                    cardinality(coalesce(w.emails_found, '{}'::text[])) > 0
-                    or w.phone is not null
-                  )
-              and not exists (
-                    select 1
-                    from outreach_queue q
-                    where q.place_id = w.place_id
-                  )
-              and (
-                    cardinality(coalesce(w.emails_found, '{}'::text[])) = 0
-                    or not exists (
-                        select 1
-                        from suppression s
-                        where lower(s.email) = lower(coalesce(w.emails_found[1], ''))
-                    )
-                  )
-            order by
-                case when cardinality(coalesce(w.emails_found, '{}'::text[])) > 0 then 0 else 1 end,
-                case when coalesce(w.review_count, 0) >= 15 then 0 else 1 end,
-                case when seg.confirmed_trading then 0 else 1 end,
-                w.total_score desc,
-                w.review_count desc nulls last,
-                w.name asc nulls last
+            {self._CANDIDATE_FROM_WHERE}
+            {self._CANDIDATE_ORDER_BY}
             limit %s
         """
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, (limit,))
                 return cur.fetchall()
+
+    def count_candidates(self) -> int:
+        query = f"""
+            select count(*) as count
+            {self._CANDIDATE_FROM_WHERE}
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query)
+                row = cur.fetchone()
+
+        return int(row["count"])
 
     def candidate_readiness(self, place_id: str) -> dict[str, Any] | None:
         query = """
