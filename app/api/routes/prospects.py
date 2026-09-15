@@ -63,7 +63,7 @@ def get_prospect(place_id: str) -> dict:
     if result is None:
         raise HTTPException(
             status_code=404,
-            detail="prospect not found in latest completed run",
+            detail="prospect not found in operational inventory",
         )
 
     return result
