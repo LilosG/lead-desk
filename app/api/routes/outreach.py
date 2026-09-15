@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.core.config import get_settings
 from app.core.database import pool
 from app.integrations.openrouter import OpenRouterClient
+from app.integrations.openrouter_structured import StructuredOpenRouterClient
 from app.repositories.integrations import IntegrationRepository
 from app.repositories.outreach import OutreachRepository
 from app.schemas.outreach import (
@@ -29,7 +30,12 @@ def get_service() -> OutreachService:
     settings = get_settings()
     generator = None
     if settings.openrouter_configured:
-        generator = OpenRouterClient(
+        generator_class = (
+            StructuredOpenRouterClient
+            if settings.openrouter_model == 'openai/gpt-5-mini'
+            else OpenRouterClient
+        )
+        generator = generator_class(
             api_key=settings.openrouter_api_key or '',
             model=settings.openrouter_model,
         )
