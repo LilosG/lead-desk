@@ -49,42 +49,34 @@ class OpenRouterClient:
             "verified_claim": verified_claim,
         }
         system = (
-            "You write first-touch B2B email copy from Mike at LILOs Growth, a San Diego local SEO and web agency. "
-            "The goal is a credible reply from a real local-business owner, not a click, meeting booking, or hard sell. "
-            "Write in Mike's first-person voice using I/me/my. Make the note sound individually written, calm, commercially aware, "
-            "and easy to answer. The application will insert the supplied verified_claim verbatim immediately after your intro. "
-            "You may read that claim only to keep the subject, intro, and CTA contextually aligned. You must not repeat it, paraphrase it, "
-            "expand it, add consequences, predict results, or introduce any additional finding. If the verified claim is about the website, "
-            "keep the framing about the website. If it is about search visibility, reviews, GBP, or another area, frame only around that area. "
-            "Never broaden a website finding into 'local search', 'online presence', rankings, traffic, leads, revenue, or visibility unless those "
-            "ideas are explicitly present in the verified claim. Use only the supplied business name, city, vertical, and verified claim. "
-            "Do not invent a contact name, tenure, service area, customer count, award, relationship, result, or familiarity with the business. "
-            "Do not compliment them generically.\n\n"
-            "COPY STANDARD:\n"
-            "- Subject: 2-5 words, under 55 characters, neutral and natural. Prefer the business name plus the narrow context actually supported "
-            "by the verified claim, such as 'website'. Do not use 'search' unless the verified claim itself is about search. Never use RE:, FWD:, "
-            "urgency, hype, emojis, or clickbait.\n"
-            "- Intro: exactly one short sentence, usually 8-16 words. State only that Mike looked at the relevant surface before reaching out. "
-            "For a website claim, a strong pattern is 'I took a look at [business]'s website before reaching out.' Avoid filler about the city, "
-            "industry, online presence, or local search unless the verified claim requires it.\n"
-            "- CTA: one short question, usually 5-12 words. Ask for a simple reply and offer one concrete next step. Prefer direct language such as "
-            "'Want me to send over the fix I'd make?' or 'Want me to send over the recommendation?' Do not use 'Would you be open to me...', "
-            "'Would it be useful if...', 'exact change I'd recommend', 'book a call', 'schedule time', or any multi-step ask.\n"
-            "- Keep it plain-text, professional, low-pressure, and specific. No exclamation points. No buzzwords such as game-changer, skyrocket, "
-            "dominate, unlock, leverage, guaranteed, improve your online presence, or grow your business. No claims of free audits, guaranteed results, "
-            "increased revenue, or exclusive opportunities. No links.\n"
-            "- Do not include a greeting, signature, postal address, opt-out text, URLs, or the verified claim itself; the application adds the claim "
-            "and compliance footer.\n"
+            "You write a short first-touch email from Mike at LILOs Growth to one local business owner. "
+            "It must read like a real person looked at this specific business and wrote a normal note, not like a sales sequence, mail merge, audit blast, or AI template. "
+            "Use only the supplied business name, city, vertical, and verified claim. Never invent a contact name, relationship, result, urgency, familiarity, or additional finding. "
+            "The application inserts the verified claim as a separate paragraph after your intro, so do not repeat, paraphrase, explain, dramatize, or add consequences to that claim. "
+            "If the claim is technical, keep your surrounding copy plain-English and conversational.\n\n"
+            "VOICE AND STRUCTURE:\n"
+            "- Sound like a concise owner-to-owner note. Natural, calm, specific, and understated.\n"
+            "- Subject: 1-4 words, usually the business name or business name + 'website'. Do not add the city unless the verified claim itself is geographic. No colons, dashes, urgency, clickbait, RE:, FWD:, or marketing language.\n"
+            "- Intro: one short sentence, generally 7-16 words. It may say you looked at the site/profile, but avoid canned outreach language. Good examples of tone: 'I took a look at TNT Electric's site earlier.' or 'I was on TNT Electric's website earlier.' Do not copy these mechanically.\n"
+            "- Closing: one short low-pressure sentence. Prefer natural wording like 'Happy to send over what I'd change if it's useful.' or 'I can send over the specific fix if you'd like.' It does not have to be a question.\n"
+            "- Keep the generated subject + intro + closing under 45 words total. The application adds the verified finding and compliance footer separately.\n\n"
+            "NEVER USE THESE PATTERNS:\n"
+            "- 'quick note', 'quick observation', 'worth flagging', 'noticed one thing', 'I was reviewing', 'I came across your business', 'hope you're well'\n"
+            "- 'Want me to send over...', 'Would you be open to...', 'Would it be useful if...', 'book a call', 'schedule a call'\n"
+            "- 'online presence', 'grow your business', 'increase leads', 'you're losing customers', 'rankings', 'traffic', or similar consequences unless literally present in the verified claim\n"
+            "- SEO jargon such as schema, title tag, PageSpeed, map pack, or Google Business Profile in the generated intro/closing\n"
+            "- generic compliments, fake personalization, exclamation points, links, or claims of a free audit\n\n"
+            "Do not include a greeting, signature, postal address, opt-out text, URL, or the verified claim itself. "
             "Return JSON only with string keys subject, intro, and cta."
         )
         user = (
-            "Write the non-claim portions of one high-quality first-touch email using these facts:\n"
+            "Write the non-claim portions of one genuinely human first-touch email using these facts:\n"
             + json.dumps(facts, ensure_ascii=False)
         )
         payload: dict[str, Any] = {
             "model": self.model,
-            "temperature": 0.2,
-            "max_tokens": 180,
+            "temperature": 0.35,
+            "max_tokens": 160,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -126,6 +118,8 @@ class OpenRouterClient:
             intro=intro,
             cta=cta,
             verified_claim=verified_claim,
+            business_name=business_name,
+            city=city,
         )
 
         return GeneratedCopy(
@@ -142,15 +136,19 @@ class OpenRouterClient:
         intro: str,
         cta: str,
         verified_claim: str | None = None,
+        business_name: str | None = None,
+        city: str | None = None,
     ) -> None:
         if not subject or not intro or not cta:
             raise OpenRouterError("OpenRouter returned incomplete draft copy")
-        if len(subject) > 55 or len(subject.split()) > 6:
+        if len(subject) > 55 or len(subject.split()) > 5:
             raise OpenRouterError("Generated subject exceeds the outreach copy limit")
         if len(intro) > 180:
             raise OpenRouterError("Generated intro exceeds the outreach copy limit")
         if len(cta) > 140:
             raise OpenRouterError("Generated CTA exceeds the outreach copy limit")
+        if len((subject + " " + intro + " " + cta).split()) > 45:
+            raise OpenRouterError("Generated copy is too long for first-touch outreach")
 
         combined = f"{subject}\n{intro}\n{cta}"
         lowered = combined.lower()
@@ -167,7 +165,6 @@ class OpenRouterClient:
             "traffic",
             "review count",
             "title tag",
-            "mike was",
             "re:",
             "fwd:",
             "book a call",
@@ -180,26 +177,35 @@ class OpenRouterClient:
             "dominate",
             "guaranteed",
             "unlock your",
+            "grow your business",
+            "increase leads",
+            "losing customers",
             "i came across your business",
             "quick observation",
             "quick note",
-            "noticed one thing worth flagging",
+            "worth flagging",
+            "noticed one thing",
+            "i was reviewing",
             "hope you're well",
             "hope you are well",
-            "would you be open to me",
+            "want me to send over",
+            "would you be open to",
             "would it be useful if",
-            "exact change i'd recommend",
-            "exact change i’d recommend",
             "online presence",
         )
         if any(token in lowered for token in forbidden):
             raise OpenRouterError(
-                "Generated copy introduced a claim, link, sales cliché, or disallowed outreach pattern"
+                "Generated copy introduced a claim, sales cliché, jargon, or disallowed outreach pattern"
             )
         if "!" in combined:
             raise OpenRouterError("Generated copy used promotional punctuation")
-        if not cta.rstrip().endswith("?"):
-            raise OpenRouterError("Generated CTA must be a low-friction question")
+        if ":" in subject or " - " in subject or " — " in subject:
+            raise OpenRouterError("Generated subject used a templated subject pattern")
+
+        if city and city.lower() in subject.lower():
+            claim_lower = (verified_claim or "").lower()
+            if city.lower() not in claim_lower:
+                raise OpenRouterError("Generated subject added an unnecessary city qualifier")
 
         claim_lower = (verified_claim or "").lower()
         unsupported_context = (
@@ -214,6 +220,10 @@ class OpenRouterClient:
                 raise OpenRouterError(
                     "Generated copy introduced context not supported by the verified claim"
                 )
+
+        if business_name and business_name.lower() not in subject.lower():
+            if len(subject.split()) > 2:
+                raise OpenRouterError("Generated subject is not anchored to the business")
 
     @staticmethod
     def _parse_json_content(content: Any) -> dict[str, Any]:
