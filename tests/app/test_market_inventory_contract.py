@@ -58,3 +58,24 @@ def test_operational_views_use_latest_completed_score_per_prospect():
         assert "join runs r" in normalized
         assert "r.status = 'completed'" in normalized
         assert "join v_latest_completed_run r on r.id = s.run_id" not in normalized
+
+
+def test_business_vertical_memberships_are_durable_and_backfilled():
+    migration = Path(
+        "sql/migrations/013_business_vertical_memberships.sql"
+    ).read_text().lower()
+
+    assert "create table business_vertical_memberships" in migration
+    assert "primary key (place_id, vertical)" in migration
+    assert "on conflict (place_id, vertical) do nothing" in migration
+    assert "from businesses b" in migration
+
+
+def test_pipeline_records_all_matched_verticals_without_overwriting_primary():
+    discover = Path("pipeline/discover.py").read_text()
+    store = Path("pipeline/store.py").read_text()
+
+    assert '"matched_verticals": [vertical]' in discover
+    assert "merge_vertical_memberships" in discover
+    assert 'r.pop("matched_verticals", None)' in store
+    assert 'self.upsert("business_vertical_memberships"' in store
