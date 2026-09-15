@@ -73,10 +73,10 @@ def test_outreach_candidates_enforce_viability_and_priority_contract():
     established_volume = query.index(
         "case when coalesce(w.review_count, 0) >= 15 then 0 else 1 end"
     )
-    trading = query.index("case when seg.confirmed_trading then 0 else 1 end")
     gap_score = query.index("w.total_score desc")
 
-    assert email_first < established_volume < trading < gap_score
+    assert "case when seg.confirmed_trading then 0 else 1 end" not in query
+    assert email_first < established_volume < gap_score
     assert pool.cursor_instance.params[-1] == (37,)
 
 
