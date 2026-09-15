@@ -3,13 +3,13 @@ from __future__ import annotations
 from uuid import uuid4
 
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
-from app.integrations.openrouter import OpenRouterClient, OpenRouterError
+from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
 from app.repositories.outreach import OutreachOperationLocked, OutreachRepository
 from app.services.outreach_copy import client_facing_claim
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v5"
+PROMPT_VERSION = "outreach-v6"
 CAN_SPAM_FOOTER = (
     "Mike\n"
     "LILOs Growth\n"
@@ -217,13 +217,19 @@ class OutreachService:
         except OpenRouterError as exc:
             raise OutreachIntegrationUnavailable(str(exc)) from exc
 
-        body_parts = ["Hi,", copy.intro]
+        note = copy.body.strip()
         if visible_claim:
-            body_parts.append(visible_claim)
-        body_parts.extend([copy.cta, CAN_SPAM_FOOTER])
-        body = "\n\n".join(
-            part.strip() for part in body_parts if part and part.strip()
-        )
+            if note.count(CLAIM_TOKEN) != 1:
+                raise OutreachIntegrationUnavailable(
+                    "generated outreach did not preserve the verified finding slot"
+                )
+            note = note.replace(CLAIM_TOKEN, visible_claim)
+        elif CLAIM_TOKEN in note:
+            raise OutreachIntegrationUnavailable(
+                "generated outreach introduced an unsupported finding slot"
+            )
+
+        body = f"{note}\n\n{CAN_SPAM_FOOTER}"
 
         try:
             updated, conflict = self.repository.record_generated_draft(

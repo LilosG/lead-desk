@@ -8,6 +8,7 @@ import requests
 
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+CLAIM_TOKEN = "[[VERIFIED_FINDING]]"
 
 
 class OpenRouterError(RuntimeError):
@@ -17,8 +18,7 @@ class OpenRouterError(RuntimeError):
 @dataclass(frozen=True)
 class GeneratedCopy:
     subject: str
-    intro: str
-    cta: str
+    body: str
     model: str
 
 
@@ -46,42 +46,53 @@ class OpenRouterClient:
             "business_name": business_name,
             "city": city,
             "vertical": vertical,
-            "verified_claim": verified_claim,
+            "verified_claim_available": bool(verified_claim),
         }
-        system = (
-            "You write a short first-touch email from Mike at LILOs Growth to one local business owner. "
-            "It must read like a real person looked at this specific business and wrote a normal note, not like a sales sequence, mail merge, audit blast, or AI template. "
-            "Use only the supplied business name, city, vertical, and verified claim. Never invent a contact name, relationship, result, urgency, familiarity, or additional finding. "
-            "The application inserts the verified claim as a separate paragraph after your intro, so do not repeat, paraphrase, explain, dramatize, or add consequences to that claim. "
-            "If the claim is technical, keep your surrounding copy plain-English and conversational.\n\n"
-            "VOICE AND STRUCTURE:\n"
-            "- Sound like a concise owner-to-owner note. Natural, calm, specific, and understated.\n"
-            "- Subject: 1-4 words, usually the business name or business name + 'website'. Do not add the city unless the verified claim itself is geographic. No colons, dashes, urgency, clickbait, RE:, FWD:, or marketing language.\n"
-            "- Intro: one short sentence, generally 7-16 words. It may say you looked at the site/profile, but avoid canned outreach language. Good examples of tone: 'I took a look at TNT Electric's site earlier.' or 'I was on TNT Electric's website earlier.' Do not copy these mechanically.\n"
-            "- Closing: one short low-pressure sentence. Prefer natural wording like 'Happy to send over what I'd change if it's useful.' or 'I can send over the specific fix if you'd like.' It does not have to be a question.\n"
-            "- Keep the generated subject + intro + closing under 45 words total. The application adds the verified finding and compliance footer separately.\n\n"
-            "NEVER USE THESE PATTERNS:\n"
-            "- 'quick note', 'quick observation', 'worth flagging', 'noticed one thing', 'I was reviewing', 'I came across your business', 'hope you're well'\n"
-            "- 'Want me to send over...', 'Would you be open to...', 'Would it be useful if...', 'book a call', 'schedule a call'\n"
-            "- 'online presence', 'grow your business', 'increase leads', 'you're losing customers', 'rankings', 'traffic', or similar consequences unless literally present in the verified claim\n"
-            "- SEO jargon such as schema, title tag, PageSpeed, map pack, or Google Business Profile in the generated intro/closing\n"
-            "- generic compliments, fake personalization, exclamation points, links, or claims of a free audit\n\n"
-            "Do not include a greeting, signature, postal address, opt-out text, URL, or the verified claim itself. "
-            "Return JSON only with string keys subject, intro, and cta."
-        )
+        system = f"""
+You write one short first-touch email from Mike at LILOs Growth to a real local business owner.
+
+This must feel like Mike personally opened the business's website/profile and sent a normal note. It must NOT read like a cold-email sequence, lead-gen template, audit pitch, mail merge, or AI copy.
+
+You may use only the supplied business name, city, vertical, and the existence of a verified finding. Do not invent a contact name, relationship, result, urgency, customer impact, ranking impact, revenue impact, or any second finding.
+
+The verified finding itself is controlled by the application. If verified_claim_available is true, place the exact token {CLAIM_TOKEN} exactly once inside the body where the observation naturally belongs. Do not explain or paraphrase the token and do not add a consequence to it. The application replaces it after generation. If no verified finding is available, do not use the token.
+
+Write the WHOLE note as one coherent message. Do not output separate intro / finding / CTA blocks.
+
+STYLE:
+- Subject should usually just be the business name, or at most the business name plus one ordinary word such as "website". Do not stuff the city into the subject.
+- Body: 35-75 words before Mike's signature/footer, usually 2 short paragraphs.
+- A simple "Hi," is fine, but do not use fake familiarity.
+- Use contractions and normal spoken business English.
+- The closing should feel incidental, not like a conversion CTA. It can offer to point out the exact change, send a screenshot, or leave it there. It does not need to be a question.
+- Vary syntax naturally. Do not force the same opening or closing pattern every time.
+- Plain text only.
+
+DO NOT USE:
+- "quick note", "quick observation", "worth flagging", "noticed one thing", "I was reviewing", "I came across your business", "hope you're well"
+- "Want me to send over", "Would you be open to", "Would it be useful if", "Happy to send over", "book a call", "schedule a call"
+- "online presence", "grow your business", "increase leads", "you're losing customers", "rankings", "traffic", "free audit"
+- SEO jargon in your own words such as schema, PageSpeed, map pack, title tag, or Google Business Profile
+- generic compliments, hype, exclamation points, links, or marketing language
+
+Do not include Mike's name, company, postal address, opt-out language, or a signature. The application adds those after the note.
+
+Return JSON only with string keys "subject" and "body".
+""".strip()
         user = (
-            "Write the non-claim portions of one genuinely human first-touch email using these facts:\n"
+            "Write one restrained, genuinely human note using only these facts:\n"
             + json.dumps(facts, ensure_ascii=False)
         )
         payload: dict[str, Any] = {
             "model": self.model,
-            "temperature": 0.35,
-            "max_tokens": 160,
+            "temperature": 0.55,
+            "max_tokens": 220,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         }
+
         try:
             response = requests.post(
                 OPENROUTER_CHAT_URL,
@@ -108,24 +119,21 @@ class OpenRouterClient:
             content = data["choices"][0]["message"]["content"]
             parsed = self._parse_json_content(content)
             subject = str(parsed["subject"]).strip()
-            intro = str(parsed["intro"]).strip()
-            cta = str(parsed["cta"]).strip()
+            body = str(parsed["body"]).strip()
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise OpenRouterError("OpenRouter returned an invalid draft payload") from exc
 
         self._validate_copy(
             subject=subject,
-            intro=intro,
-            cta=cta,
-            verified_claim=verified_claim,
+            body=body,
+            has_verified_claim=bool(verified_claim),
             business_name=business_name,
             city=city,
         )
 
         return GeneratedCopy(
             subject=subject,
-            intro=intro,
-            cta=cta,
+            body=body,
             model=self.model,
         )
 
@@ -133,30 +141,32 @@ class OpenRouterClient:
     def _validate_copy(
         *,
         subject: str,
-        intro: str,
-        cta: str,
-        verified_claim: str | None = None,
+        body: str,
+        has_verified_claim: bool,
         business_name: str | None = None,
         city: str | None = None,
     ) -> None:
-        if not subject or not intro or not cta:
+        if not subject or not body:
             raise OpenRouterError("OpenRouter returned incomplete draft copy")
         if len(subject) > 55 or len(subject.split()) > 5:
             raise OpenRouterError("Generated subject exceeds the outreach copy limit")
-        if len(intro) > 180:
-            raise OpenRouterError("Generated intro exceeds the outreach copy limit")
-        if len(cta) > 140:
-            raise OpenRouterError("Generated CTA exceeds the outreach copy limit")
-        if len((subject + " " + intro + " " + cta).split()) > 45:
-            raise OpenRouterError("Generated copy is too long for first-touch outreach")
 
-        combined = f"{subject}\n{intro}\n{cta}"
+        body_words = len(body.split())
+        if body_words < 25 or body_words > 90:
+            raise OpenRouterError("Generated body is outside the first-touch length range")
+
+        token_count = body.count(CLAIM_TOKEN)
+        if has_verified_claim and token_count != 1:
+            raise OpenRouterError("Generated body did not preserve the verified finding slot")
+        if not has_verified_claim and token_count:
+            raise OpenRouterError("Generated body inserted an unsupported finding slot")
+
+        combined = f"{subject}\n{body}"
         lowered = combined.lower()
         forbidden = (
             "http://",
             "https://",
             "www.",
-            "schema",
             "pagespeed",
             "map pack",
             "google business",
@@ -191,11 +201,12 @@ class OpenRouterClient:
             "want me to send over",
             "would you be open to",
             "would it be useful if",
+            "happy to send over",
             "online presence",
         )
         if any(token in lowered for token in forbidden):
             raise OpenRouterError(
-                "Generated copy introduced a claim, sales cliché, jargon, or disallowed outreach pattern"
+                "Generated copy introduced a sales cliché, jargon, or disallowed outreach pattern"
             )
         if "!" in combined:
             raise OpenRouterError("Generated copy used promotional punctuation")
@@ -203,23 +214,7 @@ class OpenRouterClient:
             raise OpenRouterError("Generated subject used a templated subject pattern")
 
         if city and city.lower() in subject.lower():
-            claim_lower = (verified_claim or "").lower()
-            if city.lower() not in claim_lower:
-                raise OpenRouterError("Generated subject added an unnecessary city qualifier")
-
-        claim_lower = (verified_claim or "").lower()
-        unsupported_context = (
-            ("local search", "search"),
-            ("search results", "search"),
-            ("visibility", "visibility"),
-            ("rank", "rank"),
-            ("reviews", "review"),
-        )
-        for phrase, required_token in unsupported_context:
-            if phrase in lowered and required_token not in claim_lower:
-                raise OpenRouterError(
-                    "Generated copy introduced context not supported by the verified claim"
-                )
+            raise OpenRouterError("Generated subject added an unnecessary city qualifier")
 
         if business_name and business_name.lower() not in subject.lower():
             if len(subject.split()) > 2:
