@@ -37,11 +37,11 @@ jobs:
       - name: Run integration unit tests
         run: pytest -q tests/app/test_integrations.py tests/app/test_outreach_integrations.py
 
-      - name: Run deterministic scoring regressions
+      - name: Run deterministic pipeline regressions
         run: |
           python pipeline/test_scoring.py
           python pipeline/test_vertical_filter.py
-          python pipeline/test_paging.py
+          python pipeline/test_paging_contract.py
           python pipeline/test_run_lifecycle.py
 
   frontend:
