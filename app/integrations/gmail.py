@@ -12,7 +12,9 @@ GMAIL_DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts"
 
 
 class GmailDraftError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, uncertain_side_effect: bool = False) -> None:
+        super().__init__(message)
+        self.uncertain_side_effect = uncertain_side_effect
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,8 @@ class GmailDraftClient:
         body: str,
         message_id_header: str,
     ) -> GmailDraftResult:
+        # Token refresh happens before any Gmail draft side effect, so failures
+        # raised by _access_token are always safe to retry.
         access_token = self._access_token()
 
         message = EmailMessage()
@@ -67,9 +71,16 @@ class GmailDraftClient:
                 timeout=self.timeout_seconds,
             )
         except requests.RequestException as exc:
-            raise GmailDraftError("Gmail draft request failed") from exc
+            # A transport failure can happen after Gmail accepted the request.
+            # Never blindly retry this operation; reconcile by Message-ID first.
+            raise GmailDraftError(
+                "Gmail draft request outcome is uncertain",
+                uncertain_side_effect=True,
+            ) from exc
 
         if not response.ok:
+            # Gmail returned an explicit rejection, so no successful draft
+            # response was accepted by this call and the operation can be retried.
             raise GmailDraftError(
                 f"Gmail returned {response.status_code}: {response.text[:500]}"
             )
@@ -79,7 +90,12 @@ class GmailDraftClient:
             draft_id = str(data["id"])
             message_id = data.get("message", {}).get("id")
         except (KeyError, TypeError, ValueError) as exc:
-            raise GmailDraftError("Gmail returned an invalid draft response") from exc
+            # HTTP success means a draft may already exist even if the body was
+            # malformed or unexpected. Reconcile instead of recreating it.
+            raise GmailDraftError(
+                "Gmail accepted the request but returned an invalid draft response",
+                uncertain_side_effect=True,
+            ) from exc
 
         return GmailDraftResult(
             draft_id=draft_id,
@@ -87,12 +103,12 @@ class GmailDraftClient:
         )
 
     def find_draft_by_message_id(self, message_id_header: str) -> GmailDraftResult | None:
-        """Find a previously-created draft by its deterministic RFC 5322 Message-ID.
+        """Find a previously-created draft by its RFC 5322 Message-ID.
 
-        Draft creation is an external side effect and Gmail does not expose an
-        idempotency key on drafts.create. Lead Desk therefore writes a unique
-        Message-ID before creation and can reconcile a pending local operation
-        after a process/database failure without creating a duplicate draft.
+        Gmail's drafts.create endpoint has no idempotency-key parameter. Lead
+        Desk therefore writes a unique Message-ID before creation and records it
+        durably so a pending operation can be reconciled without duplicating a
+        draft after a process, network, or database failure.
         """
         access_token = self._access_token()
         try:
