@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.integrations.openrouter import OpenRouterClient, OpenRouterError
-from app.repositories.outreach import OutreachRepository
+from app.repositories.outreach import OutreachOperationLocked, OutreachRepository
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
@@ -80,8 +82,7 @@ class OutreachService:
                 raise OutreachBlocked('prospect has no phone number')
             to_address = to_address or prospect['phone']
 
-        item = self.repository.create_item(place_id, channel, to_address)
-        return item
+        return self.repository.create_item(place_id, channel, to_address)
 
     def update_item(self, item_id: str, *, changes: dict, expected_version: int) -> dict | None:
         current = self.repository.get_item(item_id)
@@ -121,11 +122,14 @@ class OutreachService:
             if verification not in {'verified', 'not_required'}:
                 raise OutreachBlocked('claim verification is required before a draft can be ready')
 
-        updated, conflict = self.repository.update_item(
-            item_id,
-            changes=changes,
-            expected_version=expected_version,
-        )
+        try:
+            updated, conflict = self.repository.update_item(
+                item_id,
+                changes=changes,
+                expected_version=expected_version,
+            )
+        except OutreachOperationLocked as exc:
+            raise OutreachBlocked(str(exc)) from exc
         if conflict:
             raise OutreachConflict('outreach item changed since it was loaded')
         return updated
@@ -174,17 +178,20 @@ class OutreachService:
         body_parts.extend([copy.cta, CAN_SPAM_FOOTER])
         body = "\n\n".join(part.strip() for part in body_parts if part and part.strip())
 
-        updated, conflict = self.repository.record_generated_draft(
-            item_id,
-            expected_version=expected_version,
-            subject=copy.subject,
-            body=body,
-            claim_signal=claim.signal,
-            verification_status=claim.status,
-            verification_note=claim.note,
-            generation_model=copy.model,
-            prompt_version=PROMPT_VERSION,
-        )
+        try:
+            updated, conflict = self.repository.record_generated_draft(
+                item_id,
+                expected_version=expected_version,
+                subject=copy.subject,
+                body=body,
+                claim_signal=claim.signal,
+                verification_status=claim.status,
+                verification_note=claim.note,
+                generation_model=copy.model,
+                prompt_version=PROMPT_VERSION,
+            )
+        except OutreachOperationLocked as exc:
+            raise OutreachBlocked(str(exc)) from exc
         if conflict:
             raise OutreachConflict('outreach item changed while the draft was being generated')
         return updated
@@ -211,23 +218,74 @@ class OutreachService:
         if self.repository.is_suppressed(current['to_address']):
             raise OutreachBlocked('email address is suppressed')
 
+        message_id_header = f"<{uuid4()}@lead-desk.lilosgrowth.com>"
+        try:
+            operation, conflict = self.repository.begin_gmail_draft_operation(
+                item_id,
+                expected_version=expected_version,
+                message_id_header=message_id_header,
+            )
+        except OutreachOperationLocked as exc:
+            raise OutreachBlocked(str(exc)) from exc
+        if conflict:
+            raise OutreachConflict('outreach item changed since it was loaded')
+        if operation is None:
+            return None
+
+        # A prior request may have reached Gmail but failed before Lead Desk
+        # persisted Gmail's response. Reconcile the durable Message-ID first;
+        # never create a second draft while the first outcome is ambiguous.
+        if not operation['created_now']:
+            if operation['state'] == 'created':
+                return self.repository.get_item(item_id)
+            if operation['state'] == 'pending':
+                try:
+                    recovered = self.gmail.find_draft_by_message_id(
+                        operation['message_id_header']
+                    )
+                except GmailDraftError as exc:
+                    raise OutreachIntegrationUnavailable(str(exc)) from exc
+                if recovered is not None:
+                    return self.repository.complete_gmail_draft_operation(
+                        operation['id'],
+                        draft_id=recovered.draft_id,
+                        message_id=recovered.message_id,
+                    )
+                raise OutreachIntegrationUnavailable(
+                    'Gmail draft creation is pending reconciliation; Lead Desk will not create a duplicate draft'
+                )
+            if operation['state'] == 'failed':
+                reopened = self.repository.reopen_gmail_draft_operation(operation['id'])
+                if reopened is None:
+                    raise OutreachIntegrationUnavailable(
+                        'Gmail draft operation could not be reopened safely'
+                    )
+                operation = {**reopened, 'created_now': False}
+
         try:
             result = self.gmail.create_draft(
                 to_address=current['to_address'],
                 subject=current['subject'],
                 body=current['body'],
+                message_id_header=operation['message_id_header'],
             )
         except GmailDraftError as exc:
+            self.repository.record_gmail_operation_error(
+                operation['id'],
+                error_message=str(exc),
+                uncertain=exc.uncertain_side_effect,
+            )
+            if exc.uncertain_side_effect:
+                raise OutreachIntegrationUnavailable(
+                    'Gmail draft request outcome is uncertain; the durable operation was preserved for reconciliation and no retry will create a duplicate'
+                ) from exc
             raise OutreachIntegrationUnavailable(str(exc)) from exc
 
-        updated, conflict = self.repository.record_gmail_draft(
-            item_id,
-            expected_version=expected_version,
+        # If this transaction fails after Gmail accepted the draft, the durable
+        # operation remains pending. A retry reconciles by Message-ID and closes
+        # the operation instead of creating another external side effect.
+        return self.repository.complete_gmail_draft_operation(
+            operation['id'],
             draft_id=result.draft_id,
             message_id=result.message_id,
         )
-        if conflict:
-            raise OutreachConflict(
-                'outreach item changed while the Gmail draft was being created'
-            )
-        return updated
