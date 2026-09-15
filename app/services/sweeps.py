@@ -45,6 +45,14 @@ class SweepService:
             "geo_label": market_config.GEO_LABEL,
             "cities": list(market_config.TARGET_CITIES),
             "verticals": verticals,
+            "pricing": {
+                "text_search_per_1000": market_config.COST_PER_1K[
+                    "text_search_enterprise"
+                ],
+                "enterprise_free_monthly": market_config.FREE_TIER_MONTHLY[
+                    "enterprise"
+                ],
+            },
             "execution_enabled": SweepService.execution_enabled(),
         }
 
