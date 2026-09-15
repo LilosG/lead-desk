@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.common import Pagination
 
@@ -143,6 +143,13 @@ class ProspectWorkflowUpdate(BaseModel):
     next_action_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=10000)
     expected_version: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def reject_null_required_fields(self) -> "ProspectWorkflowUpdate":
+        for field_name in ("status", "priority"):
+            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} cannot be null")
+        return self
 
 
 class ProspectDetail(BaseModel):
