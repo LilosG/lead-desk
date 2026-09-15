@@ -67,6 +67,39 @@ class OutreachRepository:
                 cur.execute(query, (limit,))
                 return cur.fetchall()
 
+    def candidate_readiness(self, place_id: str) -> dict[str, Any] | None:
+        query = """
+            select
+                w.place_id,
+                w.name,
+                w.review_count,
+                w.phone,
+                w.emails_found[1] as email,
+                seg.confirmed_trading,
+                seg.established,
+                coalesce(f.needs_manual_check, false) as needs_manual_check,
+                exists (
+                    select 1
+                    from suppression s
+                    where lower(s.email) = lower(coalesce(w.emails_found[1], ''))
+                ) as suppressed,
+                exists (
+                    select 1
+                    from outreach_queue q
+                    where q.place_id = w.place_id
+                ) as already_queued
+            from v_lead_worklist w
+            join v_lead_segments seg
+              on seg.place_id = w.place_id
+            left join v_lead_findings f
+              on f.place_id = w.place_id
+            where w.place_id = %s
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (place_id,))
+                return cur.fetchone()
+
     def list_items(self, status: str | None = None) -> tuple[list[dict[str, Any]], int]:
         where = "where q.status = %s" if status else ""
         params: tuple[Any, ...] = (status,) if status else ()

@@ -62,6 +62,16 @@ def list_candidates(limit: int = Query(default=100, ge=1, le=250)) -> dict:
     return get_service().list_candidates(limit=limit)
 
 
+@router.get('/readiness/{place_id}')
+def outreach_readiness(place_id: str) -> dict:
+    result = get_service().candidate_readiness(place_id)
+
+    if result is None:
+        raise HTTPException(status_code=404, detail='prospect not found')
+
+    return result
+
+
 @router.get('', response_model=OutreachQueueResponse)
 def list_outreach(
     status: Literal[

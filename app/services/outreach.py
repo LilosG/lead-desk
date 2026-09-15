@@ -61,6 +61,54 @@ class OutreachService:
         items = self.repository.list_candidates(limit=limit)
         return {'items': items, 'total': len(items)}
 
+    def candidate_readiness(self, place_id: str) -> dict | None:
+        item = self.repository.candidate_readiness(place_id)
+        if item is None:
+            return None
+
+        review_count = int(item.get('review_count') or 0)
+        email = item.get('email')
+        phone = item.get('phone')
+        suppressed = bool(item.get('suppressed'))
+        already_queued = bool(item.get('already_queued'))
+
+        reasons: list[str] = []
+
+        if not item.get('established'):
+            reasons.append('Business is not in the established prospect segment.')
+
+        if review_count < 10:
+            reasons.append('Business has fewer than 10 Google reviews.')
+
+        if item.get('needs_manual_check'):
+            reasons.append('Manual verification is required before outreach.')
+
+        if not email and not phone:
+            reasons.append(
+                'No reachable email address or phone number is available.'
+            )
+
+        if email and suppressed:
+            reasons.append('The prospect email address is suppressed.')
+
+        if already_queued:
+            reasons.append('Prospect is already in the outreach queue.')
+
+        preferred_channel = 'email' if email else ('phone' if phone else None)
+
+        return {
+            'eligible': not reasons,
+            'reasons': reasons,
+            'preferred_channel': preferred_channel,
+            'review_count': review_count,
+            'strong_review_base': review_count >= 15,
+            'confirmed_trading': bool(item.get('confirmed_trading')),
+            'established': bool(item.get('established')),
+            'needs_manual_check': bool(item.get('needs_manual_check')),
+            'suppressed': suppressed,
+            'already_queued': already_queued,
+        }
+
     def list_items(self, status: str | None = None) -> dict:
         items, total = self.repository.list_items(status=status)
         return {'items': items, 'total': total}
