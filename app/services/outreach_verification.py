@@ -119,10 +119,11 @@ class OutreachClaimVerifier:
     def _localbusiness_schema_state(
         html: str,
     ) -> Literal["present", "absent", "ambiguous"]:
-        """Return a conservative assessment of homepage JSON-LD.
+        """Assess homepage JSON-LD without turning uncertainty into a claim.
 
-        Unknown or malformed structured-data types are treated as ambiguous so
-        they can never become evidence for a cold-outreach claim.
+        Unknown or malformed structured data is ambiguous. Only a clean,
+        recognizable non-local JSON-LD payload or no JSON-LD at all is treated
+        as evidence that LocalBusiness markup is absent.
         """
         local_types = {
             "LocalBusiness",
