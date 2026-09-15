@@ -49,26 +49,39 @@ class OpenRouterClient:
             "verified_claim_available": bool(verified_claim),
         }
         system = (
-            "You write concise first-touch B2B outreach from Mike at LILOs Growth, a San Diego local SEO and web design agency. "
-            "Write in Mike's first-person voice using I/me/my, never third person. The application will insert any verified technical/audit "
-            "claim itself after your intro. You must NOT mention website condition, schema, SEO errors, rankings, reviews, PageSpeed, "
-            "Google Business Profile, traffic, revenue, map pack position, missing pages, or any other audit finding. Use only the supplied "
-            "business name, city, and vertical for light personalization. Write like a real owner-to-owner note, not a marketing template. "
-            "Avoid phrases such as 'we work with', 'stand out online', 'quick observation', 'quick note', 'might be worth a conversation', "
-            "'I came across your business', and generic compliments. Do not claim an existing relationship with their industry or city. "
-            "Keep the tone calm, specific, plain-text, link-free, and non-pushy. Subject should be 3-6 words, neutral, and normally reference "
-            "the business name or website without hype. Intro should be one short first-person sentence such as 'I was reviewing [business] "
-            "online and noticed one thing worth flagging.' Do not describe that item because the application inserts the verified claim next. "
-            "CTA should be one short, low-friction first-person question offering to send the detail or explain the fix. Do not include a "
-            "signature, postal address, opt-out text, URLs, or invented facts. Return JSON only with string keys subject, intro, and cta."
+            "You write first-touch B2B email copy from Mike at LILOs Growth, a San Diego local SEO and web agency. "
+            "The goal is a credible reply from a real local-business owner, not a click, meeting booking, or hard sell. "
+            "Write in Mike's first-person voice using I/me/my. Make the note sound individually written, calm, commercially aware, "
+            "and easy to answer. The application inserts one independently verified audit observation immediately after your intro, so "
+            "you must not invent, repeat, summarize, soften, or expand any technical claim yourself. Never mention website condition, "
+            "schema, SEO errors, rankings, reviews, PageSpeed, Google Business Profile, traffic, revenue, map-pack position, missing pages, "
+            "or any other audit finding unless it is the supplied verified claim; the application handles that separately. Use only the "
+            "business name, city, and vertical as personalization facts. Do not invent a contact name, tenure, service area, customer count, "
+            "award, relationship, result, or familiarity with the business. Do not compliment them generically. "
+            "\n\n"
+            "COPY STANDARD:\n"
+            "- Subject: 2-6 words, under 60 characters, neutral and human. Prefer the business name plus a simple context word such as "
+            "website, search, or local visibility when natural. Never use RE:, FWD:, urgency, hype, emojis, or clickbait.\n"
+            "- Intro: one sentence, usually 10-20 words. Establish that Mike personally looked at the business online without sounding "
+            "like a mass-email template. Do not use 'I came across your business', 'quick note', 'quick observation', 'noticed one thing worth "
+            "flagging', 'hope you're well', or 'we work with businesses like yours'.\n"
+            "- CTA: one short question, usually 8-18 words. Ask for a simple reply and offer one useful next step tied to the observation, "
+            "such as sending the exact recommendation or showing what Mike would change. Do not ask to book a call, schedule 15 minutes, "
+            "visit a link, download anything, or commit to a project.\n"
+            "- Keep it plain-text, professional, low-pressure, and specific. No exclamation points. No buzzwords such as game-changer, "
+            "skyrocket, dominate, unlock, leverage, or guaranteed. No claims of free audits, guaranteed results, increased revenue, or "
+            "exclusive opportunities. No links.\n"
+            "- Do not include a greeting, signature, postal address, opt-out text, URLs, or the verified claim itself; the application adds "
+            "the claim and compliance footer.\n"
+            "Return JSON only with string keys subject, intro, and cta."
         )
         user = (
-            "Write the non-claim portions of a first-touch email using these facts:\n"
+            "Write the non-claim portions of one high-quality first-touch email using these facts:\n"
             + json.dumps(facts, ensure_ascii=False)
         )
         payload: dict[str, Any] = {
             "model": self.model,
-            "temperature": 0.2,
+            "temperature": 0.25,
             "max_tokens": 220,
             "messages": [
                 {"role": "system", "content": system},
@@ -106,14 +119,27 @@ class OpenRouterClient:
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise OpenRouterError("OpenRouter returned an invalid draft payload") from exc
 
+        self._validate_copy(subject=subject, intro=intro, cta=cta)
+
+        return GeneratedCopy(
+            subject=subject,
+            intro=intro,
+            cta=cta,
+            model=self.model,
+        )
+
+    @staticmethod
+    def _validate_copy(*, subject: str, intro: str, cta: str) -> None:
         if not subject or not intro or not cta:
             raise OpenRouterError("OpenRouter returned incomplete draft copy")
-        if len(subject) > 300:
-            raise OpenRouterError("Generated subject exceeds the allowed length")
-        combined = f"{subject}\n{intro}\n{cta}"
-        if len(combined) > 6000:
-            raise OpenRouterError("Generated copy exceeds the allowed length")
+        if len(subject) > 60 or len(subject.split()) > 8:
+            raise OpenRouterError("Generated subject exceeds the outreach copy limit")
+        if len(intro) > 240:
+            raise OpenRouterError("Generated intro exceeds the outreach copy limit")
+        if len(cta) > 220:
+            raise OpenRouterError("Generated CTA exceeds the outreach copy limit")
 
+        combined = f"{subject}\n{intro}\n{cta}"
         lowered = combined.lower()
         forbidden = (
             "http://",
@@ -129,18 +155,33 @@ class OpenRouterClient:
             "review count",
             "title tag",
             "mike was",
+            "re:",
+            "fwd:",
+            "book a call",
+            "schedule a call",
+            "15 minutes",
+            "free audit",
+            "game-changer",
+            "game changer",
+            "skyrocket",
+            "dominate",
+            "guaranteed",
+            "unlock your",
+            "i came across your business",
+            "quick observation",
+            "quick note",
+            "noticed one thing worth flagging",
+            "hope you're well",
+            "hope you are well",
         )
         if any(token in lowered for token in forbidden):
             raise OpenRouterError(
-                "Generated copy introduced a claim, link, or non-first-person phrasing outside verified application facts"
+                "Generated copy introduced a claim, link, sales cliché, or disallowed outreach pattern"
             )
-
-        return GeneratedCopy(
-            subject=subject,
-            intro=intro,
-            cta=cta,
-            model=self.model,
-        )
+        if "!" in combined:
+            raise OpenRouterError("Generated copy used promotional punctuation")
+        if not cta.rstrip().endswith("?"):
+            raise OpenRouterError("Generated CTA must be a low-friction question")
 
     @staticmethod
     def _parse_json_content(content: Any) -> dict[str, Any]:
