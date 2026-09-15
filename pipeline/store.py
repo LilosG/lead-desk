@@ -327,6 +327,63 @@ class PostgresStore:
                     ],
                 )
 
+        if memberships:
+            place_ids = sorted(
+                {item["place_id"] for item in memberships}
+            )
+
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select place_id, vertical
+                    from business_vertical_memberships
+                    where place_id = any(%s)
+                    """,
+                    (place_ids,),
+                )
+
+                memberships_by_place = {}
+
+                for row in cur.fetchall():
+                    memberships_by_place.setdefault(
+                        row["place_id"],
+                        [],
+                    ).append(row["vertical"])
+
+                canonical_updates = []
+
+                for place_id, verticals in memberships_by_place.items():
+                    supported = [
+                        vertical
+                        for vertical in verticals
+                        if vertical in C.VERTICALS
+                    ]
+
+                    if not supported:
+                        continue
+
+                    canonical_vertical = min(
+                        supported,
+                        key=lambda vertical: (
+                            C.VERTICALS[vertical]["priority"],
+                            vertical,
+                        ),
+                    )
+
+                    canonical_updates.append(
+                        (canonical_vertical, place_id)
+                    )
+
+                if canonical_updates:
+                    cur.executemany(
+                        """
+                        update businesses
+                        set vertical = %s
+                        where place_id = %s
+                        """,
+                        canonical_updates,
+                    )
+
         return saved
 
     def save_enrichment(self, enrichment: dict) -> int:
