@@ -1,7 +1,12 @@
 from pydantic import ValidationError
 
 from app.integrations.gmail import GmailDraftError, GmailDraftResult
-from app.integrations.openrouter import GeneratedCopy, OpenRouterClient, OpenRouterError
+from app.integrations.openrouter import (
+    CLAIM_TOKEN,
+    GeneratedCopy,
+    OpenRouterClient,
+    OpenRouterError,
+)
 from app.schemas.prospects import ProspectWorkflowUpdate
 from app.services.outreach import (
     OutreachBlocked,
@@ -17,9 +22,12 @@ class FakeGenerator:
         assert kwargs["business_name"] == "Example Electric"
         assert "LocalBusiness schema" not in (kwargs["verified_claim"] or "")
         return GeneratedCopy(
-            subject="Example Electric website",
-            intro="I was on Example Electric's website earlier.",
-            cta="Happy to send over what I'd change if it's useful.",
+            subject="Example Electric",
+            body=(
+                "Hi,\n\nI was looking through Example Electric's site earlier and "
+                f"{CLAIM_TOKEN} If you handle the site internally, I can point you "
+                "to the exact spot I mean."
+            ),
             model="test/model",
         )
 
@@ -165,7 +173,7 @@ class FakeRepository:
         return dict(self.item)
 
 
-def test_generation_uses_plain_english_verified_claim_and_deterministic_footer():
+def test_generation_uses_one_coherent_note_and_verified_claim_slot():
     repo = FakeRepository()
     service = OutreachService(
         repo,
@@ -179,14 +187,15 @@ def test_generation_uses_plain_english_verified_claim_and_deterministic_footer()
     assert result["status"] == "review_required"
     assert repo.generated["claim_signal"] == "no_localbusiness_schema"
     assert repo.generated["verification_status"] == "verified"
-    assert repo.generated["body"].startswith("Hi,\n\n")
+    assert repo.generated["body"].startswith("Hi,\n\nI was looking through")
     assert "structured business markup" in repo.generated["body"]
     assert "LocalBusiness schema markup" not in repo.generated["body"]
-    assert "noticed one thing worth flagging" not in repo.generated["body"].lower()
+    assert CLAIM_TOKEN not in repo.generated["body"]
+    assert "Happy to send over" not in repo.generated["body"]
     assert "1440 Columbia St" in repo.generated["body"]
     assert "If you'd rather I not reach out again" in repo.generated["body"]
     assert repo.generated["generation_model"] == "test/model"
-    assert repo.generated["prompt_version"] == "outreach-v5"
+    assert repo.generated["prompt_version"] == "outreach-v6"
 
 
 def test_client_facing_claim_keeps_verification_technical_details_out_of_email():
@@ -200,15 +209,15 @@ def test_client_facing_claim_keeps_verification_technical_details_out_of_email()
 
 
 def test_copy_validator_rejects_mass_outreach_patterns_and_city_stuffing():
-    bad = (
-        "I was reviewing Example Electric online and noticed one thing worth flagging."
-    )
     try:
         OpenRouterClient._validate_copy(
             subject="Example Electric in San Diego",
-            intro=bad,
-            cta="Want me to send over the detail on that?",
-            verified_claim="The homepage is missing structured business markup.",
+            body=(
+                "Hi, I was reviewing Example Electric online and noticed one thing "
+                f"worth flagging. {CLAIM_TOKEN} Want me to send over the detail on that? "
+                "I can explain more if needed."
+            ),
+            has_verified_claim=True,
             business_name="Example Electric",
             city="San Diego",
         )
@@ -218,25 +227,41 @@ def test_copy_validator_rejects_mass_outreach_patterns_and_city_stuffing():
         raise AssertionError("mass-outreach copy should be rejected")
 
 
-def test_copy_validator_allows_short_owner_to_owner_note():
+def test_copy_validator_requires_verified_finding_slot_exactly_once():
     OpenRouterClient._validate_copy(
-        subject="Example Electric website",
-        intro="I was on Example Electric's website earlier.",
-        cta="Happy to send over what I'd change if it's useful.",
-        verified_claim="The homepage is missing structured business markup.",
+        subject="Example Electric",
+        body=(
+            "Hi, I was looking through Example Electric's site earlier and "
+            f"{CLAIM_TOKEN} If you handle the site internally, I can point you "
+            "to the exact spot I mean without turning this into a whole pitch."
+        ),
+        has_verified_claim=True,
         business_name="Example Electric",
         city="San Diego",
     )
+
+    try:
+        OpenRouterClient._validate_copy(
+            subject="Example Electric",
+            body=(
+                "Hi, I was looking through Example Electric's site earlier. "
+                "There was one technical item I wanted to mention, and I can "
+                "point you to it if that would help at some point."
+            ),
+            has_verified_claim=True,
+            business_name="Example Electric",
+            city="San Diego",
+        )
+    except OpenRouterError:
+        pass
+    else:
+        raise AssertionError("verified copy must preserve the finding slot")
 
 
 def test_generation_blocks_when_gmail_draft_already_exists():
     repo = FakeRepository()
     repo.item["gmail_draft_id"] = "draft-existing"
-    service = OutreachService(
-        repo,
-        generator=FakeGenerator(),
-        verifier=FakeVerifier(),
-    )
+    service = OutreachService(repo, generator=FakeGenerator(), verifier=FakeVerifier())
 
     try:
         service.generate_draft(repo.item["id"], expected_version=1)
