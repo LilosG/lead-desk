@@ -8,7 +8,7 @@ from app.repositories.outreach import OutreachOperationLocked, OutreachRepositor
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v2"
+PROMPT_VERSION = "outreach-v3"
 CAN_SPAM_FOOTER = (
     "Mike\n"
     "LILOs Growth\n"
@@ -232,9 +232,6 @@ class OutreachService:
         if operation is None:
             return None
 
-        # A prior request may have reached Gmail but failed before Lead Desk
-        # persisted Gmail's response. Reconcile the durable Message-ID first;
-        # never create a second draft while the first outcome is ambiguous.
         if not operation['created_now']:
             if operation['state'] == 'created':
                 return self.repository.get_item(item_id)
@@ -281,9 +278,6 @@ class OutreachService:
                 ) from exc
             raise OutreachIntegrationUnavailable(str(exc)) from exc
 
-        # If this transaction fails after Gmail accepted the draft, the durable
-        # operation remains pending. A retry reconciles by Message-ID and closes
-        # the operation instead of creating another external side effect.
         return self.repository.complete_gmail_draft_operation(
             operation['id'],
             draft_id=result.draft_id,
