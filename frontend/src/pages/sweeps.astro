@@ -5,22 +5,15 @@ import AppLayout from "../layouts/AppLayout.astro";
 <AppLayout title="Market Sweeps">
   <main class="mx-auto max-w-7xl space-y-8 p-6 lg:p-10">
     <section>
-      <p class="text-sm uppercase tracking-[0.18em] text-neutral-500">
-        Lead Desk
-      </p>
-      <h1 class="mt-2 text-3xl font-semibold text-neutral-950">
-        Market Sweeps
-      </h1>
+      <p class="text-sm uppercase tracking-[0.18em] text-neutral-500">Lead Desk</p>
+      <h1 class="mt-2 text-3xl font-semibold text-neutral-950">Market Sweeps</h1>
       <p class="mt-2 max-w-4xl text-sm leading-6 text-neutral-600">
-        Refresh the configured market inventory without replacing prior prospect coverage.
-        Sweeps run discovery, crawl, PageSpeed, scoring, and finalize as one staged job.
+        Discover any local-business vertical across the configured market without replacing prior prospect coverage.
+        Preset verticals provide curated query expansion; custom verticals work without a code change.
       </p>
     </section>
 
-    <section
-      id="execution-warning"
-      class="hidden rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
-    >
+    <section id="execution-warning" class="hidden rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
       Sweep execution is currently disabled. Existing prospect inventory remains available,
       but no new market refresh can start until execution is enabled.
     </section>
@@ -35,7 +28,7 @@ import AppLayout from "../layouts/AppLayout.astro";
         <p id="market-city-count" class="mt-2 text-lg font-semibold text-neutral-950">—</p>
       </div>
       <div class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-wider text-neutral-500">Configured verticals</p>
+        <p class="text-xs uppercase tracking-wider text-neutral-500">Preset verticals</p>
         <p id="market-vertical-count" class="mt-2 text-lg font-semibold text-neutral-950">—</p>
       </div>
     </section>
@@ -46,15 +39,11 @@ import AppLayout from "../layouts/AppLayout.astro";
           <div>
             <h2 class="text-lg font-semibold text-neutral-950">Sweep scope</h2>
             <p class="mt-1 text-sm text-neutral-500">
-              Full configured coverage is selected by default. Narrow the scope only when you intentionally want a slice refresh.
+              Choose any preset or enter any custom vertical. Geography remains independently controllable.
             </p>
           </div>
-          <button
-            id="select-full-market"
-            type="button"
-            class="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-700 hover:border-neutral-500"
-          >
-            Select full market
+          <button id="select-full-market" type="button" class="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-700 hover:border-neutral-500">
+            Select all presets + cities
           </button>
         </div>
 
@@ -65,15 +54,21 @@ import AppLayout from "../layouts/AppLayout.astro";
               <span id="vertical-selection-count" class="text-xs text-neutral-500">—</span>
             </div>
             <div id="vertical-options" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"></div>
+
+            <div class="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+              <label for="custom-verticals" class="block text-sm font-medium text-neutral-800">Custom verticals</label>
+              <p class="mt-1 text-xs leading-5 text-neutral-500">
+                Enter any business category. Use commas or new lines for more than one. Each custom category uses its own phrase as the Google Places search term; it is not restricted to the presets above.
+              </p>
+              <textarea id="custom-verticals" rows="3" placeholder="dentist&#10;med spa&#10;personal injury attorney" class="mt-3 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm"></textarea>
+            </div>
           </div>
 
           <div>
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <label class="text-sm font-medium text-neutral-800">Cities</label>
-                <p class="mt-1 text-xs text-neutral-500">
-                  Use every configured city or select a deliberate local slice.
-                </p>
+                <p class="mt-1 text-xs text-neutral-500">Use every configured city or select a deliberate local slice.</p>
               </div>
               <label class="flex items-center gap-2 text-xs font-medium text-neutral-700">
                 <input id="all-cities" type="checkbox" checked />
@@ -124,12 +119,7 @@ import AppLayout from "../layouts/AppLayout.astro";
 
           <div id="form-message" class="hidden rounded-lg border p-3 text-sm"></div>
 
-          <button
-            id="start-button"
-            type="submit"
-            disabled
-            class="rounded-lg bg-neutral-950 px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
-          >
+          <button id="start-button" type="submit" disabled class="rounded-lg bg-neutral-950 px-5 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">
             Start sweep
           </button>
         </form>
@@ -141,9 +131,7 @@ import AppLayout from "../layouts/AppLayout.astro";
             <h2 class="text-lg font-semibold text-neutral-950">Current sweep</h2>
             <button id="refresh-button" type="button" class="text-sm font-medium text-neutral-600 hover:text-neutral-950">Refresh</button>
           </div>
-          <div id="current-job" class="mt-6">
-            <p class="text-sm text-neutral-500">Loading…</p>
-          </div>
+          <div id="current-job" class="mt-6"><p class="text-sm text-neutral-500">Loading…</p></div>
         </section>
 
         <section class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
@@ -151,9 +139,7 @@ import AppLayout from "../layouts/AppLayout.astro";
             <h2 class="text-lg font-semibold text-neutral-950">Recent sweeps</h2>
             <p class="mt-1 text-sm text-neutral-500">Completed and failed jobs stay visible here.</p>
           </div>
-          <div id="recent-jobs" class="mt-5 space-y-3">
-            <p class="text-sm text-neutral-500">Loading…</p>
-          </div>
+          <div id="recent-jobs" class="mt-5 space-y-3"><p class="text-sm text-neutral-500">Loading…</p></div>
         </section>
       </div>
     </div>
@@ -171,6 +157,7 @@ import AppLayout from "../layouts/AppLayout.astro";
       geo_label: string;
       cities: string[];
       verticals: VerticalConfig[];
+      custom_verticals_enabled?: boolean;
       execution_enabled: boolean;
     };
 
@@ -205,6 +192,7 @@ import AppLayout from "../layouts/AppLayout.astro";
     const refreshButton = required<HTMLButtonElement>("#refresh-button");
     const selectFullMarket = required<HTMLButtonElement>("#select-full-market");
     const verticalOptions = required<HTMLElement>("#vertical-options");
+    const customVerticalsInput = required<HTMLTextAreaElement>("#custom-verticals");
     const cityOptions = required<HTMLElement>("#city-options");
     const allCitiesInput = required<HTMLInputElement>("#all-cities");
     const gridInput = required<HTMLInputElement>("#grid");
@@ -222,9 +210,27 @@ import AppLayout from "../layouts/AppLayout.astro";
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
 
-    const checkedVerticals = (): string[] =>
+    const normalizeVertical = (value: string): string =>
+      value
+        .trim()
+        .toLowerCase()
+        .replaceAll("&", " and ")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "");
+
+    const presetVerticals = (): string[] =>
       Array.from(document.querySelectorAll<HTMLInputElement>('input[data-vertical]:checked'))
         .map((input) => input.value);
+
+    const customVerticals = (): string[] =>
+      customVerticalsInput.value
+        .split(/[\n,]+/)
+        .map(normalizeVertical)
+        .filter(Boolean);
+
+    const checkedVerticals = (): string[] =>
+      Array.from(new Set([...presetVerticals(), ...customVerticals()]));
 
     const checkedCities = (): string[] =>
       Array.from(document.querySelectorAll<HTMLInputElement>('input[data-city]:checked'))
@@ -274,13 +280,16 @@ import AppLayout from "../layouts/AppLayout.astro";
       if (!marketConfig) return;
 
       const verticals = checkedVerticals();
+      const presets = presetVerticals();
+      const customs = customVerticals().filter((vertical) => !presets.includes(vertical));
       const cities = allCitiesInput.checked ? marketConfig.cities : checkedCities();
-      const queryCount = marketConfig.verticals
-        .filter((vertical) => verticals.includes(vertical.key))
+      const presetQueryCount = marketConfig.verticals
+        .filter((vertical) => presets.includes(vertical.key))
         .reduce((sum, vertical) => sum + vertical.query_count, 0);
+      const queryCount = presetQueryCount + customs.length;
       const baseRequests = queryCount * cities.length;
 
-      required<HTMLElement>("#vertical-selection-count").textContent = `${verticals.length} of ${marketConfig.verticals.length} selected`;
+      required<HTMLElement>("#vertical-selection-count").textContent = `${verticals.length} selected (${presets.length} preset, ${customs.length} custom)`;
       required<HTMLElement>("#scope-summary").textContent = `${verticals.length} verticals × ${cities.length} cities`;
       required<HTMLElement>("#base-query-count").textContent = baseRequests.toLocaleString();
       required<HTMLElement>("#max-query-count").textContent = (baseRequests * 3).toLocaleString();
@@ -374,7 +383,7 @@ import AppLayout from "../layouts/AppLayout.astro";
           <div class="rounded-xl border border-neutral-200 p-4">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <p class="text-sm font-medium text-neutral-950">${escapeHtml(job.verticals.join(", "))}</p>
+                <p class="text-sm font-medium text-neutral-950">${escapeHtml(job.verticals.join(", ").replaceAll("_", " "))}</p>
                 <p class="mt-1 text-xs text-neutral-500">${escapeHtml(cityLabel)}</p>
               </div>
               <span class="rounded-full px-2.5 py-1 text-xs font-medium ${statusClass}">${escapeHtml(job.status)}</span>
@@ -461,6 +470,7 @@ import AppLayout from "../layouts/AppLayout.astro";
       await refreshState();
     });
 
+    customVerticalsInput.addEventListener("input", updateScopeSummary);
     selectFullMarket.addEventListener("click", selectEverything);
     refreshButton.addEventListener("click", () => void refreshState());
 
