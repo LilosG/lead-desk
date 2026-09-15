@@ -39,7 +39,7 @@ import AppLayout from "../layouts/AppLayout.astro";
           <div>
             <h2 class="text-lg font-semibold text-neutral-950">Sweep scope</h2>
             <p class="mt-1 text-sm text-neutral-500">
-              Choose any preset or enter any custom vertical. Geography remains independently controllable.
+              Choose any preset or enter any custom vertical. No vertical is selected automatically.
             </p>
           </div>
           <button id="select-full-market" type="button" class="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-700 hover:border-neutral-500">
@@ -244,7 +244,7 @@ import AppLayout from "../layouts/AppLayout.astro";
       verticalOptions.innerHTML = config.verticals
         .map((vertical) => `
           <label class="flex items-center gap-2 rounded-lg border border-neutral-200 p-3 text-sm text-neutral-800">
-            <input data-vertical type="checkbox" value="${escapeHtml(vertical.key)}" checked />
+            <input data-vertical type="checkbox" value="${escapeHtml(vertical.key)}" />
             <span>
               <span class="font-medium">${escapeHtml(vertical.key.replaceAll("_", " "))}</span>
               ${vertical.has_case_study ? '<span class="ml-1 text-xs text-neutral-500">case study</span>' : ''}
