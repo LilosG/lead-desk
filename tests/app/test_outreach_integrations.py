@@ -32,6 +32,32 @@ class FakeGenerator:
         )
 
 
+class CapturingGenerator(FakeGenerator):
+    def __init__(self):
+        self.verified_claim = None
+
+    def generate_email(self, **kwargs):
+        self.verified_claim = kwargs["verified_claim"]
+        return super().generate_email(**kwargs)
+
+
+class FakeEvidenceRepository:
+    def get(self, place_id):
+        assert place_id == "place-1"
+        return {
+            "rating": 4.9,
+            "review_count": 40,
+            "last_review_days": 21,
+            "recent_reviews_90d": 3,
+            "confirmed_trading": True,
+            "established": True,
+            # Internal scoring fields are intentionally ignored by RecipientEvidence.
+            "total_score": 13,
+            "tier": "A",
+            "authority_score": 5,
+        }
+
+
 class FakeVerifier:
     def verify(self, context):
         return VerifiedClaim(
@@ -198,7 +224,30 @@ def test_generation_uses_one_coherent_note_and_verified_claim_slot():
     assert "1440 Columbia St" in repo.generated["body"]
     assert "If you'd rather I not reach out again" in repo.generated["body"]
     assert repo.generated["generation_model"] == "test/model"
-    assert repo.generated["prompt_version"] == "outreach-v7"
+    assert repo.generated["prompt_version"] == "outreach-v8"
+
+
+def test_generation_adds_public_google_evidence_but_not_internal_scores():
+    repo = FakeRepository()
+    generator = CapturingGenerator()
+    service = OutreachService(
+        repo,
+        evidence_repository=FakeEvidenceRepository(),
+        generator=generator,
+        verifier=FakeVerifier(),
+        generation_model="test/model",
+    )
+
+    result = service.generate_draft(repo.item["id"], expected_version=1)
+
+    assert result["status"] == "review_required"
+    assert generator.verified_claim is not None
+    assert "Google shows Example Electric at 4.9 stars across 40 reviews." in generator.verified_claim
+    assert "structured business markup" in generator.verified_claim
+    assert "score" not in generator.verified_claim.lower()
+    assert "tier" not in generator.verified_claim.lower()
+    assert "authority" not in generator.verified_claim.lower()
+    assert "4.9 stars across 40 reviews" in repo.generated["body"]
 
 
 def test_client_facing_claim_keeps_verification_technical_details_out_of_email():
