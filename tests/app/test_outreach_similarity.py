@@ -1,0 +1,81 @@
+from app.outreach_policy import CLIENT_FACING_CLAIMS
+from app.services.outreach import PROMPT_VERSION
+from app.services.outreach_similarity import (
+    is_too_similar,
+    normalize_outreach_note,
+    structural_similarity,
+)
+
+
+CLAIM = CLIENT_FACING_CLAIMS["no_localbusiness_schema"]
+
+
+def test_prompt_version_advances_for_human_copy_architecture():
+    assert PROMPT_VERSION == "outreach-v7"
+
+
+def test_normalization_removes_business_and_verified_finding():
+    body = (
+        "Hi,\n\nI looked at Bright Electric Services before reaching out. "
+        + CLAIM
+        + "\n\nI can send the exact page location if useful."
+    )
+    normalized = normalize_outreach_note(
+        body,
+        business_name="Bright Electric Services",
+        verified_claim=CLAIM,
+    )
+
+    assert "bright electric services" not in normalized
+    assert "structured business markup" not in normalized
+    assert "[business]" in normalized
+    assert "[finding]" in normalized
+
+
+def test_benchmark_mass_generated_skeleton_is_blocked():
+    bright = (
+        "Hi,\n\nI was on Bright Electric Services website earlier. "
+        + CLAIM
+        + "\n\nIf you want, I can point to the exact place I'm referring to or send a screenshot. "
+        "No need to reply if it's already on your list."
+    )
+    tnt = (
+        "Hi,\n\nI was on TNT Electric website earlier. "
+        + CLAIM
+        + "\n\nIf you want, I can point to the exact place I'm referring to or send a screenshot. "
+        "No need to reply if it's already on your list."
+    )
+
+    blocked, ratio, matched = is_too_similar(
+        tnt,
+        candidate_business_name="TNT Electric",
+        candidate_verified_claim=CLAIM,
+        recent_drafts=[("Bright Electric Services", bright, CLAIM)],
+    )
+
+    assert blocked is True
+    assert ratio > 0.95
+    assert matched == "Bright Electric Services"
+
+
+def test_materially_different_note_is_not_blocked():
+    first = (
+        "Hi,\n\n" + CLAIM + "\n\n"
+        "I can send the page location I checked if you want to see it."
+    )
+    second = (
+        "The TNT Electric website has one item I wanted to mention.\n\n"
+        + CLAIM
+        + "\n\nAlready have that covered? No reply needed."
+    )
+
+    ratio = structural_similarity(
+        second,
+        candidate_business_name="TNT Electric",
+        candidate_verified_claim=CLAIM,
+        existing_body=first,
+        existing_business_name="Bright Electric Services",
+        existing_verified_claim=CLAIM,
+    )
+
+    assert ratio < 0.82
