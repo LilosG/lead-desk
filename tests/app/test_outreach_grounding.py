@@ -1,3 +1,5 @@
+import pytest
+
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
 
 
@@ -9,7 +11,7 @@ def test_rejects_prospect_list_language_and_unsupported_consequence():
         "Let me know if you'd like me to point out exactly where it shows up, or just leave it here."
     )
 
-    try:
+    with pytest.raises(OpenRouterError):
         OpenRouterClient._validate_copy(
             subject="TNT Electric website",
             body=body,
@@ -18,10 +20,6 @@ def test_rejects_prospect_list_language_and_unsupported_consequence():
             city="Oceanside",
             vertical="electrician",
         )
-    except OpenRouterError:
-        pass
-    else:
-        raise AssertionError("prospect-list framing and unsupported consequences must be rejected")
 
 
 def test_rejects_second_unverified_observation_before_finding():
@@ -31,7 +29,7 @@ def test_rejects_second_unverified_observation_before_finding():
         "if that's helpful, or send a screenshot. No need to respond unless you want to."
     )
 
-    try:
+    with pytest.raises(OpenRouterError, match="unverified observation"):
         OpenRouterClient._validate_copy(
             subject="TNT Electric",
             body=body,
@@ -40,19 +38,15 @@ def test_rejects_second_unverified_observation_before_finding():
             city="Oceanside",
             vertical="electrician",
         )
-    except OpenRouterError as exc:
-        assert "unverified observation" in str(exc)
-    else:
-        raise AssertionError("a second website observation must never pass validation")
 
 
-def test_allows_grounded_one_business_note():
+def test_allows_grounded_individual_note_without_prospecting_context():
     OpenRouterClient._validate_copy(
         subject="TNT Electric",
         body=(
-            "Hi, I was on TNT Electric's site earlier and wanted to mention one technical item. "
-            f"{CLAIM_TOKEN} If you handle the site internally, I can point you to the exact spot "
-            "I mean. If not, no need to do anything with this."
+            f"Hi,\n\n{CLAIM_TOKEN}\n\n"
+            "If you want the exact page location I checked, I can send that over. "
+            "If it's already on your radar, no reply needed."
         ),
         has_verified_claim=True,
         business_name="TNT Electric",
@@ -61,21 +55,30 @@ def test_allows_grounded_one_business_note():
     )
 
 
-def test_safe_fallback_contains_only_the_verified_finding_slot():
-    subject, body = OpenRouterClient._safe_fallback(
-        business_name="TNT Electric",
-        has_verified_claim=True,
+def test_style_brief_is_stable_but_differs_across_benchmark_businesses():
+    bright = OpenRouterClient._style_brief("Bright Electric Services")
+    tnt = OpenRouterClient._style_brief("TNT Electric")
+    blackwood = OpenRouterClient._style_brief("Blackwood Electric")
+
+    assert bright == OpenRouterClient._style_brief("Bright Electric Services")
+    assert bright != tnt
+    assert bright != blackwood
+
+
+def test_missing_finding_slot_fails_closed_after_repair(monkeypatch):
+    client = OpenRouterClient(api_key="test", model="test/model")
+
+    monkeypatch.setattr(
+        client,
+        "_request_copy",
+        lambda **kwargs: ("Example Electric", "Hi, this body never includes the required finding token."),
     )
 
-    assert subject == "TNT Electric"
-    assert body.count(CLAIM_TOKEN) == 1
-    assert "service area" not in body.lower()
-    assert "could help" not in body.lower()
-    OpenRouterClient._validate_copy(
-        subject=subject,
-        body=body,
-        has_verified_claim=True,
-        business_name="TNT Electric",
-        city="Oceanside",
-        vertical="electrician",
-    )
+    with pytest.raises(OpenRouterError, match="could not preserve"):
+        client._ensure_finding_slot(
+            subject="Example Electric",
+            body="Hi, no token here.",
+            system="system",
+            user="user",
+            has_verified_claim=True,
+        )
