@@ -33,56 +33,53 @@ _SUBJECTS = (
     "{business} website",
     "{business} homepage",
     "Website question — {business}",
-    "A note for {business}",
+    "Website note — {business}",
 )
 
-# The application owns every sent word. The immutable claim block can contain
-# recipient-safe public evidence plus one separately verified technical finding.
-# Frames vary the human shape of the note without adding prospect facts.
+_FALLBACK_SUBJECTS = (
+    "Website question",
+    "Website detail",
+    "Homepage question",
+    "Website note",
+    "Homepage detail",
+)
+
+# The application owns every sent word. The immutable claim block contains the
+# recipient-specific public evidence plus one separately verified technical finding.
+# Frames exist only to make the note read naturally; they do not explain the sales
+# process, claim personalization, or add any prospect facts.
 _FRAMES = (
     "{claim}\n\n{closing}",
+    "I checked {business} before reaching out.\n\n{claim}\n\n{closing}",
     "I pulled up {business} before emailing.\n\n{claim}\n\n{closing}",
-    "I checked {business} before reaching out. {claim}\n\n{closing}",
-    "The reason I am reaching out is pretty specific:\n\n{claim}\n\n{closing}",
-    "Here is the exact context behind this email:\n\n{claim}\n\n{closing}",
-    "I wanted to send the concrete detail rather than a generic introduction.\n\n{claim}\n\n{closing}",
-    "I was looking at {business} and this is what I wanted to pass along:\n\n{claim}\n\n{closing}",
-    "This is the specific context I was looking at for {business}. {claim}\n\n{closing}",
-    "I will keep this short.\n\n{claim}\n\n{closing}",
-    "A straightforward note on {business}:\n\n{claim}\n\n{closing}",
-    "I checked the public Google listing and the homepage before sending this.\n\n{claim}\n\n{closing}",
-    "I wanted to give you the actual context instead of a broad website pitch.\n\n{claim}\n\n{closing}",
-    "For context, this is exactly what I was looking at:\n\n{claim}\n\n{closing}",
-    "I had {business} open before emailing and wanted to pass this along.\n\n{claim}\n\n{closing}",
-    "This is what prompted the email:\n\n{claim}\n\n{closing}",
-    "I am reaching out based on these specific public details:\n\n{claim}\n\n{closing}",
-    "I took a look at {business} before sending this. {claim}\n\n{closing}",
-    "Rather than send a general intro, here is the exact reason for the note:\n\n{claim}\n\n{closing}",
-    "The context is simple:\n\n{claim}\n\n{closing}",
-    "I checked {business} and wanted to send you the exact thing I was looking at.\n\n{claim}\n\n{closing}",
-    "This is not a broad audit; it is the specific context behind my email.\n\n{claim}\n\n{closing}",
-    "I wanted to be specific about why I emailed {business}.\n\n{claim}\n\n{closing}",
-    "A short note with the actual context:\n\n{claim}\n\n{closing}",
-    "I looked at {business} before reaching out and kept the note to what I could verify.\n\n{claim}\n\n{closing}",
+    "I had {business} open and wanted to pass this along.\n\n{claim}\n\n{closing}",
+    "For context:\n\n{claim}\n\n{closing}",
+    "This is what I was looking at:\n\n{claim}\n\n{closing}",
+    "I checked the Google listing and the website before sending this.\n\n{claim}\n\n{closing}",
+    "I took a look at {business} before sending this.\n\n{claim}\n\n{closing}",
+    "I wanted to pass this along after checking {business}.\n\n{claim}\n\n{closing}",
+    "I had one thing from {business} I wanted to send over.\n\n{claim}\n\n{closing}",
+    "I checked {business} and this was the detail I wanted to share.\n\n{claim}\n\n{closing}",
+    "I was looking at {business} earlier and wanted to send this over.\n\n{claim}\n\n{closing}",
+    "I pulled up the public listing and the website for {business}.\n\n{claim}\n\n{closing}",
+    "Here is what I found when I checked {business}:\n\n{claim}\n\n{closing}",
+    "A note on {business}:\n\n{claim}\n\n{closing}",
+    "I checked {business} and wanted to make sure this got to you.\n\n{claim}\n\n{closing}",
 )
 
 _CLOSINGS = (
     "If you already know about it, no need to reply.",
     "If it is already being handled, all good.",
     "If you want the exact page I checked, I can send it.",
-    "I can point you to the exact spot if you want to check it on your side.",
+    "I can point you to the exact spot if useful.",
     "If you want, I can send a screenshot of the exact spot.",
-    "If you already have it covered, you can ignore this note.",
+    "If you already have it covered, you can ignore this.",
     "That is all I wanted to pass along.",
-    "I can tell you exactly where I checked it if that is useful.",
-    "If you want to compare it yourself, I can point you to the exact place.",
-    "If this is useful, I can send the page location. If not, no worries.",
-    "If this is already on your radar, no response needed.",
     "I can send the exact page location if you want it.",
-    "If you want to verify it on your side, I can point you to the spot.",
-    "If this is already covered, there is nothing you need to do with this note.",
-    "Do you want the exact page I checked?",
-    "Just wanted to make sure the detail got to you.",
+    "No need to respond if you already have it covered.",
+    "If useful, I can send the page and exact spot I checked.",
+    "Just wanted to pass it along.",
+    "If you want to verify it on your side, I can point you to the page.",
 )
 
 
@@ -134,17 +131,14 @@ class ConstrainedOutreachClient:
 
     @staticmethod
     def _safe_business_name(business_name: str) -> str:
-        words = business_name.strip().split()
-        if not words:
-            return "Business"
-        return " ".join(words[:5])[:45]
+        return " ".join(business_name.strip().split()) or "Business"
 
     @classmethod
     def _render_subject(cls, business_name: str, subject_index: int) -> str:
         safe_name = cls._safe_business_name(business_name)
         candidate = _SUBJECTS[subject_index].format(business=safe_name).strip()
         if len(candidate.split()) > 5 or len(candidate) > 55:
-            candidate = safe_name
+            return _FALLBACK_SUBJECTS[subject_index]
         return candidate
 
     def _choose_style(self, business_name: str) -> tuple[StyleChoice, bool]:
