@@ -9,6 +9,7 @@ from app.integrations.openrouter_constrained import ConstrainedOutreachClient
 from app.integrations.openrouter_structured import StructuredOpenRouterClient
 from app.repositories.integrations import IntegrationRepository
 from app.repositories.outreach import OutreachRepository
+from app.repositories.outreach_evidence import OutreachEvidenceRepository
 from app.schemas.outreach import (
     OutreachCreate,
     OutreachQueueResponse,
@@ -54,6 +55,7 @@ def get_service() -> OutreachService:
 
     return OutreachService(
         OutreachRepository(pool),
+        evidence_repository=OutreachEvidenceRepository(pool),
         generator=generator,
         gmail=gmail,
         generation_model=settings.openrouter_model if generator else None,
