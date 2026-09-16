@@ -55,7 +55,7 @@ def test_same_model_tuple_is_decorrelated_per_business(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":12}'
+                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":11}'
                 }
             }]
         })
@@ -165,3 +165,12 @@ def test_subjects_and_bodies_stay_bounded_across_fallback_styles(monkeypatch):
 
     assert len({copy.body for copy in outputs}) >= 4
     assert len({copy.subject for copy in outputs}) >= 4
+
+
+def test_long_business_name_never_truncates_mid_name():
+    subject = ConstrainedOutreachClient._render_subject(
+        "Water Wise Plumbing, Backflow & Drains",
+        0,
+    )
+    assert subject == "Website question"
+    assert subject != "Water Wise Plumbing, Backflow &"
