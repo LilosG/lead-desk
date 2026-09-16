@@ -34,7 +34,7 @@ _SUBJECTS = (
     "{business} website",
     "{business} site",
     "Website note for {business}",
-    "A website detail for {business}",
+    "Website detail for {business}",
 )
 
 _OPENERS = (
@@ -44,8 +44,8 @@ _OPENERS = (
     "I had one specific website detail for {business} that seemed worth sending directly.",
     "I checked one technical detail on the {business} website before reaching out.",
     "I wanted to pass along one specific thing I verified on the {business} website.",
-    "This is just about one concrete detail on the {business} website.",
-    "I had the {business} website open and wanted to send one specific detail rather than a general pitch.",
+    "This is about one concrete detail on the {business} website.",
+    "I had the {business} website open and wanted to send one specific detail.",
     "I checked your website before emailing and wanted to pass along one specific item.",
     "I wanted to mention one concrete website detail I verified before reaching out.",
     "I took a look at your website and had one specific detail to pass along.",
@@ -62,13 +62,13 @@ _CLOSINGS = (
     "If you want the exact spot, I can send that over.",
     "I can tell you exactly where I checked it if that is useful.",
     "That is all I wanted to pass along. If you want the exact location, I can send it.",
-    "No need for a call. If you want the exact page location, I can send it.",
     "If you want to compare it yourself, I can tell you exactly where I checked.",
     "If this is useful, I can send the exact location. If not, no worries.",
     "If this is already on your list, no response needed.",
     "If you want the detail behind that, I can send the exact location I checked.",
     "If you want to verify it on your side, I can point you to the exact spot.",
     "If this is already covered, there is nothing you need to do with this note.",
+    "Do you want the exact page location I checked?",
 )
 
 _RHYTHMS = (
@@ -76,8 +76,6 @@ _RHYTHMS = (
     "opener_then_claim_then_close",
     "opener_claim_then_close",
     "opener_claim_close_compact",
-    "claim_then_opener_then_close",
-    "greeting_claim_then_close",
 )
 
 
@@ -135,11 +133,13 @@ class ConstrainedOutreachClient:
     @classmethod
     def _render_subject(cls, business_name: str, subject_index: int) -> str:
         safe_name = cls._safe_business_name(business_name)
-        subject = _SUBJECTS[subject_index].format(business=safe_name).strip()
-        words = subject.split()
-        if len(words) > 5:
-            subject = " ".join(words[:5])
-        return subject[:55].strip()
+        candidate = _SUBJECTS[subject_index].format(business=safe_name).strip()
+        # Never chop a subject into a misleading fragment such as
+        # "Website detail for Richard". If a pattern does not fit the plain
+        # 5-word/55-character contract, fall back to the business name itself.
+        if len(candidate.split()) > 5 or len(candidate) > 55:
+            candidate = safe_name
+        return candidate
 
     def _choose_style(self, business_name: str) -> tuple[StyleChoice, bool]:
         fallback = self._deterministic_choice(business_name)
@@ -245,12 +245,8 @@ class ConstrainedOutreachClient:
             core = [opener, CLAIM_TOKEN, closing] if opener else [CLAIM_TOKEN, closing]
         elif rhythm == "opener_claim_then_close":
             core = [f"{opener} {CLAIM_TOKEN}".strip(), closing] if opener else [CLAIM_TOKEN, closing]
-        elif rhythm == "opener_claim_close_compact":
-            core = [f"{opener} {CLAIM_TOKEN} {closing}".strip()] if opener else [f"{CLAIM_TOKEN} {closing}"]
-        elif rhythm == "claim_then_opener_then_close":
-            core = [CLAIM_TOKEN, opener, closing] if opener else [CLAIM_TOKEN, closing]
         else:
-            core = [CLAIM_TOKEN, closing]
+            core = [f"{opener} {CLAIM_TOKEN} {closing}".strip()] if opener else [f"{CLAIM_TOKEN} {closing}"]
 
         paragraphs: list[str] = []
         if greeting:
