@@ -49,13 +49,7 @@ class OpenRouterClient:
 
     @staticmethod
     def _style_brief(business_name: str) -> OutreachStyleBrief:
-        """Assign a stable style fingerprint without changing recipient facts.
-
-        A prospect should not receive the same rhetorical skeleton merely because
-        the verified finding is the same. The business name is used only as a
-        deterministic seed; the resulting values are writing-shape directives,
-        not facts to mention in the email.
-        """
+        """Assign a stable style fingerprint without changing recipient facts."""
 
         digest = hashlib.sha256(business_name.encode("utf-8")).digest()
         subject_modes = (
@@ -79,7 +73,7 @@ class OpenRouterClient:
             "plain_offer_to_send_the_specific_detail",
             "no_pressure_offer_without_asking_for_a_call",
             "short_acknowledgement_that_no_reply_is_needed_if_already_known",
-            "brief_offer_to clarify_what_was_checked",
+            "brief_offer_to_clarify_what_was_checked",
         )
         rhythm_modes = (
             "two_short_paragraphs",
@@ -146,7 +140,7 @@ class OpenRouterClient:
                 + ". Rewrite it from scratch while preserving the style_brief. "
                 + "Use only the business name plus the application-owned verified-finding token as recipient facts. "
                 + "Do not add another observation, consequence, benefit, prediction, or invented familiarity. "
-                + "Do not reuse the stock sentence 'I was on [business] website earlier' or the stock screenshot closing."
+                + "Do not reuse the same opening and closing structure from the rejected draft."
             )
             subject, body = self._request_copy(
                 system=system,
@@ -180,7 +174,7 @@ class OpenRouterClient:
         return f"""
 You write one short first-touch email from Mike at LILOs Growth to one real local business owner.
 
-The note must read like an individual message, not a cold-email sequence, lead-gen template, audit pitch, prospecting list, mail merge, or AI copy. Different businesses must not collapse into the same opening + finding + screenshot-offer skeleton.
+The note must read like an individual message, not a cold-email sequence, lead-gen template, audit pitch, prospecting list, mail merge, or AI copy. Different businesses must not collapse into the same opening + finding + closing skeleton.
 
 FACT CONTRACT:
 - Use only the supplied business name and the existence of one application-owned verified finding.
@@ -193,17 +187,17 @@ FACT CONTRACT:
 STYLE BRIEF:
 - Follow the supplied style_brief to vary subject shape, greeting, opener shape, closing shape, and paragraph rhythm.
 - The style_brief is rhetorical metadata only. It never authorizes a new fact.
-- Variation must come from syntax and structure, not from invented personalization.
+- Variation must come from syntax and structure, not invented personalization.
 - It is acceptable to put the verified finding immediately after a greeting with no setup sentence.
 - It is acceptable to mention the business name only in the subject if the body is otherwise natural.
-- Avoid possessive constructions built from the business name (for example, do not write "Bright Electric Services's website"). Prefer "the Bright Electric Services website" or "your website" when needed.
+- Avoid awkward possessive constructions for business names ending in s. Prefer "the Bright Electric Services website" or "your website" rather than "Bright Electric Services's website".
 
 STYLE:
 - Subject: 1-5 words, plain, business-anchored, no city, industry, urgency, or sales language.
 - Body: 25-80 words before Mike's application-owned footer.
 - Use contractions and ordinary spoken business English.
 - Keep the verified finding early.
-- The closing should be low-pressure and concrete, but do not default every note to offering a screenshot.
+- The closing should be low-pressure and concrete, but do not default every note to the same offer.
 - Plain text only.
 - Do not add Mike's name, company, postal address, opt-out language, or a signature; the application appends those.
 
@@ -248,6 +242,40 @@ Return JSON only with string keys "subject" and "body".
                 "OpenRouter could not preserve the verified finding slot after repair"
             )
         return subject, body
+
+    @staticmethod
+    def _insert_verified_finding_slot(body: str) -> str:
+        """Compatibility helper used by slot-repair regressions.
+
+        Runtime generation no longer falls back to this helper after a failed
+        model repair; `_ensure_finding_slot` fails closed instead.
+        """
+
+        cleaned = body.replace(CLAIM_TOKEN, "").strip()
+        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", cleaned) if part.strip()]
+        if not paragraphs:
+            return CLAIM_TOKEN
+
+        target_index = 0
+        if paragraphs[0].lower().rstrip() in {"hi", "hi,", "hello", "hello,"} and len(paragraphs) > 1:
+            target_index = 1
+
+        target = paragraphs[target_index]
+        match = re.search(r"[.!?](?:\s|$)", target)
+        if match:
+            insert_at = match.end()
+            target = (
+                target[:insert_at].rstrip()
+                + " "
+                + CLAIM_TOKEN
+                + " "
+                + target[insert_at:].lstrip()
+            ).strip()
+        else:
+            target = f"{target} {CLAIM_TOKEN}".strip()
+
+        paragraphs[target_index] = target
+        return "\n\n".join(paragraphs)
 
     def _request_copy(
         self,
@@ -418,12 +446,10 @@ Return JSON only with string keys "subject" and "body".
             "get the right info",
             "get found",
             "show up better",
-            "website earlier",
-            "point to the exact place i'm referring to or send a screenshot",
         )
         if any(token in lowered for token in forbidden):
             raise OpenRouterError(
-                "Generated copy introduced prospect-list language, unsupported consequence, sales cliché, jargon, or a known mass-generated pattern"
+                "Generated copy introduced prospect-list language, an unsupported consequence, sales cliché, or jargon"
             )
         if "!" in combined:
             raise OpenRouterError("Generated copy used promotional punctuation")
@@ -436,9 +462,9 @@ Return JSON only with string keys "subject" and "body".
         body_scope = body.lower()
         if business_name:
             business_lower = business_name.lower()
-            if f"{business_lower}'s" in body_scope:
+            if business_lower.endswith("s") and f"{business_lower}'s" in body_scope:
                 raise OpenRouterError(
-                    "Generated copy used an awkward possessive form of the business name"
+                    "Generated copy used an awkward possessive form of a business name ending in s"
                 )
             body_scope = body_scope.replace(business_lower, "")
         if city and city.lower() in body_scope:
