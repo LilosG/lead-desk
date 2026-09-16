@@ -36,16 +36,48 @@ def test_model_selects_style_but_never_writes_recipient_prose(monkeypatch):
         verified_claim="Verified application-owned claim",
     )
 
-    assert copy.subject == "Bright Electric Services website"
+    assert copy.model == "qwen/test"
     assert copy.body.count(CLAIM_TOKEN) == 1
     assert "loads quickly" not in copy.body.lower()
     assert "mobile" not in copy.body.lower()
     assert "error message" not in copy.body.lower()
     assert "hi richard" not in copy.body.lower()
     assert "Bright Electric Services's" not in copy.body
+    assert len(copy.subject) <= 55
+    assert len(copy.subject.split()) <= 5
 
     user_payload = json.loads(captured["payload"]["messages"][1]["content"])
     assert user_payload == {"business_name": "Bright Electric Services"}
+
+
+def test_same_model_tuple_is_decorrelated_per_business(monkeypatch):
+    def fake_post(url, *, headers, json, timeout):
+        return FakeResponse({
+            "choices": [{
+                "message": {
+                    "content": '{"subject":3,"greeting":1,"opener":7,"closing":12,"rhythm":2}'
+                }
+            }]
+        })
+
+    monkeypatch.setattr("app.integrations.openrouter_constrained.requests.post", fake_post)
+
+    client = ConstrainedOutreachClient(api_key="test", model="qwen/test")
+    businesses = ["TNT Electric", "Sparks Electric", "Voltage Bros"]
+
+    outputs = [
+        client.generate_email(
+            business_name=business,
+            city=None,
+            vertical=None,
+            verified_claim="Verified application-owned claim",
+        )
+        for business in businesses
+    ]
+
+    assert len({copy.body for copy in outputs}) == len(outputs)
+    assert all(copy.body.count(CLAIM_TOKEN) == 1 for copy in outputs)
+    assert all(copy.model == "qwen/test" for copy in outputs)
 
 
 def test_invalid_model_payload_falls_back_to_application_owned_copy(monkeypatch):
@@ -95,10 +127,8 @@ def test_renderer_has_no_model_authored_claim_text(monkeypatch):
         verified_claim="Verified application-owned claim",
     )
 
-    assert copy.subject == "TNT Electric"
-    assert copy.body == (
-        f"{CLAIM_TOKEN}\n\nIf you already know about it, no need to reply."
-    )
+    assert copy.body.count(CLAIM_TOKEN) == 1
+    assert "Verified application-owned claim" not in copy.body
 
 
 def test_subjects_and_bodies_stay_bounded_across_fallback_styles(monkeypatch):
