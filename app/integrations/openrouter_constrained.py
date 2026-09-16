@@ -143,7 +143,7 @@ class ConstrainedOutreachClient:
     def _render_subject(cls, business_name: str, subject_index: int) -> str:
         safe_name = cls._safe_business_name(business_name)
         candidate = _SUBJECTS[subject_index].format(business=safe_name).strip()
-        if len(candidate.split()) > 6 or len(candidate) > 55:
+        if len(candidate.split()) > 5 or len(candidate) > 55:
             candidate = safe_name
         return candidate
 
