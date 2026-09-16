@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import requests
 
 from app.integrations.openrouter import (
+    CLAIM_TOKEN,
     OPENROUTER_CHAT_URL,
+    GeneratedCopy,
     OpenRouterClient,
     OpenRouterError,
 )
@@ -30,6 +33,93 @@ class StructuredOpenRouterClient(OpenRouterClient):
     support JSON-schema response_format. Keep reasoning minimal for this small
     copy task and reserve enough completion budget for the actual JSON body.
     """
+
+    def generate_email(
+        self,
+        *,
+        business_name: str,
+        city: str | None,
+        vertical: str | None,
+        verified_claim: str | None,
+    ) -> GeneratedCopy:
+        # A first-touch note must have one concrete, approved fact to justify
+        # contacting the business. If verification produced only an internal
+        # signal (for example a builder fingerprint that we intentionally do not
+        # expose), do not generate a vague "I noticed something" email.
+        if not verified_claim:
+            raise OpenRouterError(
+                "No approved client-facing finding is available for this prospect."
+            )
+
+        copy = super().generate_email(
+            business_name=business_name,
+            city=city,
+            vertical=vertical,
+            verified_claim=verified_claim,
+        )
+
+        body = copy.body
+        # The application-owned finding strings are complete sentences. If the
+        # model places punctuation immediately after the immutable slot, remove
+        # that model punctuation so replacement cannot produce "Google..".
+        if verified_claim.rstrip().endswith((".", "!", "?")):
+            body = re.sub(
+                re.escape(CLAIM_TOKEN) + r"[.!?]+",
+                CLAIM_TOKEN,
+                body,
+                count=1,
+            )
+
+        if body == copy.body:
+            return copy
+        return GeneratedCopy(subject=copy.subject, body=body, model=copy.model)
+
+    @staticmethod
+    def _system_prompt() -> str:
+        return (
+            OpenRouterClient._system_prompt()
+            + "\n\nADDITIONAL OUTPUT RULES:\n"
+            + "- Write 'website' when referring to the business website. Never write 'site/profile'.\n"
+            + "- Do not add a sign-off or signature such as Thanks, Best, Mike, or LILOs Growth. "
+            + "The application appends the signature separately."
+        )
+
+    @staticmethod
+    def _validate_copy(
+        *,
+        subject: str,
+        body: str,
+        has_verified_claim: bool,
+        business_name: str | None = None,
+        city: str | None = None,
+        vertical: str | None = None,
+    ) -> None:
+        OpenRouterClient._validate_copy(
+            subject=subject,
+            body=body,
+            has_verified_claim=has_verified_claim,
+            business_name=business_name,
+            city=city,
+            vertical=vertical,
+        )
+
+        lowered = body.lower()
+        if "site/profile" in lowered:
+            raise OpenRouterError(
+                "Generated copy used the unnatural site/profile construction"
+            )
+        if "lilos growth" in lowered:
+            raise OpenRouterError(
+                "Generated copy inserted the application-owned signature"
+            )
+
+        signature_line = re.compile(
+            r"(?im)^\s*(?:thanks|thank you|best|regards|sincerely|cheers|mike(?:\s+at\s+lilos growth)?)\s*[,!]*\s*$"
+        )
+        if signature_line.search(body):
+            raise OpenRouterError(
+                "Generated copy inserted a sign-off or signature"
+            )
 
     def _request_copy(
         self,
