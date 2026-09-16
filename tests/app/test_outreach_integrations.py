@@ -108,6 +108,9 @@ class FakeRepository:
     def is_suppressed(self, email):
         return False
 
+    def list_items(self, status=None):
+        return [], 0
+
     def record_generated_draft(self, item_id, **kwargs):
         self.generated = kwargs
         return {
@@ -195,7 +198,7 @@ def test_generation_uses_one_coherent_note_and_verified_claim_slot():
     assert "1440 Columbia St" in repo.generated["body"]
     assert "If you'd rather I not reach out again" in repo.generated["body"]
     assert repo.generated["generation_model"] == "test/model"
-    assert repo.generated["prompt_version"] == "outreach-v6"
+    assert repo.generated["prompt_version"] == "outreach-v7"
 
 
 def test_client_facing_claim_keeps_verification_technical_details_out_of_email():
