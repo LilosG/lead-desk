@@ -6,11 +6,13 @@ from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
 from app.repositories.outreach import OutreachOperationLocked, OutreachRepository
+from app.repositories.outreach_evidence import OutreachEvidenceRepository
+from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v7"
+PROMPT_VERSION = "outreach-v8"
 MAX_DRAFT_ATTEMPTS = 3
 CAN_SPAM_FOOTER = (
     "Mike\n"
@@ -41,6 +43,7 @@ class OutreachService:
         self,
         repository: OutreachRepository,
         *,
+        evidence_repository: OutreachEvidenceRepository | None = None,
         generator: OpenRouterClient | None = None,
         gmail: GmailDraftClient | None = None,
         verifier: OutreachClaimVerifier | None = None,
@@ -48,6 +51,7 @@ class OutreachService:
         gmail_sender_email: str | None = None,
     ) -> None:
         self.repository = repository
+        self.evidence_repository = evidence_repository
         self.generator = generator
         self.gmail = gmail
         self.verifier = verifier or OutreachClaimVerifier()
@@ -244,9 +248,9 @@ class OutreachService:
 
         verification_context = self._client_facing_verification_context(context)
         claim = self.verifier.verify(verification_context)
-        visible_claim = client_facing_claim(claim.signal, claim.text)
+        technical_claim = client_facing_claim(claim.signal, claim.text)
 
-        if not visible_claim:
+        if not technical_claim:
             verification_note = claim.note.strip()
             if verification_note:
                 verification_note = f"{verification_note} {NO_CLIENT_FACING_FINDING}"
@@ -274,6 +278,17 @@ class OutreachService:
             return updated
 
         business_name = context.get("name") or "your business"
+        evidence = None
+        if self.evidence_repository is not None:
+            evidence = RecipientEvidence.from_row(
+                self.evidence_repository.get(context["place_id"])
+            )
+        visible_claim = recipient_finding_block(
+            business_name=business_name,
+            technical_claim=technical_claim,
+            evidence=evidence,
+        )
+
         recent_drafts = self._recent_draft_structures(current_item_id=item_id)
         copy = None
         rendered_note = None
