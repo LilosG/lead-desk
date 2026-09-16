@@ -83,8 +83,10 @@ class ConstrainedOutreachClient:
     """Let the model select rhetoric while the application owns every sent word.
 
     Qwen never writes recipient-facing prose. It can only select indices from reviewed
-    subject, greeting, opener, closing, and rhythm banks. The verified finding remains
-    an application-owned token inserted by OutreachService after live verification.
+    subject, greeting, opener, closing, and rhythm banks. A deterministic business
+    fingerprint is then mixed into those indices so repeated model choices do not
+    collapse multiple prospects into the same mail-merge structure. The verified
+    finding remains an application-owned token inserted after live verification.
     Invalid model output falls back to a deterministic application-owned style.
     """
 
@@ -134,9 +136,6 @@ class ConstrainedOutreachClient:
     def _render_subject(cls, business_name: str, subject_index: int) -> str:
         safe_name = cls._safe_business_name(business_name)
         candidate = _SUBJECTS[subject_index].format(business=safe_name).strip()
-        # Never chop a subject into a misleading fragment such as
-        # "Website detail for Richard". If a pattern does not fit the plain
-        # 5-word/55-character contract, fall back to the business name itself.
         if len(candidate.split()) > 5 or len(candidate) > 55:
             candidate = safe_name
         return candidate
@@ -157,7 +156,7 @@ class ConstrainedOutreachClient:
                         "Return JSON only with integer keys subject, greeting, opener, closing, rhythm. "
                         f"Allowed subject 0-{len(_SUBJECTS)-1}, greeting 0-{len(_GREETINGS)-1}, "
                         f"opener 0-{len(_OPENERS)-1}, closing 0-{len(_CLOSINGS)-1}, "
-                        f"rhythm 0-{len(_RHYTHMS)-1}. Prefer combinations that would not resemble a repeated mail-merge pattern."
+                        f"rhythm 0-{len(_RHYTHMS)-1}."
                     ),
                 },
                 {
@@ -184,16 +183,16 @@ class ConstrainedOutreachClient:
             data = response.json()
             raw = data["choices"][0]["message"]["content"]
             parsed = self._parse_json(raw)
-            choice = StyleChoice(
+            selected = StyleChoice(
                 subject=int(parsed["subject"]),
                 greeting=int(parsed["greeting"]),
                 opener=int(parsed["opener"]),
                 closing=int(parsed["closing"]),
                 rhythm=int(parsed["rhythm"]),
             )
-            if not self._valid_choice(choice):
+            if not self._valid_choice(selected):
                 return fallback, False
-            return choice, True
+            return self._decorrelate_choice(selected, business_name), True
         except (requests.RequestException, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
             return fallback, False
 
@@ -230,6 +229,25 @@ class ConstrainedOutreachClient:
             opener=digest[2] % len(_OPENERS),
             closing=digest[3] % len(_CLOSINGS),
             rhythm=digest[4] % len(_RHYTHMS),
+        )
+
+    @staticmethod
+    def _decorrelate_choice(choice: StyleChoice, business_name: str) -> StyleChoice:
+        """Mix a stable business fingerprint into a valid model style selection.
+
+        Qwen often returns the same stylistic tuple for unrelated businesses. Without
+        this application-side mixing, those recipients receive structurally identical
+        notes even though the model technically participated. Mixing the fingerprint
+        preserves Qwen's selection while making the final reviewed template choice
+        prospect-specific and reproducible.
+        """
+        digest = hashlib.sha256(("outreach-style:" + business_name).encode("utf-8")).digest()
+        return StyleChoice(
+            subject=(choice.subject + digest[0]) % len(_SUBJECTS),
+            greeting=(choice.greeting + digest[1]) % len(_GREETINGS),
+            opener=(choice.opener + digest[2]) % len(_OPENERS),
+            closing=(choice.closing + digest[3]) % len(_CLOSINGS),
+            rhythm=(choice.rhythm + digest[4]) % len(_RHYTHMS),
         )
 
     @staticmethod
