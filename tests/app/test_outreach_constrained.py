@@ -21,7 +21,7 @@ def test_model_selects_style_but_never_writes_recipient_prose(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":1,"greeting":0,"opener":3,"closing":5,"rhythm":1}'
+                    "content": '{"subject":1,"greeting":0,"frame":3,"closing":5}'
                 }
             }]
         })
@@ -55,7 +55,7 @@ def test_same_model_tuple_is_decorrelated_per_business(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":3,"greeting":1,"opener":7,"closing":12,"rhythm":2}'
+                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":12}'
                 }
             }]
         })
@@ -112,7 +112,7 @@ def test_renderer_has_no_model_authored_claim_text(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":0,"greeting":2,"opener":0,"closing":0,"rhythm":0}'
+                    "content": '{"subject":0,"greeting":2,"frame":0,"closing":0}'
                 }
             }]
         })
