@@ -21,7 +21,7 @@ def test_model_selects_style_but_never_writes_recipient_prose(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"greeting":0,"opener":1,"closing":4,"rhythm":1}'
+                    "content": '{"subject":1,"greeting":0,"opener":3,"closing":5,"rhythm":1}'
                 }
             }]
         })
@@ -36,7 +36,7 @@ def test_model_selects_style_but_never_writes_recipient_prose(monkeypatch):
         verified_claim="Verified application-owned claim",
     )
 
-    assert copy.subject == "Bright Electric Services"
+    assert copy.subject == "Bright Electric Services website"
     assert copy.body.count(CLAIM_TOKEN) == 1
     assert "loads quickly" not in copy.body.lower()
     assert "mobile" not in copy.body.lower()
@@ -80,7 +80,7 @@ def test_renderer_has_no_model_authored_claim_text(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"greeting":2,"opener":6,"closing":7,"rhythm":2}'
+                    "content": '{"subject":0,"greeting":2,"opener":0,"closing":0,"rhythm":0}'
                 }
             }]
         })
@@ -95,6 +95,43 @@ def test_renderer_has_no_model_authored_claim_text(monkeypatch):
         verified_claim="Verified application-owned claim",
     )
 
+    assert copy.subject == "TNT Electric"
     assert copy.body == (
-        f"{CLAIM_TOKEN}\n\nNo need to reply if you already have this covered."
+        f"{CLAIM_TOKEN}\n\nIf you already know about it, no need to reply."
     )
+
+
+def test_subjects_and_bodies_stay_bounded_across_fallback_styles(monkeypatch):
+    def fake_post(url, *, headers, json, timeout):
+        return FakeResponse({}, ok=False)
+
+    monkeypatch.setattr("app.integrations.openrouter_constrained.requests.post", fake_post)
+
+    client = ConstrainedOutreachClient(api_key="test", model="qwen/test")
+    businesses = [
+        "Bright Electric Services",
+        "TNT Electric",
+        "Richard Olinger Electric",
+        "Cano Electric",
+        "Coastal Power Co",
+        "A Very Long Local Electrical Services Company Name Incorporated",
+    ]
+
+    outputs = []
+    for business in businesses:
+        copy = client.generate_email(
+            business_name=business,
+            city=None,
+            vertical=None,
+            verified_claim="Verified application-owned claim",
+        )
+        outputs.append(copy)
+        assert copy.body.count(CLAIM_TOKEN) == 1
+        assert len(copy.subject) <= 55
+        assert len(copy.subject.split()) <= 5
+        assert "loads quickly" not in copy.body.lower()
+        assert "visible error" not in copy.body.lower()
+        assert "mobile devices" not in copy.body.lower()
+
+    assert len({copy.body for copy in outputs}) >= 4
+    assert len({copy.subject for copy in outputs}) >= 4
