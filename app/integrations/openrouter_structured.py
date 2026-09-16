@@ -58,21 +58,50 @@ class StructuredOpenRouterClient(OpenRouterClient):
             verified_claim=verified_claim,
         )
 
-        body = copy.body
-        # The application-owned finding strings are complete sentences. If the
-        # model places punctuation immediately after the immutable slot, remove
-        # that model punctuation so replacement cannot produce "Google..".
-        if verified_claim.rstrip().endswith((".", "!", "?")):
-            body = re.sub(
-                re.escape(CLAIM_TOKEN) + r"[.!?]+",
-                CLAIM_TOKEN,
-                body,
-                count=1,
-            )
-
+        body = self._normalize_claim_slot(copy.body, verified_claim)
         if body == copy.body:
             return copy
         return GeneratedCopy(subject=copy.subject, body=body, model=copy.model)
+
+    @staticmethod
+    def _normalize_claim_slot(body: str, verified_claim: str) -> str:
+        """Make the application-owned finding a standalone sentence block.
+
+        The model may grammatically attach the immutable token to its opener
+        (for example ``... website and [[VERIFIED_FINDING]]``). Because the
+        inserted finding is itself a complete sentence, that creates broken copy
+        such as ``and The homepage...``. Normalize the token boundary before the
+        application substitutes the verified finding.
+        """
+        normalized = body
+        if verified_claim.rstrip().endswith((".", "!", "?")):
+            normalized = re.sub(
+                re.escape(CLAIM_TOKEN) + r"[.!?]+",
+                CLAIM_TOKEN,
+                normalized,
+                count=1,
+            )
+
+        if CLAIM_TOKEN not in normalized:
+            return normalized
+
+        prefix, suffix = normalized.split(CLAIM_TOKEN, 1)
+        prefix = prefix.rstrip()
+        # A conjunction immediately before the token belongs to the model's
+        # sentence, not to the immutable finding. Remove it instead of joining
+        # two independently capitalized sentences.
+        prefix = re.sub(
+            r"(?:[,;:]?\s+)(?:and|but|so|because|while|then)\s*$",
+            "",
+            prefix,
+            flags=re.IGNORECASE,
+        ).rstrip()
+        if prefix and not prefix.endswith((".", "!", "?", ",")):
+            prefix += "."
+
+        suffix = re.sub(r"^[\s.!?;,:-]+", "", suffix).strip()
+        parts = [part for part in (prefix, CLAIM_TOKEN, suffix) if part]
+        return "\n\n".join(parts)
 
     @staticmethod
     def _system_prompt() -> str:
@@ -80,6 +109,7 @@ class StructuredOpenRouterClient(OpenRouterClient):
             OpenRouterClient._system_prompt()
             + "\n\nADDITIONAL OUTPUT RULES:\n"
             + "- Write 'website' when referring to the business website. Never write 'site/profile'.\n"
+            + f"- Put {CLAIM_TOKEN} in its own sentence/paragraph. Never join it to the opener with 'and', 'but', or another conjunction.\n"
             + "- Do not add a sign-off or signature such as Thanks, Best, Mike, or LILOs Growth. "
             + "The application appends the signature separately."
         )
@@ -107,6 +137,10 @@ class StructuredOpenRouterClient(OpenRouterClient):
         if "site/profile" in lowered:
             raise OpenRouterError(
                 "Generated copy used the unnatural site/profile construction"
+            )
+        if "leave it with me" in lowered:
+            raise OpenRouterError(
+                "Generated copy used an unnatural outreach closing"
             )
         if "lilos growth" in lowered:
             raise OpenRouterError(

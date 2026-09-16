@@ -172,3 +172,57 @@ def test_structured_generation_removes_duplicate_token_punctuation(monkeypatch):
 
     assert f"{CLAIM_TOKEN}." not in copy.body
     assert copy.body.count(CLAIM_TOKEN) == 1
+
+
+def test_structured_generation_separates_claim_from_model_conjunction(monkeypatch):
+    def fake_parent_generate(self, **kwargs):
+        return GeneratedCopy(
+            subject="Bright Electric Services",
+            body=(
+                "Hi,\n\nI looked at Bright Electric Services' website and "
+                f"{CLAIM_TOKEN}\n\n"
+                "If you'd like, I can point to the exact spot or send a screenshot."
+            ),
+            model="openai/gpt-5-mini",
+        )
+
+    monkeypatch.setattr(
+        "app.integrations.openrouter.OpenRouterClient.generate_email",
+        fake_parent_generate,
+    )
+
+    client = StructuredOpenRouterClient(
+        api_key="test-key",
+        model="openai/gpt-5-mini",
+    )
+    copy = client.generate_email(
+        business_name="Bright Electric Services",
+        city="San Diego",
+        vertical="electrician",
+        verified_claim=(
+            "The homepage isn't currently using structured business markup to identify the company to Google."
+        ),
+    )
+
+    assert "website and" not in copy.body
+    assert f"website.\n\n{CLAIM_TOKEN}\n\n" in copy.body
+
+
+def test_structured_validator_rejects_leave_it_with_me_closing():
+    body = (
+        "Hi, I looked at Example Electric's website earlier. "
+        f"{CLAIM_TOKEN} If you'd like, I can point to the exact spot or send a screenshot—leave it with me."
+    )
+    try:
+        StructuredOpenRouterClient._validate_copy(
+            subject="Example Electric",
+            body=body,
+            has_verified_claim=True,
+            business_name="Example Electric",
+            city="San Diego",
+            vertical="electrician",
+        )
+    except OpenRouterError as exc:
+        assert "closing" in str(exc).lower()
+    else:
+        raise AssertionError("unnatural leave-it-with-me closing must be rejected")
