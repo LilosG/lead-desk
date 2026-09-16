@@ -9,6 +9,7 @@ OutreachStatus = Literal[
     'queued',
     'researching',
     'review_required',
+    'no_outreach_finding',
     'draft_ready',
     'approved',
     'contacted',
