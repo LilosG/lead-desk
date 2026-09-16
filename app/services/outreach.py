@@ -17,6 +17,9 @@ CAN_SPAM_FOOTER = (
     "San Diego, CA 92101\n\n"
     "If you'd rather I not reach out again, just reply and I'll make sure I don't."
 )
+NO_CLIENT_FACING_FINDING = (
+    "No approved client-facing finding is available for this prospect."
+)
 
 
 class OutreachConflict(RuntimeError):
@@ -207,6 +210,37 @@ class OutreachService:
         claim = self.verifier.verify(context)
         visible_claim = client_facing_claim(claim.signal, claim.text)
 
+        # If live verification no longer yields an approved client-facing fact,
+        # any older generated copy is stale and must not remain visible or usable.
+        # Persist the verified state and clear the draft atomically through the
+        # normal versioned update path instead of surfacing an integration error.
+        if not visible_claim:
+            verification_note = claim.note.strip()
+            if verification_note:
+                verification_note = f"{verification_note} {NO_CLIENT_FACING_FINDING}"
+            else:
+                verification_note = NO_CLIENT_FACING_FINDING
+            try:
+                updated, conflict = self.repository.update_item(
+                    item_id,
+                    changes={
+                        "subject": None,
+                        "body": None,
+                        "claim_signal": claim.signal,
+                        "verification_status": claim.status,
+                        "verification_note": verification_note,
+                        "status": "review_required",
+                    },
+                    expected_version=expected_version,
+                )
+            except OutreachOperationLocked as exc:
+                raise OutreachBlocked(str(exc)) from exc
+            if conflict:
+                raise OutreachConflict(
+                    "outreach item changed while verification was being recorded"
+                )
+            return updated
+
         try:
             copy = self.generator.generate_email(
                 business_name=context.get("name") or "your business",
@@ -218,16 +252,11 @@ class OutreachService:
             raise OutreachIntegrationUnavailable(str(exc)) from exc
 
         note = copy.body.strip()
-        if visible_claim:
-            if note.count(CLAIM_TOKEN) != 1:
-                raise OutreachIntegrationUnavailable(
-                    "generated outreach did not preserve the verified finding slot"
-                )
-            note = note.replace(CLAIM_TOKEN, visible_claim)
-        elif CLAIM_TOKEN in note:
+        if note.count(CLAIM_TOKEN) != 1:
             raise OutreachIntegrationUnavailable(
-                "generated outreach introduced an unsupported finding slot"
+                "generated outreach did not preserve the verified finding slot"
             )
+        note = note.replace(CLAIM_TOKEN, visible_claim)
 
         body = f"{note}\n\n{CAN_SPAM_FOOTER}"
 
