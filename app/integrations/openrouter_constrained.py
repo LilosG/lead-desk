@@ -31,58 +31,58 @@ _GREETINGS = (
 _SUBJECTS = (
     "{business}",
     "{business} website",
-    "Website note for {business}",
-    "Homepage note for {business}",
-    "One website detail — {business}",
+    "{business} homepage",
+    "Website question — {business}",
+    "A note for {business}",
 )
 
-# Complete rhetorical frames. Each frame contains the immutable verified finding
-# exactly once and changes the shape of the note rather than swapping synonyms.
-# No frame makes a second factual assertion about the prospect.
+# The application owns every sent word. The immutable claim block can contain
+# recipient-safe public evidence plus one separately verified technical finding.
+# Frames vary the human shape of the note without adding prospect facts.
 _FRAMES = (
-    "I checked the {business} website before emailing and had one specific item to pass along.\n\n{claim}\n\n{closing}",
-    "One detail from the {business} homepage seemed worth flagging directly.\n\n{claim}\n\n{closing}",
-    "I was looking through the {business} website and verified one technical item. {claim}\n\n{closing}",
-    "This is just a quick note about the {business} homepage.\n\n{claim}\n\n{closing}",
-    "While checking the {business} website, I verified one item I wanted to pass along.\n\n{claim}\n\n{closing}",
-    "I had one concrete website detail for {business}. {claim}\n\n{closing}",
-    "A quick website note for {business}:\n\n{claim}\n\n{closing}",
-    "I checked one technical item on the {business} homepage before reaching out.\n\n{claim}\n\n{closing}",
-    "The reason for the note is straightforward. {claim}\n\nI verified it on the {business} homepage. {closing}",
-    "I wanted to send one specific website finding rather than a general pitch.\n\n{claim}\n\nThat is the only item I am reaching out about. {closing}",
-    "I was reviewing the {business} homepage and came away with one concrete item to mention.\n\n{claim}\n\n{closing}",
-    "One thing I verified on the {business} website:\n\n{claim}\n\n{closing}",
-    "I am reaching out about one specific homepage detail for {business}. {claim}\n\n{closing}",
-    "This is a narrow website note, not a broad audit.\n\n{claim}\n\nI verified that on the {business} homepage. {closing}",
-    "I checked the {business} homepage and wanted to pass along one verified detail. {claim}\n\n{closing}",
-    "There is one website item I wanted to put on your radar for {business}.\n\n{claim}\n\n{closing}",
-    "I took a look at the {business} website with one question in mind and verified this: {claim}\n\n{closing}",
-    "A short note on the {business} website. {claim}\n\n{closing}",
-    "I verified one detail on the {business} homepage and thought it was better to send the exact item than a generic introduction.\n\n{claim}\n\n{closing}",
-    "The only reason I am emailing is one website detail I verified for {business}.\n\n{claim}\n\n{closing}",
-    "I checked the {business} website and wanted to leave you with one concrete technical note.\n\n{claim}\n\n{closing}",
-    "One verified homepage item for {business}: {claim}\n\n{closing}",
-    "I had the {business} website open and checked one specific technical detail.\n\n{claim}\n\n{closing}",
-    "Rather than send a general website pitch, I wanted to pass along one thing I verified on the {business} homepage. {claim}\n\n{closing}",
+    "{claim}\n\n{closing}",
+    "I pulled up {business} before emailing.\n\n{claim}\n\n{closing}",
+    "I checked {business} before reaching out. {claim}\n\n{closing}",
+    "The reason I am reaching out is pretty specific:\n\n{claim}\n\n{closing}",
+    "Here is the exact context behind this email:\n\n{claim}\n\n{closing}",
+    "I wanted to send the concrete detail rather than a generic introduction.\n\n{claim}\n\n{closing}",
+    "I was looking at {business} and this is what I wanted to pass along:\n\n{claim}\n\n{closing}",
+    "This is the specific context I was looking at for {business}. {claim}\n\n{closing}",
+    "I will keep this short.\n\n{claim}\n\n{closing}",
+    "A straightforward note on {business}:\n\n{claim}\n\n{closing}",
+    "I checked the public Google listing and the homepage before sending this.\n\n{claim}\n\n{closing}",
+    "I wanted to give you the actual context instead of a broad website pitch.\n\n{claim}\n\n{closing}",
+    "For context, this is exactly what I was looking at:\n\n{claim}\n\n{closing}",
+    "I had {business} open before emailing and wanted to pass this along.\n\n{claim}\n\n{closing}",
+    "This is what prompted the email:\n\n{claim}\n\n{closing}",
+    "I am reaching out based on these specific public details:\n\n{claim}\n\n{closing}",
+    "I took a look at {business} before sending this. {claim}\n\n{closing}",
+    "Rather than send a general intro, here is the exact reason for the note:\n\n{claim}\n\n{closing}",
+    "The context is simple:\n\n{claim}\n\n{closing}",
+    "I checked {business} and wanted to send you the exact thing I was looking at.\n\n{claim}\n\n{closing}",
+    "This is not a broad audit; it is the specific context behind my email.\n\n{claim}\n\n{closing}",
+    "I wanted to be specific about why I emailed {business}.\n\n{claim}\n\n{closing}",
+    "A short note with the actual context:\n\n{claim}\n\n{closing}",
+    "I looked at {business} before reaching out and kept the note to what I could verify.\n\n{claim}\n\n{closing}",
 )
 
 _CLOSINGS = (
     "If you already know about it, no need to reply.",
     "If it is already being handled, all good.",
-    "If you want the exact page location I checked, I can send it.",
+    "If you want the exact page I checked, I can send it.",
     "I can point you to the exact spot if you want to check it on your side.",
-    "If you want to see exactly where I verified it, I can send the page location.",
+    "If you want, I can send a screenshot of the exact spot.",
     "If you already have it covered, you can ignore this note.",
-    "If you want the exact spot, I can send that over.",
+    "That is all I wanted to pass along.",
     "I can tell you exactly where I checked it if that is useful.",
-    "If you want to compare it yourself, I can tell you exactly where I checked.",
-    "If this is useful, I can send the exact location. If not, no worries.",
-    "If this is already on your list, no response needed.",
-    "If you want the detail behind that, I can send the exact location I checked.",
-    "If you want to verify it on your side, I can point you to the exact spot.",
+    "If you want to compare it yourself, I can point you to the exact place.",
+    "If this is useful, I can send the page location. If not, no worries.",
+    "If this is already on your radar, no response needed.",
+    "I can send the exact page location if you want it.",
+    "If you want to verify it on your side, I can point you to the spot.",
     "If this is already covered, there is nothing you need to do with this note.",
-    "Do you want the exact page location I checked?",
-    "If seeing the exact location would help, I can send it over.",
+    "Do you want the exact page I checked?",
+    "Just wanted to make sure the detail got to you.",
 )
 
 
@@ -90,10 +90,10 @@ class ConstrainedOutreachClient:
     """Use Qwen only as a rhetoric selector; application owns all sent words.
 
     Recipient-facing prose comes exclusively from reviewed application frames. The
-    verified finding is an immutable token supplied by OutreachService after live
-    verification. Qwen cannot introduce names, observations, benefits, or claims.
-    A stable business fingerprint is mixed into the model choice so repeated model
-    output cannot directly create repeated recipient copy.
+    verified finding token contains application-owned public evidence plus the live
+    verified technical finding. Qwen cannot introduce names, observations, benefits,
+    or claims. A stable business fingerprint is mixed into the model choice so
+    repeated model output cannot directly create repeated recipient copy.
     """
 
     def __init__(
