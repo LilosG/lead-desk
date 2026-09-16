@@ -46,11 +46,11 @@ class ClaimGenerator:
         return GeneratedCopy(
             subject="Example Electric",
             body=(
-                "Hi,\n\nI looked at Example Electric's website earlier.\n\n"
+                "Hi,\n\n"
                 f"{CLAIM_TOKEN}\n\n"
-                "If you'd like, I can point to the exact spot or send a screenshot."
+                "I can send the exact page location I checked if that would be useful."
             ),
-            model="openai/gpt-5-mini",
+            model="qwen/qwen3-30b-a3b-instruct-2507",
         )
 
 
@@ -91,6 +91,9 @@ class Repo:
     def is_suppressed(self, email):
         return False
 
+    def list_items(self, status=None):
+        return [], 0
+
     def update_item(self, item_id, *, changes, expected_version):
         assert expected_version == self.item["version"]
         self.updated_changes = changes
@@ -117,7 +120,7 @@ def test_internal_only_finding_is_filtered_before_verification_and_not_drafted()
         repo,
         generator=NeverCalledGenerator(),
         verifier=verifier,
-        generation_model="openai/gpt-5-mini",
+        generation_model="qwen/qwen3-30b-a3b-instruct-2507",
     )
 
     result = service.generate_draft(repo.item["id"], expected_version=7)
@@ -147,7 +150,7 @@ def test_internal_finding_cannot_shadow_later_approved_finding():
         repo,
         generator=generator,
         verifier=verifier,
-        generation_model="openai/gpt-5-mini",
+        generation_model="qwen/qwen3-30b-a3b-instruct-2507",
     )
 
     result = service.generate_draft(repo.item["id"], expected_version=7)
