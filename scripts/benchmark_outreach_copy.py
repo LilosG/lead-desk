@@ -29,11 +29,11 @@ def main() -> None:
     generator = ConstrainedOutreachClient(api_key=api_key, model=model)
     verifier = OutreachClaimVerifier(timeout_seconds=10.0)
 
-    with psycopg.connect(database_url, row_factory=dict_row) as conn:
-        # Defense in depth: this benchmark cannot mutate production even if a
-        # future edit accidentally adds a write statement.
-        conn.execute("set default_transaction_read_only = on")
-
+    with psycopg.connect(
+        database_url,
+        row_factory=dict_row,
+        options="-c default_transaction_read_only=on",
+    ) as conn:
         prospects = conn.execute(
             """
             select
