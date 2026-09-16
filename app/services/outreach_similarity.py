@@ -24,7 +24,20 @@ def normalize_outreach_note(
     if business_name:
         note = note.replace(business_name.strip().lower(), " [business] ")
 
-    note = re.sub(r"[^a-z0-9\[\]']+", " ", note)
+    # Public Google evidence is useful recipient personalization, but it must not
+    # lower the measured similarity of otherwise identical email structures.
+    note = re.sub(
+        r"google shows\s+\[business\]\s+at\s+\d(?:\.\d+)?\s+stars\s+across\s+[\d,]+\s+reviews\.?",
+        " [public_evidence] ",
+        note,
+    )
+    note = re.sub(
+        r"google shows\s+[\d,]+\s+reviews\s+for\s+\[business\]\.?",
+        " [public_evidence] ",
+        note,
+    )
+
+    note = re.sub(r"[^a-z0-9\[\]_']+", " ", note)
     note = re.sub(r"\s+", " ", note).strip()
     return note
 
