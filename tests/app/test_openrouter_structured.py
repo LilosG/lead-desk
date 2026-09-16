@@ -1,5 +1,6 @@
 import json
 
+from app.integrations.openrouter import CLAIM_TOKEN, GeneratedCopy, OpenRouterError
 from app.integrations.openrouter_structured import (
     OUTREACH_RESPONSE_SCHEMA,
     StructuredOpenRouterClient,
@@ -39,7 +40,7 @@ def test_structured_request_uses_schema_minimal_reasoning_and_completion_budget(
                             "content": json.dumps(
                                 {
                                     "subject": "Example Electric",
-                                    "body": "Hi, I was on Example Electric's site earlier. [[VERIFIED_FINDING]] I can point to the exact spot if useful.",
+                                    "body": "Hi, I was on Example Electric's website earlier. [[VERIFIED_FINDING]] I can point to the exact spot if useful.",
                                 }
                             )
                         }
@@ -76,3 +77,98 @@ def test_structured_request_uses_schema_minimal_reasoning_and_completion_budget(
     assert captured["payload"]["response_format"]["json_schema"]["strict"] is True
     assert captured["payload"]["provider"]["require_parameters"] is True
     assert "temperature" not in captured["payload"]
+
+
+def test_structured_generation_blocks_when_no_client_facing_finding_exists():
+    client = StructuredOpenRouterClient(
+        api_key="test-key",
+        model="openai/gpt-5-mini",
+    )
+
+    try:
+        client.generate_email(
+            business_name="Example Electric",
+            city="San Diego",
+            vertical="electrician",
+            verified_claim=None,
+        )
+    except OpenRouterError as exc:
+        assert "No approved client-facing finding" in str(exc)
+    else:
+        raise AssertionError("claim-free first-touch generation must be blocked")
+
+
+def test_structured_validator_rejects_model_signature_and_site_profile_language():
+    body = (
+        "Hi, I looked at Example Electric's website earlier. "
+        f"{CLAIM_TOKEN} If you'd like, I can point to the exact place I mean "
+        "or send a screenshot so you can see what I am referring to.\n\n"
+        "Thanks,\nMike at LILOs Growth"
+    )
+
+    try:
+        StructuredOpenRouterClient._validate_copy(
+            subject="Example Electric",
+            body=body,
+            has_verified_claim=True,
+            business_name="Example Electric",
+            city="San Diego",
+            vertical="electrician",
+        )
+    except OpenRouterError as exc:
+        assert "signature" in str(exc).lower()
+    else:
+        raise AssertionError("model-generated signatures must be rejected")
+
+    body = (
+        "Hi, I looked at Example Electric's site/profile earlier. "
+        f"{CLAIM_TOKEN} If you'd like, I can point to the exact place I mean "
+        "or send a screenshot so you can see what I am referring to."
+    )
+    try:
+        StructuredOpenRouterClient._validate_copy(
+            subject="Example Electric",
+            body=body,
+            has_verified_claim=True,
+            business_name="Example Electric",
+            city="San Diego",
+            vertical="electrician",
+        )
+    except OpenRouterError as exc:
+        assert "site/profile" in str(exc)
+    else:
+        raise AssertionError("site/profile wording must be rejected")
+
+
+def test_structured_generation_removes_duplicate_token_punctuation(monkeypatch):
+    def fake_parent_generate(self, **kwargs):
+        return GeneratedCopy(
+            subject="Example Electric",
+            body=(
+                "Hi, I looked at Example Electric's website earlier. "
+                f"{CLAIM_TOKEN}. If you'd like, I can point to the exact place "
+                "I mean or send a screenshot so you can see it."
+            ),
+            model="openai/gpt-5-mini",
+        )
+
+    monkeypatch.setattr(
+        "app.integrations.openrouter.OpenRouterClient.generate_email",
+        fake_parent_generate,
+    )
+
+    client = StructuredOpenRouterClient(
+        api_key="test-key",
+        model="openai/gpt-5-mini",
+    )
+    copy = client.generate_email(
+        business_name="Example Electric",
+        city="San Diego",
+        vertical="electrician",
+        verified_claim=(
+            "The homepage isn't currently using structured business markup to identify the company to Google."
+        ),
+    )
+
+    assert f"{CLAIM_TOKEN}." not in copy.body
+    assert copy.body.count(CLAIM_TOKEN) == 1
