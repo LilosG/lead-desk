@@ -18,9 +18,8 @@ from app.integrations.openrouter import (
 class StyleChoice:
     subject: int
     greeting: int
-    opener: int
+    frame: int
     closing: int
-    rhythm: int
 
 
 _GREETINGS = (
@@ -32,24 +31,39 @@ _GREETINGS = (
 _SUBJECTS = (
     "{business}",
     "{business} website",
-    "{business} site",
     "Website note for {business}",
-    "Website detail for {business}",
+    "Homepage note for {business}",
+    "One website detail — {business}",
 )
 
-_OPENERS = (
-    "",
-    "I checked the {business} website before emailing and had one specific detail to pass along.",
-    "I was looking at the {business} website and wanted to mention one concrete item.",
-    "I had one specific website detail for {business} that seemed worth sending directly.",
-    "I checked one technical detail on the {business} website before reaching out.",
-    "I wanted to pass along one specific thing I verified on the {business} website.",
-    "This is about one concrete detail on the {business} website.",
-    "I had the {business} website open and wanted to send one specific detail.",
-    "I checked your website before emailing and wanted to pass along one specific item.",
-    "I wanted to mention one concrete website detail I verified before reaching out.",
-    "I took a look at your website and had one specific detail to pass along.",
-    "I am reaching out about one specific detail on the {business} website.",
+# Complete rhetorical frames. Each frame contains the immutable verified finding
+# exactly once and changes the shape of the note rather than swapping synonyms.
+# No frame makes a second factual assertion about the prospect.
+_FRAMES = (
+    "I checked the {business} website before emailing and had one specific item to pass along.\n\n{claim}\n\n{closing}",
+    "One detail from the {business} homepage seemed worth flagging directly.\n\n{claim}\n\n{closing}",
+    "I was looking through the {business} website and verified one technical item. {claim}\n\n{closing}",
+    "This is just a quick note about the {business} homepage.\n\n{claim}\n\n{closing}",
+    "While checking the {business} website, I verified one item I wanted to pass along.\n\n{claim}\n\n{closing}",
+    "I had one concrete website detail for {business}. {claim}\n\n{closing}",
+    "A quick website note for {business}:\n\n{claim}\n\n{closing}",
+    "I checked one technical item on the {business} homepage before reaching out.\n\n{claim}\n\n{closing}",
+    "The reason for the note is straightforward. {claim}\n\nI verified it on the {business} homepage. {closing}",
+    "I wanted to send one specific website finding rather than a general pitch.\n\n{claim}\n\nThat is the only item I am reaching out about. {closing}",
+    "I was reviewing the {business} homepage and came away with one concrete item to mention.\n\n{claim}\n\n{closing}",
+    "One thing I verified on the {business} website:\n\n{claim}\n\n{closing}",
+    "I am reaching out about one specific homepage detail for {business}. {claim}\n\n{closing}",
+    "This is a narrow website note, not a broad audit.\n\n{claim}\n\nI verified that on the {business} homepage. {closing}",
+    "I checked the {business} homepage and wanted to pass along one verified detail. {claim}\n\n{closing}",
+    "There is one website item I wanted to put on your radar for {business}.\n\n{claim}\n\n{closing}",
+    "I took a look at the {business} website with one question in mind and verified this: {claim}\n\n{closing}",
+    "A short note on the {business} website. {claim}\n\n{closing}",
+    "I verified one detail on the {business} homepage and thought it was better to send the exact item than a generic introduction.\n\n{claim}\n\n{closing}",
+    "The only reason I am emailing is one website detail I verified for {business}.\n\n{claim}\n\n{closing}",
+    "I checked the {business} website and wanted to leave you with one concrete technical note.\n\n{claim}\n\n{closing}",
+    "One verified homepage item for {business}: {claim}\n\n{closing}",
+    "I had the {business} website open and checked one specific technical detail.\n\n{claim}\n\n{closing}",
+    "Rather than send a general website pitch, I wanted to pass along one thing I verified on the {business} homepage. {claim}\n\n{closing}",
 )
 
 _CLOSINGS = (
@@ -57,11 +71,10 @@ _CLOSINGS = (
     "If it is already being handled, all good.",
     "If you want the exact page location I checked, I can send it.",
     "I can point you to the exact spot if you want to check it on your side.",
-    "If you want to see exactly where I am seeing it, I can send the page location.",
-    "If you already have it covered, you can ignore this.",
+    "If you want to see exactly where I verified it, I can send the page location.",
+    "If you already have it covered, you can ignore this note.",
     "If you want the exact spot, I can send that over.",
     "I can tell you exactly where I checked it if that is useful.",
-    "That is all I wanted to pass along. If you want the exact location, I can send it.",
     "If you want to compare it yourself, I can tell you exactly where I checked.",
     "If this is useful, I can send the exact location. If not, no worries.",
     "If this is already on your list, no response needed.",
@@ -69,25 +82,18 @@ _CLOSINGS = (
     "If you want to verify it on your side, I can point you to the exact spot.",
     "If this is already covered, there is nothing you need to do with this note.",
     "Do you want the exact page location I checked?",
-)
-
-_RHYTHMS = (
-    "claim_then_close",
-    "opener_then_claim_then_close",
-    "opener_claim_then_close",
-    "opener_claim_close_compact",
+    "If seeing the exact location would help, I can send it over.",
 )
 
 
 class ConstrainedOutreachClient:
-    """Let the model select rhetoric while the application owns every sent word.
+    """Use Qwen only as a rhetoric selector; application owns all sent words.
 
-    Qwen never writes recipient-facing prose. It can only select indices from reviewed
-    subject, greeting, opener, closing, and rhythm banks. A deterministic business
-    fingerprint is then mixed into those indices so repeated model choices do not
-    collapse multiple prospects into the same mail-merge structure. The verified
-    finding remains an application-owned token inserted after live verification.
-    Invalid model output falls back to a deterministic application-owned style.
+    Recipient-facing prose comes exclusively from reviewed application frames. The
+    verified finding is an immutable token supplied by OutreachService after live
+    verification. Qwen cannot introduce names, observations, benefits, or claims.
+    A stable business fingerprint is mixed into the model choice so repeated model
+    output cannot directly create repeated recipient copy.
     """
 
     def __init__(
@@ -112,7 +118,8 @@ class ConstrainedOutreachClient:
         if not verified_claim:
             raise RuntimeError("No approved client-facing finding is available")
 
-        choice, used_model = self._choose_style(business_name)
+        raw_choice, used_model = self._choose_style(business_name)
+        choice = self._decorrelate(raw_choice, business_name)
         subject = self._render_subject(business_name, choice.subject)
         body = self._render_body(business_name, choice)
 
@@ -136,27 +143,25 @@ class ConstrainedOutreachClient:
     def _render_subject(cls, business_name: str, subject_index: int) -> str:
         safe_name = cls._safe_business_name(business_name)
         candidate = _SUBJECTS[subject_index].format(business=safe_name).strip()
-        if len(candidate.split()) > 5 or len(candidate) > 55:
+        if len(candidate.split()) > 6 or len(candidate) > 55:
             candidate = safe_name
         return candidate
 
     def _choose_style(self, business_name: str) -> tuple[StyleChoice, bool]:
         fallback = self._deterministic_choice(business_name)
-
         payload: dict[str, Any] = {
             "model": self.model,
             "temperature": 0.9,
-            "max_tokens": 120,
+            "max_tokens": 100,
             "messages": [
                 {
                     "role": "system",
                     "content": (
                         "Choose style indices for one short local-business outreach note. "
                         "Do not write email prose, facts, names, observations, or explanations. "
-                        "Return JSON only with integer keys subject, greeting, opener, closing, rhythm. "
+                        "Return JSON only with integer keys subject, greeting, frame, closing. "
                         f"Allowed subject 0-{len(_SUBJECTS)-1}, greeting 0-{len(_GREETINGS)-1}, "
-                        f"opener 0-{len(_OPENERS)-1}, closing 0-{len(_CLOSINGS)-1}, "
-                        f"rhythm 0-{len(_RHYTHMS)-1}."
+                        f"frame 0-{len(_FRAMES)-1}, closing 0-{len(_CLOSINGS)-1}."
                     ),
                 },
                 {
@@ -183,16 +188,15 @@ class ConstrainedOutreachClient:
             data = response.json()
             raw = data["choices"][0]["message"]["content"]
             parsed = self._parse_json(raw)
-            selected = StyleChoice(
+            choice = StyleChoice(
                 subject=int(parsed["subject"]),
                 greeting=int(parsed["greeting"]),
-                opener=int(parsed["opener"]),
+                frame=int(parsed["frame"]),
                 closing=int(parsed["closing"]),
-                rhythm=int(parsed["rhythm"]),
             )
-            if not self._valid_choice(selected):
+            if not self._valid_choice(choice):
                 return fallback, False
-            return self._decorrelate_choice(selected, business_name), True
+            return choice, True
         except (requests.RequestException, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
             return fallback, False
 
@@ -215,59 +219,42 @@ class ConstrainedOutreachClient:
         return (
             0 <= choice.subject < len(_SUBJECTS)
             and 0 <= choice.greeting < len(_GREETINGS)
-            and 0 <= choice.opener < len(_OPENERS)
+            and 0 <= choice.frame < len(_FRAMES)
             and 0 <= choice.closing < len(_CLOSINGS)
-            and 0 <= choice.rhythm < len(_RHYTHMS)
         )
 
     @staticmethod
-    def _deterministic_choice(business_name: str) -> StyleChoice:
-        digest = hashlib.sha256(business_name.encode("utf-8")).digest()
-        return StyleChoice(
-            subject=digest[0] % len(_SUBJECTS),
-            greeting=digest[1] % len(_GREETINGS),
-            opener=digest[2] % len(_OPENERS),
-            closing=digest[3] % len(_CLOSINGS),
-            rhythm=digest[4] % len(_RHYTHMS),
-        )
+    def _fingerprint(business_name: str) -> bytes:
+        return hashlib.sha256(business_name.strip().lower().encode("utf-8")).digest()
 
-    @staticmethod
-    def _decorrelate_choice(choice: StyleChoice, business_name: str) -> StyleChoice:
-        """Mix a stable business fingerprint into a valid model style selection.
-
-        Qwen often returns the same stylistic tuple for unrelated businesses. Without
-        this application-side mixing, those recipients receive structurally identical
-        notes even though the model technically participated. Mixing the fingerprint
-        preserves Qwen's selection while making the final reviewed template choice
-        prospect-specific and reproducible.
-        """
-        digest = hashlib.sha256(("outreach-style:" + business_name).encode("utf-8")).digest()
+    @classmethod
+    def _decorrelate(cls, choice: StyleChoice, business_name: str) -> StyleChoice:
+        digest = cls._fingerprint(business_name)
         return StyleChoice(
             subject=(choice.subject + digest[0]) % len(_SUBJECTS),
-            greeting=(choice.greeting + digest[1]) % len(_GREETINGS),
-            opener=(choice.opener + digest[2]) % len(_OPENERS),
-            closing=(choice.closing + digest[3]) % len(_CLOSINGS),
-            rhythm=(choice.rhythm + digest[4]) % len(_RHYTHMS),
+            greeting=(choice.greeting + digest[5]) % len(_GREETINGS),
+            frame=(choice.frame + int.from_bytes(digest[8:12], "big")) % len(_FRAMES),
+            closing=(choice.closing + int.from_bytes(digest[16:20], "big")) % len(_CLOSINGS),
+        )
+
+    @classmethod
+    def _deterministic_choice(cls, business_name: str) -> StyleChoice:
+        digest = cls._fingerprint(business_name)
+        return StyleChoice(
+            subject=digest[1] % len(_SUBJECTS),
+            greeting=digest[2] % len(_GREETINGS),
+            frame=int.from_bytes(digest[12:16], "big") % len(_FRAMES),
+            closing=int.from_bytes(digest[20:24], "big") % len(_CLOSINGS),
         )
 
     @staticmethod
     def _render_body(business_name: str, choice: StyleChoice) -> str:
         greeting = _GREETINGS[choice.greeting]
-        opener = _OPENERS[choice.opener].format(business=business_name)
-        closing = _CLOSINGS[choice.closing]
-        rhythm = _RHYTHMS[choice.rhythm]
-
-        if rhythm == "claim_then_close":
-            core = [CLAIM_TOKEN, closing]
-        elif rhythm == "opener_then_claim_then_close":
-            core = [opener, CLAIM_TOKEN, closing] if opener else [CLAIM_TOKEN, closing]
-        elif rhythm == "opener_claim_then_close":
-            core = [f"{opener} {CLAIM_TOKEN}".strip(), closing] if opener else [CLAIM_TOKEN, closing]
-        else:
-            core = [f"{opener} {CLAIM_TOKEN} {closing}".strip()] if opener else [f"{CLAIM_TOKEN} {closing}"]
-
-        paragraphs: list[str] = []
+        frame = _FRAMES[choice.frame].format(
+            business=business_name,
+            claim=CLAIM_TOKEN,
+            closing=_CLOSINGS[choice.closing],
+        ).strip()
         if greeting:
-            paragraphs.append(greeting)
-        paragraphs.extend(part for part in core if part)
-        return "\n\n".join(paragraphs).strip()
+            return f"{greeting}\n\n{frame}"
+        return frame
