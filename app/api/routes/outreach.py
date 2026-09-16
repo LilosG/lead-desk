@@ -81,8 +81,8 @@ def outreach_readiness(place_id: str) -> dict:
 @router.get('', response_model=OutreachQueueResponse)
 def list_outreach(
     status: Literal[
-        'queued', 'researching', 'review_required', 'draft_ready',
-        'approved', 'contacted', 'replied', 'archived', 'suppressed'
+        'queued', 'researching', 'review_required', 'no_outreach_finding',
+        'draft_ready', 'approved', 'contacted', 'replied', 'archived', 'suppressed'
     ] | None = Query(default=None),
 ) -> dict:
     return get_service().list_items(status=status)
