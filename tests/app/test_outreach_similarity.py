@@ -11,7 +11,7 @@ CLAIM = CLIENT_FACING_CLAIMS["no_localbusiness_schema"]
 
 
 def test_prompt_version_advances_for_human_copy_architecture():
-    assert PROMPT_VERSION == "outreach-v7"
+    assert PROMPT_VERSION == "outreach-v8"
 
 
 def test_normalization_removes_business_and_verified_finding():
@@ -56,6 +56,30 @@ def test_benchmark_mass_generated_skeleton_is_blocked():
     assert blocked is True
     assert ratio > 0.95
     assert matched == "Bright Electric Services"
+
+
+def test_public_evidence_does_not_hide_duplicate_structure():
+    bright_claim = (
+        "Google shows Bright Electric Services at 4.9 stars across 40 reviews. "
+        "On the website, though, " + CLAIM[0].lower() + CLAIM[1:]
+    )
+    tnt_claim = (
+        "Google shows TNT Electric at 4.8 stars across 63 reviews. "
+        "On the website, though, " + CLAIM[0].lower() + CLAIM[1:]
+    )
+    bright = "Hi,\n\n" + bright_claim + "\n\nThat is all I wanted to pass along."
+    tnt = "Hi,\n\n" + tnt_claim + "\n\nThat is all I wanted to pass along."
+
+    ratio = structural_similarity(
+        tnt,
+        candidate_business_name="TNT Electric",
+        candidate_verified_claim=tnt_claim,
+        existing_body=bright,
+        existing_business_name="Bright Electric Services",
+        existing_verified_claim=bright_claim,
+    )
+
+    assert ratio > 0.95
 
 
 def test_materially_different_note_is_not_blocked():
