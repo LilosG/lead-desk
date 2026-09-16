@@ -59,7 +59,7 @@ import AppLayout from '../layouts/AppLayout.astro';
         <section id="editor-card" class="hidden rounded-lg border border-[var(--line)] bg-white p-5">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <div class="text-sm font-medium">Draft review</div>
+              <div id="editor-title" class="text-sm font-medium">Draft review</div>
               <div id="editor-name" class="mt-1 text-xs text-[var(--muted)]"></div>
             </div>
             <span id="editor-channel" class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase"></span>
@@ -110,6 +110,7 @@ import AppLayout from '../layouts/AppLayout.astro';
                   <option value="queued">Queued</option>
                   <option value="researching">Researching</option>
                   <option value="review_required">Review required</option>
+                  <option value="no_outreach_finding">No outreach finding</option>
                   <option value="draft_ready">Draft ready</option>
                   <option value="approved">Approved</option>
                   <option value="contacted">Contacted</option>
@@ -202,6 +203,8 @@ import AppLayout from '../layouts/AppLayout.astro';
       .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
+    const statusLabel = (status: string): string => status.replaceAll('_', ' ');
+
     async function api(path: string, init?: RequestInit) {
       const response = await fetch(path, {
         ...init,
@@ -276,9 +279,10 @@ import AppLayout from '../layouts/AppLayout.astro';
         <button type="button" data-edit-id="${esc(item.id)}" class="block w-full p-5 text-left hover:bg-[var(--surface-muted)]">
           <div class="flex items-center justify-between gap-3">
             <div class="font-medium">${esc(item.name)}</div>
-            <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase">${esc(item.status)}</span>
+            <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase">${esc(statusLabel(item.status))}</span>
           </div>
           <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.channel)} · ${esc(item.to_address)} · verification ${esc(item.verification_status)}</div>
+          ${item.status === 'no_outreach_finding' ? '<div class="mt-1 text-xs font-medium text-amber-700">No approved client-facing finding after live verification</div>' : ''}
           ${item.gmail_draft_id ? '<div class="mt-1 text-xs font-medium text-emerald-700">Gmail draft created</div>' : ''}
         </button>`).join('') : '<div class="p-5 text-sm text-[var(--muted)]">Queue is empty.</div>';
 
@@ -290,7 +294,9 @@ import AppLayout from '../layouts/AppLayout.astro';
     function openEditor(id: string) {
       const item = queueItems.find((entry) => entry.id === id);
       if (!item) return;
+      const noFinding = item.status === 'no_outreach_finding';
       el('#editor-card').classList.remove('hidden');
+      el('#editor-title').textContent = noFinding ? 'Outreach verification' : 'Draft review';
       el('#editor-name').textContent = [item.name, item.city].filter(Boolean).join(' · ');
       el('#editor-channel').textContent = item.channel;
       el<HTMLInputElement>('#editor-id').value = item.id;
@@ -305,13 +311,14 @@ import AppLayout from '../layouts/AppLayout.astro';
 
       const generated = item.draft_generated_at
         ? `Generated ${new Date(item.draft_generated_at).toLocaleString()}${item.generation_model ? ` · ${item.generation_model}` : ''}`
-        : 'No AI draft generated yet.';
+        : 'No AI draft generated.';
       const gmail = item.gmail_draft_created_at
         ? `Gmail draft created ${new Date(item.gmail_draft_created_at).toLocaleString()}`
         : 'No Gmail draft created.';
       el('#editor-meta').textContent = `${generated} · ${gmail}`;
 
       const generateButton = el<HTMLButtonElement>('#generate-draft');
+      generateButton.textContent = noFinding ? 'Re-check for outreach finding' : 'Generate verified draft';
       generateButton.disabled = !integrations.openrouter_configured || item.channel !== 'email' || Boolean(item.gmail_draft_id);
 
       const gmailButton = el<HTMLButtonElement>('#create-gmail-draft');
@@ -327,12 +334,14 @@ import AppLayout from '../layouts/AppLayout.astro';
         ? 'A Gmail draft already exists. Content is locked here to prevent divergence from Gmail.'
         : item.channel !== 'email'
           ? 'AI generation and Gmail draft creation are email-only. Phone leads remain in the call queue.'
-          : 'Generate uses a conservative live claim verifier. Review the result, save it as Draft ready, then create the Gmail draft.';
+          : noFinding
+            ? 'Live verification found no approved client-facing issue to use in cold outreach. No email was generated. Re-check later if the prospect site changes.'
+            : 'Generate uses a conservative live claim verifier. Review the result, save it as Draft ready, then create the Gmail draft.';
 
-      const contentLocked = Boolean(item.gmail_draft_id);
-      el<HTMLInputElement>('#editor-to').disabled = contentLocked;
-      el<HTMLInputElement>('#editor-subject').disabled = contentLocked;
-      el<HTMLTextAreaElement>('#editor-body').disabled = contentLocked;
+      const gmailLocked = Boolean(item.gmail_draft_id);
+      el<HTMLInputElement>('#editor-to').disabled = gmailLocked;
+      el<HTMLInputElement>('#editor-subject').disabled = gmailLocked || noFinding;
+      el<HTMLTextAreaElement>('#editor-body').disabled = gmailLocked || noFinding;
       el('#editor-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
