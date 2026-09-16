@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
+from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
 from app.repositories.outreach import OutreachOperationLocked, OutreachRepository
-from app.services.outreach_copy import client_facing_claim
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
@@ -177,6 +177,21 @@ class OutreachService:
             raise OutreachConflict("outreach item changed since it was loaded")
         return updated
 
+    @staticmethod
+    def _client_facing_verification_context(context: dict) -> dict:
+        """Restrict live verification to findings approved for cold outreach.
+
+        Scoring can contain internal-only evidence such as template-builder
+        fingerprints. Those signals must never win claim selection or prevent a
+        later, recipient-safe finding from being verified.
+        """
+        findings = [
+            finding
+            for finding in (context.get("findings") or [])
+            if finding.get("signal") in OUTREACHABLE_SIGNALS
+        ]
+        return {**context, "findings": findings}
+
     def generate_draft(self, item_id: str, *, expected_version: int) -> dict | None:
         if self.generator is None:
             raise OutreachIntegrationUnavailable(
@@ -207,13 +222,12 @@ class OutreachService:
         if self.repository.is_suppressed(context["to_address"]):
             raise OutreachBlocked("email address is suppressed")
 
-        claim = self.verifier.verify(context)
+        verification_context = self._client_facing_verification_context(context)
+        claim = self.verifier.verify(verification_context)
         visible_claim = client_facing_claim(claim.signal, claim.text)
 
-        # If live verification no longer yields an approved client-facing fact,
-        # any older generated copy is stale and must not remain visible or usable.
-        # Persist the verified state and clear the draft atomically through the
-        # normal versioned update path instead of surfacing an integration error.
+        # No recipient-safe, live-verifiable finding is a real workflow outcome,
+        # not a failed draft. Persist it explicitly and clear any stale copy.
         if not visible_claim:
             verification_note = claim.note.strip()
             if verification_note:
@@ -229,7 +243,7 @@ class OutreachService:
                         "claim_signal": claim.signal,
                         "verification_status": claim.status,
                         "verification_note": verification_note,
-                        "status": "review_required",
+                        "status": "no_outreach_finding",
                     },
                     expected_version=expected_version,
                 )
