@@ -6,6 +6,7 @@ on:
       - main
       - 'recovery/**'
       - 'feature/**'
+      - 'fix/**'
   pull_request:
 
 permissions:
@@ -41,6 +42,7 @@ jobs:
             tests/app/test_outreach_integrations.py \
             tests/app/test_outreach_slot_repair.py \
             tests/app/test_outreach_grounding.py \
+            tests/app/test_outreach_similarity.py \
             tests/app/test_openrouter_structured.py \
             tests/app/test_outreach_blocked_generation.py \
             tests/app/test_sweep_request_validation.py \
