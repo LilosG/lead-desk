@@ -69,7 +69,9 @@ def test_v3_renders_complete_local_service_homepage_without_invented_credentials
 
     for section_id in ('id="services"', 'id="about"', 'id="areas"', 'id="faq"', 'id="contact"'):
         assert section_id in html
-    assert "Simple next steps" in html
+    assert "Getting started" in html
+    assert "Have a project in mind?" in html
+    assert "What customers need to know" in html
     assert "Local reputation" in html
     assert "Frequently asked questions" in html
     assert "5.0 Google rating" in html
@@ -83,6 +85,26 @@ def test_v3_renders_complete_local_service_homepage_without_invented_credentials
     lowered = html.lower()
     for unsupported_claim in ("licensed", "insured", "bonded", "years of experience", "guaranteed", "24/7"):
         assert unsupported_claim not in lowered
+
+
+def test_v3_uses_all_three_optional_image_slots_without_adding_more_media_inputs():
+    service = DemoSiteService(FakeProspectRepository(), FakeDemoRepository())
+    demo = service.create_demo(
+        "volt-place",
+        template_key="trade-modern-v3",
+        services=["Electrical Repairs", "Panel Upgrades"],
+        service_areas=["Vista", "San Marcos"],
+        headline=None,
+        subheadline=None,
+        hero_image_url="https://images.example/hero.jpg",
+        work_image_url="https://images.example/work.jpg",
+        secondary_image_url="https://images.example/local.jpg",
+    )
+    html = demo["html_document"]
+    assert 'src="https://images.example/hero.jpg"' in html
+    assert 'src="https://images.example/work.jpg"' in html
+    assert 'src="https://images.example/local.jpg"' in html
+    assert 'class="photo-band"' in html
 
 
 def test_v3_keeps_indexing_disabled_and_escapes_content():
