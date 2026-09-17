@@ -1,11 +1,25 @@
 from app.integrations.openrouter import CLAIM_TOKEN, GeneratedCopy
-from app.services.outreach import NO_CLIENT_FACING_FINDING, OutreachService
+from app.services.outreach import PROMPT_VERSION, OutreachService
 from app.services.outreach_verification import VerifiedClaim
 
 
-class NeverCalledGenerator:
+class ClaimFreeGenerator:
+    def __init__(self):
+        self.calls = 0
+
     def generate_email(self, **kwargs):
-        raise AssertionError("generator must not run without a client-facing finding")
+        self.calls += 1
+        assert kwargs["verified_claim"] is None
+        return GeneratedCopy(
+            subject="Example Electric",
+            body=(
+                "Hi,\n\n"
+                "I wanted to introduce LILOs Growth and reach out directly about Example Electric. "
+                "If website or local visibility work is on your list, I can share what we do and "
+                "you can decide if it is relevant."
+            ),
+            model="qwen/qwen3-30b-a3b-instruct-2507",
+        )
 
 
 class CapturingNoClaimVerifier:
@@ -118,25 +132,7 @@ class Repo:
         verification_status,
         verification_note,
     ):
-        assert expected_version == self.item["version"]
-        updated = {
-            **self.item,
-            "subject": None,
-            "body": None,
-            "claim_signal": claim_signal,
-            "verification_status": verification_status,
-            "verification_note": verification_note,
-            "status": "no_outreach_finding",
-            "generation_model": None,
-            "generation_prompt_version": None,
-            "draft_generated_at": None,
-            "gmail_draft_id": None,
-            "gmail_message_id": None,
-            "gmail_draft_created_at": None,
-            "version": expected_version + 1,
-        }
-        self.item = updated
-        return updated, False
+        raise AssertionError("no-finding state must not replace a valid claim-free draft")
 
     def record_generated_draft(self, item_id, **kwargs):
         self.generated = kwargs
@@ -150,12 +146,13 @@ class Repo:
         return updated, False
 
 
-def test_internal_only_finding_is_filtered_before_verification_and_not_drafted():
+def test_internal_only_finding_is_filtered_and_claim_free_draft_is_generated():
     repo = Repo(findings=[{"signal": "template_builder"}])
     verifier = CapturingNoClaimVerifier()
+    generator = ClaimFreeGenerator()
     service = OutreachService(
         repo,
-        generator=NeverCalledGenerator(),
+        generator=generator,
         verifier=verifier,
         generation_model="qwen/qwen3-30b-a3b-instruct-2507",
     )
@@ -164,17 +161,16 @@ def test_internal_only_finding_is_filtered_before_verification_and_not_drafted()
 
     assert verifier.context is not None
     assert verifier.context["findings"] == []
-    assert result["subject"] is None
-    assert result["body"] is None
-    assert result["status"] == "no_outreach_finding"
+    assert generator.calls == 1
+    assert result["subject"] == "Example Electric"
+    assert "LILOs Growth" in result["body"]
+    assert CLAIM_TOKEN not in result["body"]
+    assert result["status"] == "review_required"
     assert result["verification_status"] == "not_required"
     assert result["claim_signal"] is None
-    assert NO_CLIENT_FACING_FINDING in result["verification_note"]
-    assert result["generation_model"] is None
-    assert result["generation_prompt_version"] is None
-    assert result["draft_generated_at"] is None
-    assert result["gmail_draft_id"] is None
-    assert result["gmail_message_id"] is None
+    assert result["verification_note"] == "No safely re-verifiable outreach claim was available."
+    assert result["generation_model"] == "qwen/qwen3-30b-a3b-instruct-2507"
+    assert result["prompt_version"] == PROMPT_VERSION
 
 
 def test_internal_finding_cannot_shadow_later_approved_finding():
