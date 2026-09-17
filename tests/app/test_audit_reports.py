@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from app.services.audit_report_pdf import render_audit_report_pdf
 from app.services.audit_reports import AuditReportError, AuditReportService
@@ -115,6 +117,23 @@ def test_snapshot_excludes_internal_scores_and_raw_findings():
     assert snapshot["business"]["review_count"] == 87
     assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
     assert repo.created["selected_signals"] == ["no_localbusiness_schema"]
+
+
+def test_snapshot_normalizes_database_native_values_for_jsonb():
+    prospects = FakeProspectRepository()
+    prospects.prospect["rating"] = Decimal("4.9")
+    reports = FakeReportRepository()
+    service = AuditReportService(prospects, reports)
+
+    report = service.create_report(
+        "place-1",
+        selected_signals=["no_localbusiness_schema"],
+    )
+
+    snapshot = report["snapshot"]
+    assert snapshot["business"]["rating"] == 4.9
+    assert snapshot["source_checked_at"] == "2026-09-16T20:00:00+00:00"
+    json.dumps(snapshot)
 
 
 def test_review_required_finding_must_be_explicitly_selected():
