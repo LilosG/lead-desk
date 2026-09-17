@@ -1,6 +1,7 @@
 from app.outreach_policy import CLIENT_FACING_CLAIMS
 from app.services.outreach import PROMPT_VERSION
 from app.services.outreach_similarity import (
+    DEFAULT_SIMILARITY_THRESHOLD,
     is_too_similar,
     normalize_outreach_note,
     structural_similarity,
@@ -12,6 +13,10 @@ CLAIM = CLIENT_FACING_CLAIMS["no_localbusiness_schema"]
 
 def test_prompt_version_advances_for_human_copy_architecture():
     assert PROMPT_VERSION == "outreach-v8"
+
+
+def test_similarity_threshold_is_strict_enough_for_batch_diversity():
+    assert DEFAULT_SIMILARITY_THRESHOLD == 0.80
 
 
 def test_normalization_removes_business_and_verified_finding():
@@ -102,4 +107,4 @@ def test_materially_different_note_is_not_blocked():
         existing_verified_claim=CLAIM,
     )
 
-    assert ratio < 0.82
+    assert ratio < DEFAULT_SIMILARITY_THRESHOLD
