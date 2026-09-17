@@ -1,0 +1,163 @@
+---
+import AppLayout from '../../../layouts/AppLayout.astro';
+
+export const prerender = false;
+const { place_id } = Astro.params;
+---
+
+<AppLayout
+  title="Audit report"
+  description="Build a verified, client-safe local visibility audit."
+>
+  <div id="audit-builder" data-place-id={place_id} class="mx-auto max-w-4xl space-y-6">
+    <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+      <a href={`/prospects/${place_id}`} class="text-xs text-[var(--muted)] hover:underline">← Back to prospect</a>
+      <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 class="text-2xl font-semibold tracking-tight">Build audit report</h2>
+          <p class="mt-1 max-w-2xl text-sm leading-6 text-[var(--muted)]">
+            Select only the findings you want to present. The PDF uses verified Lead Desk evidence and client-safe language; internal scores and qualification logic are never included.
+          </p>
+        </div>
+        <span class="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800">Human reviewed</span>
+      </div>
+    </section>
+
+    <section class="rounded-lg border border-[var(--line)] bg-white">
+      <div class="border-b border-[var(--line)] px-5 py-4">
+        <div id="business-name" class="text-sm font-medium">Loading…</div>
+        <div class="mt-1 text-xs text-[var(--muted)]">Recommended findings are preselected. Review-required findings are never selected automatically.</div>
+      </div>
+      <div id="report-options" class="divide-y divide-[var(--line)]"></div>
+    </section>
+
+    <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div class="text-sm font-medium">Generate immutable report snapshot</div>
+          <div class="mt-1 text-xs text-[var(--muted)]">The saved report preserves exactly what was selected and observed at generation time.</div>
+        </div>
+        <button id="generate-report" type="button" class="rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">
+          Generate PDF report
+        </button>
+      </div>
+      <div id="builder-error" class="mt-4 hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
+      <div id="builder-success" class="mt-4 hidden rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <div class="text-sm font-medium text-emerald-900">Audit report generated</div>
+        <div class="mt-1 text-xs text-emerald-800">Review the PDF before deciding whether to use it with outreach.</div>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a id="view-pdf" target="_blank" rel="noreferrer" class="rounded-md bg-white px-3 py-2 text-xs font-medium text-emerald-900 ring-1 ring-emerald-200">View PDF</a>
+          <a id="back-to-prospect" href={`/prospects/${place_id}`} class="rounded-md bg-white px-3 py-2 text-xs font-medium text-emerald-900 ring-1 ring-emerald-200">Back to prospect</a>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    type Option = {
+      signal: string;
+      title: string;
+      category: string;
+      disposition: 'recommended' | 'optional' | 'review_required';
+      default_selected: boolean;
+      evidence: string | null;
+    };
+
+    const root = document.querySelector<HTMLElement>('#audit-builder');
+    const optionsContainer = document.querySelector<HTMLElement>('#report-options');
+    const businessName = document.querySelector<HTMLElement>('#business-name');
+    const generateButton = document.querySelector<HTMLButtonElement>('#generate-report');
+    const errorBox = document.querySelector<HTMLElement>('#builder-error');
+    const successBox = document.querySelector<HTMLElement>('#builder-success');
+    const viewPdf = document.querySelector<HTMLAnchorElement>('#view-pdf');
+
+    if (!root || !optionsContainer || !businessName || !generateButton || !errorBox || !successBox || !viewPdf) {
+      throw new Error('Audit builder failed to initialize');
+    }
+
+    const placeId = root.dataset.placeId;
+    if (!placeId) throw new Error('Missing prospect place ID');
+
+    const escapeHtml = (value: unknown): string =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+
+    const badge = (option: Option): string => {
+      if (option.disposition === 'recommended') return '<span class="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800">Recommended</span>';
+      if (option.disposition === 'review_required') return '<span class="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">Review required</span>';
+      return '<span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium">Optional</span>';
+    };
+
+    async function loadOptions(): Promise<void> {
+      const response = await fetch(`/api/audit-reports/prospects/${encodeURIComponent(placeId)}/options`, {
+        headers: { Accept: 'application/json' },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+
+      businessName.textContent = body.business_name;
+      const options = body.options as Option[];
+      optionsContainer.innerHTML = options.length
+        ? options.map((option) => `
+            <label class="flex cursor-pointer gap-4 px-5 py-4 hover:bg-[var(--surface-muted)]/40">
+              <input
+                type="checkbox"
+                name="report-finding"
+                value="${escapeHtml(option.signal)}"
+                ${option.default_selected ? 'checked' : ''}
+                class="mt-1 h-4 w-4 rounded border-[var(--line)]"
+              />
+              <span class="min-w-0 flex-1">
+                <span class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm font-medium">${escapeHtml(option.title)}</span>
+                  ${badge(option)}
+                  <span class="text-[11px] text-[var(--muted)]">${escapeHtml(option.category)}</span>
+                </span>
+                ${option.evidence ? `<span class="mt-2 block text-xs leading-5 text-[var(--muted)]">${escapeHtml(option.evidence)}</span>` : ''}
+              </span>
+            </label>
+          `).join('')
+        : '<div class="px-5 py-6 text-sm text-[var(--muted)]">No client-safe report findings are currently available for this prospect.</div>';
+      generateButton.disabled = options.length === 0;
+    }
+
+    generateButton.addEventListener('click', async () => {
+      errorBox.classList.add('hidden');
+      successBox.classList.add('hidden');
+      const selected = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="report-finding"]:checked')).map((input) => input.value);
+      if (!selected.length) {
+        errorBox.textContent = 'Select at least one finding.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+
+      generateButton.disabled = true;
+      try {
+        const response = await fetch(`/api/audit-reports/prospects/${encodeURIComponent(placeId)}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ selected_signals: selected }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+        viewPdf.href = `/api/audit-reports/${encodeURIComponent(body.id)}/pdf`;
+        successBox.classList.remove('hidden');
+      } catch (error) {
+        errorBox.textContent = error instanceof Error ? error.message : 'Unable to generate audit report.';
+        errorBox.classList.remove('hidden');
+      } finally {
+        generateButton.disabled = false;
+      }
+    });
+
+    loadOptions().catch((error) => {
+      errorBox.textContent = error instanceof Error ? error.message : 'Unable to load audit findings.';
+      errorBox.classList.remove('hidden');
+      generateButton.disabled = true;
+    });
+  </script>
+</AppLayout>
