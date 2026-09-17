@@ -190,6 +190,44 @@ class OutreachRepository:
                 total = cur.fetchone()['count']
         return rows, total
 
+    def recent_generated_drafts(
+        self,
+        *,
+        limit: int = 25,
+        exclude_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = """
+            select
+                q.id::text as id,
+                b.name,
+                q.body,
+                q.claim_signal,
+                q.verification_note,
+                q.draft_generated_at,
+                q.updated_at
+            from outreach_queue q
+            join businesses b
+              on b.place_id = q.place_id
+            where q.status in ('review_required', 'draft_ready', 'approved')
+              and q.body is not null
+              and (%s is null or q.id <> %s::uuid)
+            order by
+                q.draft_generated_at desc nulls last,
+                q.updated_at desc
+            limit %s
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    query,
+                    (
+                        exclude_id,
+                        exclude_id,
+                        limit,
+                    ),
+                )
+                return cur.fetchall()
+
     def prospect_context(self, place_id: str) -> dict[str, Any] | None:
         query = """
             select

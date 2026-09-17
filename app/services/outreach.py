@@ -197,23 +197,23 @@ class OutreachService:
         *,
         current_item_id: str,
     ) -> list[tuple[str | None, str, str | None]]:
-        items, _ = self.repository.list_items(status=None)
+        items = self.repository.recent_generated_drafts(
+            limit=25,
+            exclude_id=current_item_id,
+        )
         recent: list[tuple[str | None, str, str | None]] = []
         for item in items:
-            if item.get("id") == current_item_id:
-                continue
-            if item.get("status") not in {"review_required", "draft_ready", "approved"}:
-                continue
-            body = item.get("body")
-            if not body:
-                continue
             visible_claim = client_facing_claim(
                 item.get("claim_signal"),
                 item.get("verification_note") or "verified",
             )
-            recent.append((item.get("name"), body, visible_claim))
-            if len(recent) >= 25:
-                break
+            recent.append(
+                (
+                    item.get("name"),
+                    item["body"],
+                    visible_claim,
+                )
+            )
         return recent
 
     def generate_draft(self, item_id: str, *, expected_version: int) -> dict | None:

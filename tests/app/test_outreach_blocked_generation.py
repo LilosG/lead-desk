@@ -99,6 +99,9 @@ class Repo:
     def list_items(self, status=None):
         return [], 0
 
+    def recent_generated_drafts(self, *, limit=25, exclude_id=None):
+        return []
+
     def update_item(self, item_id, *, changes, expected_version):
         assert expected_version == self.item["version"]
         self.updated_changes = changes
