@@ -22,6 +22,9 @@ const nav = [
   { label: 'Settings', href: '/settings' },
 ];
 
+const prospectDetailMatch = pathname.match(/^\/prospects\/([^/]+)\/?$/);
+const prospectPlaceId = prospectDetailMatch?.[1] ?? null;
+
 function active(href: string) {
   if (href === '/') return pathname === '/';
   return pathname.startsWith(href);
@@ -93,13 +96,26 @@ function active(href: string) {
         <header
           class="border-b border-[var(--line)] bg-[var(--surface)] px-6 py-5 lg:px-8"
         >
-          <div class="mx-auto max-w-[1500px]">
-            <h1 class="text-2xl font-semibold tracking-tight">
-              {title}
-            </h1>
-            <p class="mt-1 text-sm text-[var(--muted)]">
-              {description}
-            </p>
+          <div class="mx-auto flex max-w-[1500px] flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 class="text-2xl font-semibold tracking-tight">
+                {title}
+              </h1>
+              <p class="mt-1 text-sm text-[var(--muted)]">
+                {description}
+              </p>
+            </div>
+
+            {
+              prospectPlaceId && (
+                <a
+                  href={`/prospects/${prospectPlaceId}/demo`}
+                  class="inline-flex shrink-0 items-center justify-center rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white"
+                >
+                  Build demo site
+                </a>
+              )
+            }
           </div>
         </header>
 

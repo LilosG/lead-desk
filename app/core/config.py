@@ -25,6 +25,14 @@ class Settings(BaseSettings):
         default="https://lead-desk-alpha.vercel.app",
         alias="PUBLIC_APP_URL",
     )
+    demo_site_root: str = Field(
+        default="/var/www/lilos-demos",
+        alias="DEMO_SITE_ROOT",
+    )
+    demo_site_base_url: str = Field(
+        default="https://demo.lilosgrowth.com",
+        alias="DEMO_SITE_BASE_URL",
+    )
     integration_encryption_key: str | None = Field(
         default=None,
         alias="INTEGRATION_ENCRYPTION_KEY",
@@ -68,12 +76,12 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("public_app_url")
+    @field_validator("public_app_url", "demo_site_base_url")
     @classmethod
-    def normalize_public_app_url(cls, value: str) -> str:
+    def normalize_public_url(cls, value: str) -> str:
         value = value.rstrip("/")
         if not value.startswith("https://"):
-            raise ValueError("PUBLIC_APP_URL must use https")
+            raise ValueError("public URLs must use https")
         return value
 
     @property

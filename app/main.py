@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes import health, overview, prospects, runs
 from app.api.routes.audit_reports import router as audit_reports_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.demo_sites import router as demo_sites_router
 from app.api.routes.integrations import router as integrations_router
 from app.api.routes.outreach import router as outreach_router
 from app.api.routes.sweeps import router as sweeps_router
@@ -67,6 +68,7 @@ app.include_router(runs.router, prefix="/api")
 app.include_router(sweeps_router)
 app.include_router(outreach_router)
 app.include_router(audit_reports_router)
+app.include_router(demo_sites_router)
 app.include_router(integrations_router)
 
 
