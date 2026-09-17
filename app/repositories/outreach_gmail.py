@@ -76,3 +76,110 @@ class OutreachGmailRepository:
                         ),
                     )
                     return updated, False
+
+    def record_synced_generated_draft(
+        self,
+        item_id: str,
+        *,
+        expected_version: int,
+        expected_gmail_draft_id: str,
+        subject: str,
+        body: str,
+        claim_signal: str | None,
+        verification_status: str,
+        verification_note: str,
+        generation_model: str,
+        prompt_version: str,
+        gmail_message_id: str | None,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        """Persist regenerated copy while preserving the existing Gmail draft link."""
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        select id::text as id, place_id, version, gmail_draft_id
+                        from outreach_queue
+                        where id = %s::uuid
+                        for update
+                        """,
+                        (item_id,),
+                    )
+                    current = cur.fetchone()
+                    if current is None:
+                        return None, False
+                    if current["version"] != expected_version:
+                        return current, True
+                    if current.get("gmail_draft_id") != expected_gmail_draft_id:
+                        return current, True
+
+                    cur.execute(
+                        """
+                        select 1
+                        from gmail_draft_operations
+                        where queue_id = %s::uuid and state = 'pending'
+                        limit 1
+                        """,
+                        (item_id,),
+                    )
+                    if cur.fetchone() is not None:
+                        return current, True
+
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set subject = %s,
+                            body = %s,
+                            claim_signal = %s,
+                            verification_status = %s,
+                            verification_note = %s,
+                            status = 'review_required',
+                            generation_model = %s,
+                            generation_prompt_version = %s,
+                            draft_generated_at = now(),
+                            gmail_message_id = coalesce(%s, gmail_message_id),
+                            version = version + 1,
+                            updated_at = now()
+                        where id = %s::uuid
+                        returning id::text as id, place_id, channel, status,
+                                  to_address, subject, body, claim_signal,
+                                  verification_status, verification_note,
+                                  generation_model, generation_prompt_version,
+                                  draft_generated_at, gmail_draft_id,
+                                  gmail_message_id, gmail_draft_created_at,
+                                  version, created_at, updated_at
+                        """,
+                        (
+                            subject,
+                            body,
+                            claim_signal,
+                            verification_status,
+                            verification_note,
+                            generation_model,
+                            prompt_version,
+                            gmail_message_id,
+                            item_id,
+                        ),
+                    )
+                    updated = cur.fetchone()
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (
+                            queue_id, place_id, event_type, changes
+                        ) values (%s::uuid, %s, 'draft_regenerated_and_synced', %s)
+                        """,
+                        (
+                            item_id,
+                            updated["place_id"],
+                            Jsonb(
+                                {
+                                    "claim_signal": claim_signal,
+                                    "verification_status": verification_status,
+                                    "generation_model": generation_model,
+                                    "prompt_version": prompt_version,
+                                    "gmail_draft_id": expected_gmail_draft_id,
+                                }
+                            ),
+                        ),
+                    )
+                    return updated, False
