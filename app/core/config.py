@@ -11,6 +11,10 @@ APPROVED_OPENROUTER_MODELS = {
     "openai/gpt-5-mini",
 }
 
+APPROVED_DEMO_IMAGE_MODELS = {
+    "bytedance-seed/seedream-4.5",
+}
+
 
 class Settings(BaseSettings):
     app_name: str = "Lead Desk"
@@ -32,6 +36,10 @@ class Settings(BaseSettings):
     demo_site_base_url: str = Field(
         default="https://demo.lilosgrowth.com",
         alias="DEMO_SITE_BASE_URL",
+    )
+    demo_image_model: str = Field(
+        default="bytedance-seed/seedream-4.5",
+        alias="DEMO_IMAGE_MODEL",
     )
     integration_encryption_key: str | None = Field(
         default=None,
@@ -76,6 +84,16 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("demo_image_model")
+    @classmethod
+    def validate_demo_image_model(cls, value: str) -> str:
+        if value not in APPROVED_DEMO_IMAGE_MODELS:
+            approved = ", ".join(sorted(APPROVED_DEMO_IMAGE_MODELS))
+            raise ValueError(
+                f"DEMO_IMAGE_MODEL must be an approved model: {approved}"
+            )
+        return value
+
     @field_validator("public_app_url", "demo_site_base_url")
     @classmethod
     def normalize_public_url(cls, value: str) -> str:
@@ -87,6 +105,10 @@ class Settings(BaseSettings):
     @property
     def openrouter_configured(self) -> bool:
         return bool(self.openrouter_api_key and self.openrouter_model)
+
+    @property
+    def demo_image_generation_configured(self) -> bool:
+        return bool(self.openrouter_api_key and self.demo_image_model)
 
     @property
     def gmail_legacy_configured(self) -> bool:

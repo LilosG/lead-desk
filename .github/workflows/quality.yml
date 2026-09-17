@@ -49,6 +49,7 @@ jobs:
             tests/app/test_audit_reports.py \
             tests/app/test_demo_sites.py \
             tests/app/test_demo_sites_v3.py \
+            tests/app/test_demo_media.py \
             tests/app/test_sweep_request_validation.py \
             tests/app/test_market_inventory_contract.py
 

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,22 @@ class DemoSiteCreateRequest(BaseModel):
     hero_image_url: str | None = Field(default=None, max_length=2048)
     work_image_url: str | None = Field(default=None, max_length=2048)
     secondary_image_url: str | None = Field(default=None, max_length=2048)
+
+
+class DemoMediaGenerateRequest(BaseModel):
+    role: Literal["hero", "work", "secondary"]
+    direction: str | None = Field(default=None, max_length=300)
+
+
+class DemoMediaItem(BaseModel):
+    id: str
+    place_id: str
+    role: str
+    source: str
+    model: str | None = None
+    prompt_version: str | None = None
+    public_url: str
+    created_at: datetime
 
 
 class DemoSiteOptionsResponse(BaseModel):
