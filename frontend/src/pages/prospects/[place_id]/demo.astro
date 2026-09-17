@@ -5,19 +5,14 @@ export const prerender = false;
 const { place_id } = Astro.params;
 ---
 
-<AppLayout
-  title="Demo site"
-  description="Build and review an optional one-page prospect demo before publishing."
->
+<AppLayout title="Demo site" description="Build and review an optional one-page prospect demo before publishing.">
   <div id="demo-builder" data-place-id={place_id} class="mx-auto max-w-5xl space-y-6">
     <section class="rounded-lg border border-[var(--line)] bg-white p-5">
       <a href={`/prospects/${place_id}`} class="text-xs text-[var(--muted)] hover:underline">← Back to prospect</a>
       <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 class="text-2xl font-semibold tracking-tight">Build demo site</h2>
-          <p class="mt-1 max-w-2xl text-sm leading-6 text-[var(--muted)]">
-            Create a controlled one-page concept for this prospect. Generate, inspect, then publish only after manual approval.
-          </p>
+          <p class="mt-1 max-w-2xl text-sm leading-6 text-[var(--muted)]">Create a controlled one-page concept for this prospect. Generate, inspect, then publish only after manual approval.</p>
         </div>
         <span class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-medium">Manual only</span>
       </div>
@@ -28,9 +23,7 @@ const { place_id } = Astro.params;
         <div class="text-sm font-medium">Existing demos</div>
         <div class="mt-1 text-xs text-[var(--muted)]">Review prior versions before generating another concept.</div>
       </div>
-      <div id="existing-demos" class="divide-y divide-[var(--line)]">
-        <div class="px-5 py-5 text-sm text-[var(--muted)]">Loading…</div>
-      </div>
+      <div id="existing-demos" class="divide-y divide-[var(--line)]"><div class="px-5 py-5 text-sm text-[var(--muted)]">Loading…</div></div>
     </section>
 
     <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -39,24 +32,20 @@ const { place_id } = Astro.params;
           <div id="business-name" class="text-sm font-medium">Loading…</div>
           <div class="mt-1 text-xs text-[var(--muted)]">Only confirmed Lead Desk facts and information you enter here are included.</div>
         </div>
-
         <form id="demo-form" class="space-y-5 p-5">
           <div>
             <label for="template-key" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Template</label>
             <select id="template-key" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm"></select>
             <div id="template-description" class="mt-1.5 text-xs leading-5 text-[var(--muted)]"></div>
           </div>
-
           <div>
             <label for="headline" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Hero headline</label>
             <input id="headline" maxlength="120" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
           </div>
-
           <div>
             <label for="subheadline" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Hero supporting copy</label>
             <textarea id="subheadline" maxlength="280" rows="3" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
           </div>
-
           <div class="grid gap-5 sm:grid-cols-2">
             <div>
               <label for="services" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Services</label>
@@ -69,121 +58,51 @@ const { place_id } = Astro.params;
               <div class="mt-1.5 text-[11px] leading-4 text-[var(--muted)]">Maximum 8. Commas, semicolons, or new lines are accepted.</div>
             </div>
           </div>
-
           <div class="rounded-md border border-[var(--line)] bg-[var(--surface-muted)] p-4">
             <div class="text-xs font-medium">Optional photography</div>
-            <div class="mt-1 text-[11px] leading-4 text-[var(--muted)]">
-              Add verified business photography or concept-image URLs. This does not trigger paid image generation. Leave blank to use the photo-free layout.
-            </div>
+            <div class="mt-1 text-[11px] leading-4 text-[var(--muted)]">Add verified business photography or concept-image URLs. This does not trigger paid image generation. Leave blank to use the photo-free layout.</div>
             <div class="mt-4 space-y-3">
-              <div>
-                <label for="hero-image-url" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Hero image URL</label>
-                <input id="hero-image-url" type="url" maxlength="2048" placeholder="https://…" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label for="work-image-url" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Service / work image URL</label>
-                <input id="work-image-url" type="url" maxlength="2048" placeholder="https://…" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label for="secondary-image-url" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Secondary image URL</label>
-                <input id="secondary-image-url" type="url" maxlength="2048" placeholder="https://…" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm" />
-              </div>
+              <div><label for="hero-image-url" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Hero image URL</label><input id="hero-image-url" type="url" maxlength="2048" placeholder="https://…" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm" /></div>
+              <div><label for="work-image-url" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Service / work image URL</label><input id="work-image-url" type="url" maxlength="2048" placeholder="https://…" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm" /></div>
+              <div><label for="secondary-image-url" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Secondary image URL</label><input id="secondary-image-url" type="url" maxlength="2048" placeholder="https://…" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm" /></div>
             </div>
           </div>
-
           <div id="builder-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
-
-          <button id="generate-demo" type="submit" class="w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">
-            Generate review preview
-          </button>
+          <button id="generate-demo" type="submit" class="w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Generate review preview</button>
         </form>
       </section>
 
       <aside class="space-y-6">
         <section class="rounded-lg border border-[var(--line)] bg-white p-5">
           <div class="text-sm font-medium">Publishing guardrails</div>
-          <ul class="mt-3 space-y-2 text-xs leading-5 text-[var(--muted)]">
-            <li>• Static one-page concept only.</li>
-            <li>• No per-lead GitHub or Vercel project.</li>
-            <li>• Search indexing disabled.</li>
-            <li>• No fabricated reviews, licenses, credentials, or business claims.</li>
-            <li>• Publishing requires separate manual approval.</li>
-          </ul>
+          <ul class="mt-3 space-y-2 text-xs leading-5 text-[var(--muted)]"><li>• Static one-page concept only.</li><li>• No per-lead GitHub or Vercel project.</li><li>• Search indexing disabled.</li><li>• No fabricated reviews, licenses, credentials, or business claims.</li><li>• Publishing requires separate manual approval.</li></ul>
         </section>
-
-        <section class="rounded-lg border border-[var(--line)] bg-white p-5">
-          <div class="text-sm font-medium">Visual quality</div>
-          <div class="mt-2 text-xs leading-5 text-[var(--muted)]">
-            Trade Modern v2 is designed for a stronger sales presentation. One strong hero photo plus one work image is usually enough; a third image is optional.
-          </div>
-        </section>
-
-        <section class="rounded-lg border border-[var(--line)] bg-white p-5">
-          <div class="text-sm font-medium">Generation cost</div>
-          <div class="mt-2 text-xs leading-5 text-[var(--muted)]">
-            The base renderer is deterministic and uses existing prospect data. Image generation remains opt-in and is not triggered by this form.
-          </div>
-        </section>
+        <section class="rounded-lg border border-[var(--line)] bg-white p-5"><div class="text-sm font-medium">Visual quality</div><div class="mt-2 text-xs leading-5 text-[var(--muted)]">Trade Modern v2 is designed for a stronger sales presentation. One strong hero photo plus one work image is usually enough; a third image is optional.</div></section>
+        <section class="rounded-lg border border-[var(--line)] bg-white p-5"><div class="text-sm font-medium">Generation cost</div><div class="mt-2 text-xs leading-5 text-[var(--muted)]">The base renderer is deterministic and uses existing prospect data. Image generation remains opt-in and is not triggered by this form.</div></section>
       </aside>
     </div>
 
     <section id="review-panel" class="hidden rounded-lg border border-[var(--line)] bg-white p-5">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div class="text-sm font-medium">Ready for review</div>
-          <div class="mt-1 text-xs leading-5 text-[var(--muted)]">Inspect desktop and mobile presentation before publishing.</div>
-        </div>
-        <span class="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800">Ready for review</span>
-      </div>
-      <div class="mt-4 flex flex-wrap gap-2">
-        <a id="preview-demo" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-medium">Open preview</a>
-        <button id="publish-demo" type="button" class="rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white">Approve & publish</button>
-      </div>
-      <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-        Publishing makes the unlisted demo URL accessible on the shared demo host. It remains noindex/noarchive and is not added to outreach automatically.
-      </div>
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div class="text-sm font-medium">Ready for review</div><div class="mt-1 text-xs leading-5 text-[var(--muted)]">Inspect desktop and mobile presentation before publishing.</div></div><span class="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800">Ready for review</span></div>
+      <div class="mt-4 flex flex-wrap gap-2"><a id="preview-demo" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-medium">Open preview</a><button id="publish-demo" type="button" class="rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white">Approve & publish</button></div>
+      <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Publishing makes the unlisted demo URL accessible on the shared demo host. It remains noindex/noarchive and is not added to outreach automatically.</div>
       <div id="publish-error" class="mt-4 hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
-      <div id="publish-success" class="mt-4 hidden rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3">
-        <div class="text-sm font-medium text-emerald-900">Demo published</div>
-        <div class="mt-1 text-xs text-emerald-800">The demo is live on the shared host. Nothing has been sent to the prospect.</div>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <a id="public-demo" target="_blank" rel="noreferrer" class="rounded-md bg-white px-3 py-2 text-xs font-medium text-emerald-900 ring-1 ring-emerald-200">View live demo</a>
-          <button id="copy-demo-url" type="button" class="rounded-md bg-white px-3 py-2 text-xs font-medium text-emerald-900 ring-1 ring-emerald-200">Copy URL</button>
-        </div>
-      </div>
+      <div id="publish-success" class="mt-4 hidden rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3"><div class="text-sm font-medium text-emerald-900">Demo published</div><div class="mt-1 text-xs text-emerald-800">The demo is live on the shared host. Nothing has been sent to the prospect.</div><div class="mt-3 flex flex-wrap gap-2"><a id="public-demo" target="_blank" rel="noreferrer" class="rounded-md bg-white px-3 py-2 text-xs font-medium text-emerald-900 ring-1 ring-emerald-200">View live demo</a><button id="copy-demo-url" type="button" class="rounded-md bg-white px-3 py-2 text-xs font-medium text-emerald-900 ring-1 ring-emerald-200">Copy URL</button></div></div>
     </section>
   </div>
 
   <script>
     type TemplateOption = { key: string; name: string; description: string };
     type DemoSummary = { id: string; status: string; template_key: string; public_url: string | null; created_at: string };
-    type DemoOptions = {
-      business_name: string;
-      templates: TemplateOption[];
-      defaults: {
-        headline: string;
-        subheadline: string;
-        services: string[];
-        service_areas: string[];
-        hero_image_url?: string | null;
-        work_image_url?: string | null;
-        secondary_image_url?: string | null;
-      };
-    };
+    type DemoOptions = { business_name: string; templates: TemplateOption[]; defaults: { headline: string; subheadline: string; services: string[]; service_areas: string[]; hero_image_url?: string | null; work_image_url?: string | null; secondary_image_url?: string | null } };
 
-    const required = <T extends HTMLElement>(selector: string): T => {
-      const element = document.querySelector<T>(selector);
-      if (!element) throw new Error(`Missing required element: ${selector}`);
-      return element;
-    };
-
-    const escapeHtml = (value: unknown): string => String(value ?? '')
-      .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+    const required = <T extends HTMLElement>(selector: string): T => { const element = document.querySelector<T>(selector); if (!element) throw new Error(`Missing required element: ${selector}`); return element; };
+    const escapeHtml = (value: unknown): string => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
     const root = required<HTMLElement>('#demo-builder');
-    const placeId = root.dataset.placeId;
-    if (!placeId) throw new Error('Missing prospect place ID');
+    const rawPlaceId = root.dataset.placeId;
+    if (!rawPlaceId) throw new Error('Missing prospect place ID');
+    const placeId: string = rawPlaceId;
 
     const businessName = required('#business-name');
     const existingDemos = required('#existing-demos');
@@ -210,11 +129,7 @@ const { place_id } = Astro.params;
     let templates: TemplateOption[] = [];
     let currentDemoId: string | null = null;
     let currentPublicUrl: string | null = null;
-
-    const items = (value: string): string[] => value
-      .split(/[\n,;]+/)
-      .map((item) => item.trim())
-      .filter(Boolean);
+    const items = (value: string): string[] => value.split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean);
 
     const statusBadge = (status: string): string => {
       if (status === 'published') return '<span class="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800">Published</span>';
@@ -229,18 +144,12 @@ const { place_id } = Astro.params;
       if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
       const demos = body as DemoSummary[];
       existingDemos.innerHTML = demos.length ? demos.map((demo) => {
-        const action = demo.status === 'published' && demo.public_url
-          ? `<a href="${escapeHtml(demo.public_url)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">View live</a>`
-          : demo.status === 'ready_for_review'
-            ? `<a href="/api/demo-sites/${encodeURIComponent(demo.id)}/preview" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Open preview</a>`
-            : '';
+        const action = demo.status === 'published' && demo.public_url ? `<a href="${escapeHtml(demo.public_url)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">View live</a>` : demo.status === 'ready_for_review' ? `<a href="/api/demo-sites/${encodeURIComponent(demo.id)}/preview" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Open preview</a>` : '';
         return `<div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div class="flex flex-wrap items-center gap-2">${statusBadge(demo.status)}<span class="text-xs font-medium">${escapeHtml(demo.template_key)}</span></div><div class="mt-1 text-[11px] text-[var(--muted)]">Created ${escapeHtml(new Date(demo.created_at).toLocaleString())}</div></div>${action}</div>`;
       }).join('') : '<div class="px-5 py-5 text-sm text-[var(--muted)]">No demo sites have been created for this prospect.</div>';
     }
 
-    const updateTemplateDescription = (): void => {
-      templateDescription.textContent = templates.find((item) => item.key === templateSelect.value)?.description ?? '';
-    };
+    const updateTemplateDescription = (): void => { templateDescription.textContent = templates.find((item) => item.key === templateSelect.value)?.description ?? ''; };
 
     async function loadOptions(): Promise<void> {
       const response = await fetch(`/api/demo-sites/prospects/${encodeURIComponent(placeId)}/options`, { headers: { Accept: 'application/json' } });
@@ -263,77 +172,26 @@ const { place_id } = Astro.params;
     templateSelect.addEventListener('change', updateTemplateDescription);
 
     form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      builderError.classList.add('hidden');
-      reviewPanel.classList.add('hidden');
-      publishSuccess.classList.add('hidden');
-      generateButton.disabled = true;
+      event.preventDefault(); builderError.classList.add('hidden'); reviewPanel.classList.add('hidden'); publishSuccess.classList.add('hidden'); generateButton.disabled = true;
       try {
-        const response = await fetch(`/api/demo-sites/prospects/${encodeURIComponent(placeId)}`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({
-            template_key: templateSelect.value,
-            headline: headline.value.trim() || null,
-            subheadline: subheadline.value.trim() || null,
-            services: items(services.value).slice(0, 6),
-            service_areas: items(serviceAreas.value).slice(0, 8),
-            hero_image_url: heroImageUrl.value.trim() || null,
-            work_image_url: workImageUrl.value.trim() || null,
-            secondary_image_url: secondaryImageUrl.value.trim() || null,
-          }),
-        });
+        const response = await fetch(`/api/demo-sites/prospects/${encodeURIComponent(placeId)}`, { method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ template_key: templateSelect.value, headline: headline.value.trim() || null, subheadline: subheadline.value.trim() || null, services: items(services.value).slice(0, 6), service_areas: items(serviceAreas.value).slice(0, 8), hero_image_url: heroImageUrl.value.trim() || null, work_image_url: workImageUrl.value.trim() || null, secondary_image_url: secondaryImageUrl.value.trim() || null }) });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
-        currentDemoId = body.id;
-        currentPublicUrl = null;
-        previewDemo.href = `/api/demo-sites/${encodeURIComponent(body.id)}/preview`;
-        publishButton.disabled = false;
-        publishButton.textContent = 'Approve & publish';
-        reviewPanel.classList.remove('hidden');
-        await loadExistingDemos();
-        reviewPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } catch (error) {
-        builderError.textContent = error instanceof Error ? error.message : 'Unable to generate demo site.';
-        builderError.classList.remove('hidden');
-      } finally {
-        generateButton.disabled = false;
-      }
+        currentDemoId = body.id; currentPublicUrl = null; previewDemo.href = `/api/demo-sites/${encodeURIComponent(body.id)}/preview`; publishButton.disabled = false; publishButton.textContent = 'Approve & publish'; reviewPanel.classList.remove('hidden'); await loadExistingDemos(); reviewPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (error) { builderError.textContent = error instanceof Error ? error.message : 'Unable to generate demo site.'; builderError.classList.remove('hidden'); } finally { generateButton.disabled = false; }
     });
 
     publishButton.addEventListener('click', async () => {
-      if (!currentDemoId) return;
-      publishError.classList.add('hidden');
-      publishSuccess.classList.add('hidden');
-      publishButton.disabled = true;
+      if (!currentDemoId) return; publishError.classList.add('hidden'); publishSuccess.classList.add('hidden'); publishButton.disabled = true;
       try {
         const response = await fetch(`/api/demo-sites/${encodeURIComponent(currentDemoId)}/publish`, { method: 'POST', headers: { Accept: 'application/json' } });
         const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
-        if (!body.public_url) throw new Error('Published demo did not return a public URL.');
-        currentPublicUrl = body.public_url;
-        publicDemo.href = body.public_url;
-        publishSuccess.classList.remove('hidden');
-        publishButton.textContent = 'Published';
-        await loadExistingDemos();
-      } catch (error) {
-        publishError.textContent = error instanceof Error ? error.message : 'Unable to publish demo.';
-        publishError.classList.remove('hidden');
-        publishButton.disabled = false;
-      }
+        if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`); if (!body.public_url) throw new Error('Published demo did not return a public URL.');
+        currentPublicUrl = body.public_url; publicDemo.href = body.public_url; publishSuccess.classList.remove('hidden'); publishButton.textContent = 'Published'; await loadExistingDemos();
+      } catch (error) { publishError.textContent = error instanceof Error ? error.message : 'Unable to publish demo.'; publishError.classList.remove('hidden'); publishButton.disabled = false; }
     });
 
-    copyDemoUrl.addEventListener('click', async () => {
-      if (!currentPublicUrl) return;
-      await navigator.clipboard.writeText(currentPublicUrl);
-      copyDemoUrl.textContent = 'Copied';
-      window.setTimeout(() => { copyDemoUrl.textContent = 'Copy URL'; }, 1500);
-    });
-
-    Promise.all([loadOptions(), loadExistingDemos()]).catch((error) => {
-      builderError.textContent = error instanceof Error ? error.message : 'Unable to load demo builder.';
-      builderError.classList.remove('hidden');
-      generateButton.disabled = true;
-    });
+    copyDemoUrl.addEventListener('click', async () => { if (!currentPublicUrl) return; await navigator.clipboard.writeText(currentPublicUrl); copyDemoUrl.textContent = 'Copied'; window.setTimeout(() => { copyDemoUrl.textContent = 'Copy URL'; }, 1500); });
+    Promise.all([loadOptions(), loadExistingDemos()]).catch((error) => { builderError.textContent = error instanceof Error ? error.message : 'Unable to load demo builder.'; builderError.classList.remove('hidden'); generateButton.disabled = true; });
   </script>
 </AppLayout>
