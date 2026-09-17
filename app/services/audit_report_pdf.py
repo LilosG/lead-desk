@@ -73,8 +73,8 @@ def _status_text(status: str) -> str:
         "attention": "Attention",
         "review": "Verify",
         "context": "Context",
-        "recommended": "Recommended",
-        "optional": "Opportunity",
+        "recommended": "Priority",
+        "optional": "Supporting",
         "review_required": "Verify first",
     }.get(status, "Reviewed")
 
@@ -239,8 +239,8 @@ def render_audit_report_pdf(report: dict) -> bytes:
         "FindingTitle",
         parent=styles["Heading2"],
         fontName="Helvetica-Bold",
-        fontSize=11.2,
-        leading=13.2,
+        fontSize=10.2,
+        leading=11.8,
         textColor=INK,
         spaceAfter=0,
     )
@@ -255,9 +255,25 @@ def render_audit_report_pdf(report: dict) -> bytes:
     evidence_text = ParagraphStyle(
         "Evidence",
         parent=body,
-        fontSize=7.4,
-        leading=9.6,
+        fontSize=6.9,
+        leading=8.2,
         textColor=INK,
+    )
+
+    finding_body = ParagraphStyle(
+        "FindingBody",
+        parent=body,
+        fontSize=7.2,
+        leading=8.6,
+        spaceAfter=0,
+    )
+
+    finding_label = ParagraphStyle(
+        "FindingLabel",
+        parent=label,
+        fontSize=6.2,
+        leading=7.2,
+        spaceAfter=0,
     )
 
     story = []
@@ -294,7 +310,7 @@ def render_audit_report_pdf(report: dict) -> bytes:
         metrics.append((f"{float(business['rating']):.1f}", "Google rating"))
     if business.get("review_count") is not None:
         metrics.append((f"{int(business['review_count']):,}", "Google reviews"))
-    metrics.append((str(len(findings)), "Selected findings"))
+    metrics.append((str(len(findings)), "Opportunities identified"))
     metrics.append((str(len(audit_scope)), "Checks reviewed"))
     cells = [[Paragraph(_text(v), metric_value), Paragraph(_text(k), metric_label)] for v, k in metrics[:4]]
     metric_table = Table([[cell for cell in cells]], colWidths=[1.82 * inch] * 4)
@@ -335,50 +351,33 @@ def render_audit_report_pdf(report: dict) -> bytes:
     story.append(summary_box)
     story.append(Spacer(1, 7))
 
-    if audit_scope:
-        story.append(Paragraph("AUDIT COVERAGE", section_kicker))
-        story.append(Paragraph("What we checked", section))
+    if findings:
+        story.append(Paragraph("OPPORTUNITY SNAPSHOT", section_kicker))
+        story.append(Paragraph("Where we found opportunities", section))
         story.append(
             Paragraph(
-                "These client-safe checks show the broader evidence reviewed; selected findings are detailed on page 2.",
+                "These items come directly from the same point-in-time audit evidence and are expanded on page 2.",
                 body_muted,
             )
         )
         story.append(Spacer(1, 3))
 
-        scope_cells = []
-        for item in audit_scope:
-            status = item.get("status") or "context"
-            left = [
-                Paragraph(_text(item.get("label")), scope_title),
-                Paragraph(_text(item.get("value")), scope_value),
-            ]
-            cell = Table(
-                [[left, _status_badge(_status_text(status), status, label)]],
-                colWidths=[2.58 * inch, 0.78 * inch],
+        opportunity_rows = []
+        for finding in findings:
+            disposition = finding.get("disposition") or "optional"
+            opportunity_rows.append(
+                [
+                    Paragraph(_text(finding.get("title")), scope_title),
+                    Paragraph(_text(finding.get("what_we_found")), scope_value),
+                    _status_badge(_status_text(disposition), disposition, label),
+                ]
             )
-            cell.setStyle(
-                TableStyle(
-                    [
-                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                        ("TOPPADDING", (0, 0), (-1, -1), 0),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                    ]
-                )
-            )
-            scope_cells.append(cell)
 
-        rows = []
-        for i in range(0, len(scope_cells), 2):
-            rows.append([
-                scope_cells[i],
-                scope_cells[i + 1] if i + 1 < len(scope_cells) else "",
-            ])
-
-        scope_table = Table(rows, colWidths=[3.62 * inch, 3.62 * inch])
-        scope_table.setStyle(
+        opportunity_table = Table(
+            opportunity_rows,
+            colWidths=[1.78 * inch, 4.42 * inch, 1.08 * inch],
+        )
+        opportunity_table.setStyle(
             TableStyle(
                 [
                     ("BOX", (0, 0), (-1, -1), 0.45, LINE),
@@ -386,17 +385,63 @@ def render_audit_report_pdf(report: dict) -> bytes:
                     ("BACKGROUND", (0, 0), (-1, -1), WHITE),
                     ("LEFTPADDING", (0, 0), (-1, -1), 7),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ]
             )
         )
-        story.append(scope_table)
+        story.append(opportunity_table)
+        story.append(Spacer(1, 7))
+
+    confirmed = [
+        item for item in audit_scope
+        if item.get("status") == "confirmed"
+    ]
+    if confirmed:
+        story.append(Paragraph("CONFIRMED BASELINE", section_kicker))
+        story.append(Paragraph("What is already in place", section))
+
+        strength_rows = []
+        strength_cells = [
+            [
+                Paragraph(_text(item.get("label")), scope_title),
+                Paragraph(_text(item.get("value")), scope_value),
+            ]
+            for item in confirmed
+        ]
+
+        for i in range(0, len(strength_cells), 2):
+            strength_rows.append(
+                [
+                    strength_cells[i],
+                    strength_cells[i + 1] if i + 1 < len(strength_cells) else "",
+                ]
+            )
+
+        strength_table = Table(
+            strength_rows,
+            colWidths=[3.62 * inch, 3.62 * inch],
+        )
+        strength_table.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.45, LINE),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.3, LINE),
+                    ("BACKGROUND", (0, 0), (-1, -1), SURFACE),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]
+            )
+        )
+        story.append(strength_table)
 
     story.append(PageBreak())
-    story.append(Paragraph("SELECTED FINDINGS", section_kicker))
-    story.append(Paragraph("Issues worth reviewing", section))
+    story.append(Paragraph("OPPORTUNITIES", section_kicker))
+    story.append(Paragraph("What the findings mean", section))
     story.append(
         Paragraph(
             "Each item below is tied to an observed condition from the same audit snapshot.",
@@ -428,17 +473,17 @@ def render_audit_report_pdf(report: dict) -> bytes:
         )
 
         detail_rows = [
-            [Paragraph("WHAT WE OBSERVED", label), Paragraph(_text(finding.get("what_we_found")), body)],
+            [Paragraph("WHAT WE OBSERVED", finding_label), Paragraph(_text(finding.get("what_we_found")), finding_body)],
         ]
         if finding.get("evidence"):
-            detail_rows.append([Paragraph("EVIDENCE", label), Paragraph(_text(finding.get("evidence")), evidence_text)])
+            detail_rows.append([Paragraph("EVIDENCE", finding_label), Paragraph(_text(finding.get("evidence")), evidence_text)])
         detail_rows.extend(
             [
-                [Paragraph("WHY IT MATTERS", label), Paragraph(_text(finding.get("why_it_matters")), body)],
-                [Paragraph("RECOMMENDED ACTION", label), Paragraph(_text(finding.get("recommendation")), body)],
+                [Paragraph("WHY IT MATTERS", finding_label), Paragraph(_text(finding.get("why_it_matters")), finding_body)],
+                [Paragraph("RECOMMENDED ACTION", finding_label), Paragraph(_text(finding.get("recommendation")), finding_body)],
             ]
         )
-        detail_table = Table(detail_rows, colWidths=[1.28 * inch, 5.65 * inch])
+        detail_table = Table(detail_rows, colWidths=[1.12 * inch, 5.81 * inch])
         detail_table.setStyle(
             TableStyle(
                 [
@@ -460,38 +505,27 @@ def render_audit_report_pdf(report: dict) -> bytes:
                     ("BACKGROUND", (0, 0), (-1, -1), WHITE),
                     ("BOX", (0, 0), (-1, -1), 0.6, LINE),
                     ("LINEBEFORE", (0, 0), (0, -1), 3, GOLD),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 9),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 9),
-                    ("TOPPADDING", (0, 0), (-1, 0), 7),
-                    ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                    ("TOPPADDING", (0, 0), (-1, 0), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 3),
                     ("TOPPADDING", (0, 1), (-1, 1), 0),
-                    ("BOTTOMPADDING", (0, 1), (-1, 1), 4),
+                    ("BOTTOMPADDING", (0, 1), (-1, 1), 2),
                 ]
             )
         )
         story.append(KeepTogether(card))
-        story.append(Spacer(1, 6))
+        story.append(Spacer(1, 3))
 
     story.append(Spacer(1, 2))
-    story.append(Paragraph("NEXT STEP", section_kicker))
-    story.append(Paragraph("Use this as a review checklist", section))
-    closing = (
-        "These findings are intended to be verified and prioritized. If an item is intentional or has changed since the evidence date, recheck it before implementation."
-    )
-    closing_box = Table([[Paragraph(closing, body)]], colWidths=[7.28 * inch])
-    closing_box.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), SURFACE),
-                ("LEFTPADDING", (0, 0), (-1, -1), 9),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 9),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
+    story.append(
+        Paragraph(
+            "Findings should be verified and prioritized before implementation, particularly if the underlying website or profile has changed since the evidence date.",
+            body_muted,
         )
     )
-    story.append(closing_box)
-    story.append(Spacer(1, 5))
+    story.append(Spacer(1, 3))
+
     methodology = _text(snapshot.get("methodology_note"))
     story.append(
         Paragraph(

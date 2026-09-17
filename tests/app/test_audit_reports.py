@@ -32,6 +32,16 @@ class FakeProspectRepository:
                 "finding": "internal raw finding",
             },
             {
+                "signal": "no_service_pages",
+                "observed": None,
+                "finding": "internal raw service-page finding",
+            },
+            {
+                "signal": "no_city_pages",
+                "observed": None,
+                "finding": "internal raw city-page finding",
+            },
+            {
                 "signal": "nap_mismatch",
                 "observed": {
                     "website_phone": "(619) 555-0101",
@@ -54,8 +64,8 @@ class FakeProspectRepository:
             "title_length": 40,
             "has_localbusiness_schema": False,
             "has_contact_form": True,
-            "has_service_pages": True,
-            "has_city_pages": True,
+            "has_service_pages": False,
+            "has_city_pages": False,
             "has_gbp_link": False,
             "nap_matches_gbp": False,
         }
@@ -101,16 +111,23 @@ def test_options_only_expose_allowlisted_client_safe_findings():
     result = service.options_for_prospect("place-1")
 
     signals = [item["signal"] for item in result["options"]]
-    assert signals == ["no_localbusiness_schema", "nap_mismatch"]
+    assert signals == ["no_localbusiness_schema", "no_service_pages", "no_city_pages", "nap_mismatch"]
 
     schema = result["options"][0]
     assert schema["disposition"] == "recommended"
     assert schema["default_selected"] is True
 
-    nap = result["options"][1]
+    by_signal = {item["signal"]: item for item in result["options"]}
+
+    nap = by_signal["nap_mismatch"]
     assert nap["disposition"] == "review_required"
     assert nap["default_selected"] is False
     assert "Website phone" in nap["evidence"]
+
+    assert by_signal["no_service_pages"]["disposition"] == "recommended"
+    assert by_signal["no_service_pages"]["default_selected"] is True
+    assert by_signal["no_city_pages"]["disposition"] == "recommended"
+    assert by_signal["no_city_pages"]["default_selected"] is True
 
 
 def test_snapshot_excludes_internal_scores_and_raw_findings():
@@ -128,7 +145,7 @@ def test_snapshot_excludes_internal_scores_and_raw_findings():
     assert "total_score" not in serialized
     assert "tier" not in serialized
     assert "internal raw finding" not in serialized
-    assert snapshot["report_version"] == 2
+    assert snapshot["report_version"] == 3
     assert snapshot["business"]["review_count"] == 87
     assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
     assert "Homepage scan" in snapshot["findings"][0]["evidence"]
@@ -149,12 +166,14 @@ def test_snapshot_includes_broad_client_safe_audit_coverage():
     assert coverage["Website availability"]["value"] == "Reachable"
     assert coverage["Secure connection"]["value"] == "HTTPS active"
     assert coverage["Structured business data"]["status"] == "attention"
+    assert coverage["Service content"]["status"] == "attention"
+    assert coverage["Local landing pages"]["status"] == "attention"
     assert coverage["Contact path"]["status"] == "confirmed"
     assert coverage["Business Profile connection"]["status"] == "attention"
     assert coverage["Business contact consistency"]["status"] == "review"
     assert coverage["Primary business category"]["value"] == "Electrician"
     assert "public profile and core website signals" in snapshot["executive_summary"]
-    assert "worth a closer look" in snapshot["executive_summary"]
+    assert "opportunity" in snapshot["executive_summary"].lower()
     assert "hidden scores" not in snapshot["executive_summary"].lower()
     assert "internal scoring" not in snapshot["methodology_note"].lower()
 
@@ -205,7 +224,12 @@ def test_pdf_renderer_produces_two_page_outreach_report():
     service = AuditReportService(FakeProspectRepository(), FakeReportRepository())
     report = service.create_report(
         "place-1",
-        selected_signals=["no_localbusiness_schema", "nap_mismatch"],
+        selected_signals=[
+            "no_localbusiness_schema",
+            "no_service_pages",
+            "no_city_pages",
+            "nap_mismatch",
+        ],
     )
 
     pdf = render_audit_report_pdf(report)
@@ -235,3 +259,30 @@ def test_report_snapshot_is_detached_from_later_prospect_changes():
     assert report["snapshot"]["business"]["name"] == original_name
     assert report["snapshot"]["audit_scope"] == original_coverage
     assert "changed later" not in str(report["snapshot"])
+
+
+def test_service_and_local_page_gaps_are_client_safe_report_opportunities():
+    service = AuditReportService(FakeProspectRepository(), FakeReportRepository())
+
+    options = service.options_for_prospect("place-1")
+    by_signal = {item["signal"]: item for item in options["options"]}
+
+    assert by_signal["no_service_pages"]["disposition"] == "recommended"
+    assert by_signal["no_service_pages"]["default_selected"] is True
+    assert by_signal["no_city_pages"]["disposition"] == "recommended"
+    assert by_signal["no_city_pages"]["default_selected"] is True
+
+    report = service.create_report(
+        "place-1",
+        selected_signals=["no_service_pages", "no_city_pages"],
+    )
+
+    findings = {
+        item["signal"]: item
+        for item in report["snapshot"]["findings"]
+    }
+
+    assert "service pages were not detected" in findings["no_service_pages"]["what_we_found"].lower()
+    assert "service-area" in findings["no_city_pages"]["what_we_found"].lower()
+    assert "website crawl" in findings["no_service_pages"]["evidence"].lower()
+    assert "website crawl" in findings["no_city_pages"]["evidence"].lower()

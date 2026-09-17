@@ -90,6 +90,43 @@ POLICY: dict[str, AuditReportPolicyItem] = {
             "the business name, primary service, and useful local context."
         ),
     ),
+    "no_service_pages": AuditReportPolicyItem(
+        signal="no_service_pages",
+        title="Service-page coverage",
+        disposition="recommended",
+        default_selected=True,
+        category="Search coverage",
+        what_we_found=(
+            "Dedicated service pages were not detected during the website review."
+        ),
+        why_it_matters=(
+            "Dedicated service pages give search engines and prospective customers clearer "
+            "information about individual services and create useful destinations for "
+            "service-specific searches."
+        ),
+        recommendation=(
+            "Review the business's primary services and determine whether important offerings "
+            "warrant dedicated, substantive service pages."
+        ),
+    ),
+    "no_city_pages": AuditReportPolicyItem(
+        signal="no_city_pages",
+        title="Local market coverage",
+        disposition="recommended",
+        default_selected=True,
+        category="Local search",
+        what_we_found=(
+            "Dedicated city or service-area landing pages were not detected during the website review."
+        ),
+        why_it_matters=(
+            "For businesses serving multiple communities, useful location pages can provide "
+            "clearer geographic relevance and more specific information for customers in those markets."
+        ),
+        recommendation=(
+            "Review the verified service territory and determine whether important markets warrant "
+            "unique, substantive location pages."
+        ),
+    ),
     "no_gbp_link": AuditReportPolicyItem(
         signal="no_gbp_link",
         title="Website and Business Profile connection",

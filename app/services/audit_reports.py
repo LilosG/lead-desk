@@ -112,7 +112,7 @@ def _audit_coverage(prospect: dict[str, Any], audit: dict[str, Any]) -> list[dic
             _coverage_item(
                 label="Service content",
                 value="Service pages detected" if service_pages else "Service pages not detected",
-                status="confirmed" if service_pages else "context",
+                status="confirmed" if service_pages else "attention",
                 category="Website",
             )
         )
@@ -123,7 +123,7 @@ def _audit_coverage(prospect: dict[str, Any], audit: dict[str, Any]) -> list[dic
             _coverage_item(
                 label="Local landing pages",
                 value="City/local pages detected" if city_pages else "City/local pages not detected",
-                status="confirmed" if city_pages else "context",
+                status="confirmed" if city_pages else "attention",
                 category="Local search",
             )
         )
@@ -176,6 +176,10 @@ def _evidence_for_signal(
 
     if signal == "no_localbusiness_schema":
         return "Homepage scan: recognized LocalBusiness structured data was not detected."
+    if signal == "no_service_pages":
+        return "Website crawl: dedicated service pages were not detected."
+    if signal == "no_city_pages":
+        return "Website crawl: dedicated city or service-area landing pages were not detected."
     if signal == "no_gbp_link":
         return "Website crawl: no direct Google Business Profile link was detected."
     if signal == "no_ssl":
@@ -195,6 +199,7 @@ def _executive_summary(
 ) -> str:
     rating = prospect.get("rating")
     review_count = prospect.get("review_count")
+
     footprint = ""
     if rating is not None and review_count is not None:
         footprint = (
@@ -202,14 +207,38 @@ def _executive_summary(
             f"{int(review_count):,} reviews. "
         )
     elif review_count is not None:
-        footprint = f"Google currently shows {int(review_count):,} reviews for {business_name}. "
+        footprint = (
+            f"Google currently shows {int(review_count):,} reviews for {business_name}. "
+        )
 
     checked = len(coverage)
     finding_count = len(findings)
+
+    labels = [
+        str(item.get("title")).strip()
+        for item in findings
+        if item.get("title")
+    ]
+
+    if labels:
+        if len(labels) == 1:
+            focus = labels[0]
+        elif len(labels) == 2:
+            focus = f"{labels[0]} and {labels[1]}"
+        else:
+            focus = f"{', '.join(labels[:-1])}, and {labels[-1]}"
+
+        opportunity_text = (
+            f"The review identified {finding_count} "
+            f"{'opportunity' if finding_count == 1 else 'opportunities'} worth reviewing: "
+            f"{focus}."
+        )
+    else:
+        opportunity_text = "No client-facing opportunities were selected for this report."
+
     return (
-        f"{footprint}We reviewed the business's public profile and core website signals across "
-        f"{checked} checks. The review identified {finding_count} item"
-        f"{'s' if finding_count != 1 else ''} worth a closer look."
+        f"{footprint}We reviewed the business's public profile and core website signals "
+        f"across {checked} checks. {opportunity_text}"
     )
 
 
@@ -308,7 +337,7 @@ class AuditReportService:
         snapshot = _json_safe(
             {
                 "report_kind": "local_visibility_audit",
-                "report_version": 2,
+                "report_version": 3,
                 "business": {
                     "name": business_name,
                     "location": location or None,
@@ -328,6 +357,10 @@ class AuditReportService:
                     coverage,
                 ),
                 "audit_scope": coverage,
+                "strengths": [
+                    item for item in coverage
+                    if item.get("status") == "confirmed"
+                ],
                 "findings": report_findings,
                 "methodology_note": (
                     "Point-in-time review of public business information and website signals as of the evidence date shown. "
