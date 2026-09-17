@@ -292,14 +292,10 @@
     reopenSelectedItem();
   });
 
-  const editorObserver = new MutationObserver(() => unlockEditor());
-
   function init() {
     enhanceMetrics();
     const queue = $('#queue-list');
     if (queue) queueObserver.observe(queue, { childList: true, subtree: true });
-    const editor = $('#editor-card');
-    if (editor) editorObserver.observe(editor, { attributes: true, subtree: true, childList: true });
     reopenSelectedItem();
   }
 
