@@ -1,3 +1,5 @@
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from app.repositories.audit_reports import AuditReportRepository
@@ -7,6 +9,19 @@ from app.services.audit_report_policy import observed_summary, report_policy_for
 
 class AuditReportError(Exception):
     pass
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert database-native values into JSON-native snapshot values."""
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 class AuditReportService:
@@ -95,26 +110,28 @@ class AuditReportService:
             part for part in [prospect.get("city"), prospect.get("state")] if part
         )
 
-        snapshot = {
-            "report_kind": "local_visibility_audit",
-            "report_version": 1,
-            "business": {
-                "name": business_name,
-                "location": location or None,
-                "website_url": prospect.get("website_url"),
-                "rating": prospect.get("rating"),
-                "review_count": prospect.get("review_count"),
-                "confirmed_trading": prospect.get("confirmed_trading"),
-                "established": prospect.get("established"),
-            },
-            "source_checked_at": source_checked_at.isoformat() if hasattr(source_checked_at, "isoformat") else source_checked_at,
-            "findings": report_findings,
-            "methodology_note": (
-                "This report summarizes selected observations from public business information and "
-                "a technical review of the business website. It is a point-in-time review, not a "
-                "guarantee of search placement or business performance."
-            ),
-        }
+        snapshot = _json_safe(
+            {
+                "report_kind": "local_visibility_audit",
+                "report_version": 1,
+                "business": {
+                    "name": business_name,
+                    "location": location or None,
+                    "website_url": prospect.get("website_url"),
+                    "rating": prospect.get("rating"),
+                    "review_count": prospect.get("review_count"),
+                    "confirmed_trading": prospect.get("confirmed_trading"),
+                    "established": prospect.get("established"),
+                },
+                "source_checked_at": source_checked_at,
+                "findings": report_findings,
+                "methodology_note": (
+                    "This report summarizes selected observations from public business information and "
+                    "a technical review of the business website. It is a point-in-time review, not a "
+                    "guarantee of search placement or business performance."
+                ),
+            }
+        )
 
         title = f"Local Visibility Audit — {business_name}"
         return self.report_repository.create_report(
