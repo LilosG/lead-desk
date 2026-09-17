@@ -2,6 +2,7 @@ import json
 
 from app.integrations.openrouter import CLAIM_TOKEN
 from app.integrations.openrouter_constrained import ConstrainedOutreachClient
+from app.services.outreach_similarity import structural_similarity
 
 
 class FakeResponse:
@@ -78,6 +79,46 @@ def test_same_model_tuple_is_decorrelated_per_business(monkeypatch):
     assert len({copy.body for copy in outputs}) == len(outputs)
     assert all(copy.body.count(CLAIM_TOKEN) == 1 for copy in outputs)
     assert all(copy.model == "qwen/test" for copy in outputs)
+
+
+def test_mastercraft_and_sal_do_not_share_same_structure(monkeypatch):
+    def fake_post(url, *, headers, json, timeout):
+        return FakeResponse({
+            "choices": [{
+                "message": {
+                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":11}'
+                }
+            }]
+        })
+
+    monkeypatch.setattr("app.integrations.openrouter_constrained.requests.post", fake_post)
+
+    client = ConstrainedOutreachClient(api_key="test", model="qwen/test")
+    claim = "Verified application-owned claim"
+
+    mastercraft = client.generate_email(
+        business_name="MasterCraft Plumbers",
+        city=None,
+        vertical=None,
+        verified_claim=claim,
+    )
+    sal = client.generate_email(
+        business_name="Sal & Sons Electric Inc",
+        city=None,
+        vertical=None,
+        verified_claim=claim,
+    )
+
+    ratio = structural_similarity(
+        mastercraft.body,
+        candidate_business_name="MasterCraft Plumbers",
+        candidate_verified_claim=claim,
+        existing_body=sal.body,
+        existing_business_name="Sal & Sons Electric Inc",
+        existing_verified_claim=claim,
+    )
+
+    assert ratio < 0.82
 
 
 def test_invalid_model_payload_falls_back_to_application_owned_copy(monkeypatch):
