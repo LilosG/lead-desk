@@ -68,7 +68,12 @@ class Repo:
             "claim_signal": "template_builder",
             "verification_status": "verified",
             "verification_note": "old note",
+            "generation_model": "qwen/qwen3-30b-a3b-instruct-2507",
+            "generation_prompt_version": "outreach-v6",
+            "draft_generated_at": "2026-09-16T19:15:47Z",
             "gmail_draft_id": None,
+            "gmail_message_id": None,
+            "gmail_draft_created_at": None,
             "version": 7,
         }
         self.updated_changes = None
@@ -98,6 +103,35 @@ class Repo:
         assert expected_version == self.item["version"]
         self.updated_changes = changes
         updated = {**self.item, **changes, "version": expected_version + 1}
+        self.item = updated
+        return updated, False
+
+    def record_no_outreach_finding(
+        self,
+        item_id,
+        *,
+        expected_version,
+        claim_signal,
+        verification_status,
+        verification_note,
+    ):
+        assert expected_version == self.item["version"]
+        updated = {
+            **self.item,
+            "subject": None,
+            "body": None,
+            "claim_signal": claim_signal,
+            "verification_status": verification_status,
+            "verification_note": verification_note,
+            "status": "no_outreach_finding",
+            "generation_model": None,
+            "generation_prompt_version": None,
+            "draft_generated_at": None,
+            "gmail_draft_id": None,
+            "gmail_message_id": None,
+            "gmail_draft_created_at": None,
+            "version": expected_version + 1,
+        }
         self.item = updated
         return updated, False
 
@@ -133,8 +167,11 @@ def test_internal_only_finding_is_filtered_before_verification_and_not_drafted()
     assert result["verification_status"] == "not_required"
     assert result["claim_signal"] is None
     assert NO_CLIENT_FACING_FINDING in result["verification_note"]
-    assert repo.updated_changes["subject"] is None
-    assert repo.updated_changes["body"] is None
+    assert result["generation_model"] is None
+    assert result["generation_prompt_version"] is None
+    assert result["draft_generated_at"] is None
+    assert result["gmail_draft_id"] is None
+    assert result["gmail_message_id"] is None
 
 
 def test_internal_finding_cannot_shadow_later_approved_finding():
