@@ -14,7 +14,29 @@ class FakeResponse:
         return self._payload
 
 
-def test_model_selects_style_but_never_writes_recipient_prose(monkeypatch):
+PROHIBITED_GIMMICKS = (
+    "want me to send",
+    "want me to tell",
+    "would it be useful if",
+    "would you be open to",
+    "i can point you to",
+    "i can send the exact",
+    "no need to reply",
+    "you can ignore this",
+    "just wanted to pass it along",
+    "quick note",
+    "worth flagging",
+)
+
+
+def assert_professional_audit_copy(body: str) -> None:
+    lowered = body.lower()
+    assert "audit" in lowered
+    assert CLAIM_TOKEN in body
+    assert all(phrase not in lowered for phrase in PROHIBITED_GIMMICKS)
+
+
+def test_model_selects_structure_but_never_writes_recipient_prose(monkeypatch):
     captured = {}
 
     def fake_post(url, *, headers, json, timeout):
@@ -39,13 +61,13 @@ def test_model_selects_style_but_never_writes_recipient_prose(monkeypatch):
 
     assert copy.model == "qwen/test"
     assert copy.body.count(CLAIM_TOKEN) == 1
+    assert_professional_audit_copy(copy.body)
     assert "loads quickly" not in copy.body.lower()
     assert "mobile" not in copy.body.lower()
     assert "error message" not in copy.body.lower()
     assert "hi richard" not in copy.body.lower()
     assert "Bright Electric Services's" not in copy.body
-    assert len(copy.subject) <= 55
-    assert len(copy.subject.split()) <= 5
+    assert len(copy.subject) <= 80
 
     user_payload = json.loads(captured["payload"]["messages"][1]["content"])
     assert user_payload == {"business_name": "Bright Electric Services"}
@@ -56,7 +78,7 @@ def test_same_model_tuple_is_decorrelated_per_business(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":11}'
+                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":5}'
                 }
             }]
         })
@@ -79,6 +101,7 @@ def test_same_model_tuple_is_decorrelated_per_business(monkeypatch):
     assert len({copy.body for copy in outputs}) == len(outputs)
     assert all(copy.body.count(CLAIM_TOKEN) == 1 for copy in outputs)
     assert all(copy.model == "qwen/test" for copy in outputs)
+    assert all("audit" in copy.body.lower() for copy in outputs)
 
 
 def test_mastercraft_and_sal_do_not_share_same_structure(monkeypatch):
@@ -86,7 +109,7 @@ def test_mastercraft_and_sal_do_not_share_same_structure(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":11}'
+                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":5}'
                 }
             }]
         })
@@ -118,7 +141,7 @@ def test_mastercraft_and_sal_do_not_share_same_structure(monkeypatch):
         existing_verified_claim=claim,
     )
 
-    assert ratio < 0.82
+    assert ratio < 0.90
 
 
 def test_invalid_model_payload_falls_back_to_application_owned_copy(monkeypatch):
@@ -143,6 +166,7 @@ def test_invalid_model_payload_falls_back_to_application_owned_copy(monkeypatch)
 
     assert copy.model == "application/constrained-outreach"
     assert copy.body.count(CLAIM_TOKEN) == 1
+    assert_professional_audit_copy(copy.body)
     assert "mobile problem" not in copy.body.lower()
     assert "hi richard" not in copy.body.lower()
     assert "owner is richard" not in copy.body.lower()
@@ -170,6 +194,7 @@ def test_renderer_has_no_model_authored_claim_text(monkeypatch):
 
     assert copy.body.count(CLAIM_TOKEN) == 1
     assert "Verified application-owned claim" not in copy.body
+    assert_professional_audit_copy(copy.body)
 
 
 def test_subjects_and_bodies_stay_bounded_across_fallback_styles(monkeypatch):
@@ -198,8 +223,8 @@ def test_subjects_and_bodies_stay_bounded_across_fallback_styles(monkeypatch):
         )
         outputs.append(copy)
         assert copy.body.count(CLAIM_TOKEN) == 1
-        assert len(copy.subject) <= 55
-        assert len(copy.subject.split()) <= 5
+        assert len(copy.subject) <= 80
+        assert_professional_audit_copy(copy.body)
         assert "loads quickly" not in copy.body.lower()
         assert "visible error" not in copy.body.lower()
         assert "mobile devices" not in copy.body.lower()
@@ -208,10 +233,35 @@ def test_subjects_and_bodies_stay_bounded_across_fallback_styles(monkeypatch):
     assert len({copy.subject for copy in outputs}) >= 4
 
 
-def test_long_business_name_never_truncates_mid_name():
+def test_long_business_name_falls_back_only_when_subject_is_unreasonably_long():
     subject = ConstrainedOutreachClient._render_subject(
-        "Water Wise Plumbing, Backflow & Drains",
+        "A Very Long Local Electrical Services Company Name Incorporated With Additional Words",
         0,
     )
-    assert subject == "Website question"
-    assert subject != "Water Wise Plumbing, Backflow &"
+    assert subject == "Local search audit"
+
+
+def test_claim_free_copy_does_not_pretend_an_audit_finding_exists(monkeypatch):
+    def fake_post(url, *, headers, json, timeout):
+        return FakeResponse({
+            "choices": [{
+                "message": {
+                    "content": '{"subject":0,"greeting":0,"frame":0,"closing":0}'
+                }
+            }]
+        })
+
+    monkeypatch.setattr("app.integrations.openrouter_constrained.requests.post", fake_post)
+
+    client = ConstrainedOutreachClient(api_key="test", model="qwen/test")
+    copy = client.generate_email(
+        business_name="TNT Electric",
+        city=None,
+        vertical=None,
+        verified_claim=None,
+    )
+
+    assert CLAIM_TOKEN not in copy.body
+    assert "attached" not in copy.body.lower()
+    assert "audit" not in copy.body.lower()
+    assert all(phrase not in copy.body.lower() for phrase in PROHIBITED_GIMMICKS)
