@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from app.repositories.demo_sites import DemoSiteRepository
 from app.repositories.prospects import ProspectRepository
 from app.services.demo_site_renderer import palette_for, render_demo_site, template_options
+from app.services.demo_site_renderer_v3 import V3_TEMPLATE_OPTION, render_demo_site_v3
 
 
 class DemoSiteError(Exception):
@@ -46,6 +47,10 @@ def _display_type(value: str | None) -> str:
     return (value or "home service professional").replace("_", " ").title()
 
 
+def _template_options() -> list[dict[str, str]]:
+    return [dict(V3_TEMPLATE_OPTION), *template_options()]
+
+
 class DemoSiteService:
     def __init__(
         self,
@@ -66,7 +71,7 @@ class DemoSiteService:
         return {
             "place_id": place_id,
             "business_name": business_name,
-            "templates": template_options(),
+            "templates": _template_options(),
             "defaults": {
                 "headline": f"Local {primary_type.lower()} service for {city}",
                 "subheadline": (
@@ -97,7 +102,7 @@ class DemoSiteService:
         prospect = self.prospect_repository.get_prospect(place_id)
         if prospect is None:
             raise DemoSiteError("prospect not found")
-        if template_key not in {item["key"] for item in template_options()}:
+        if template_key not in {item["key"] for item in _template_options()}:
             raise DemoSiteError("unsupported demo template")
 
         primary_type_display = _display_type(prospect.get("primary_type"))
@@ -135,11 +140,18 @@ class DemoSiteService:
             "template_key": template_key,
             "palette": palette_for(prospect.get("primary_type")),
         }
-        html_document = render_demo_site(
-            source=source_snapshot,
-            content=content_snapshot,
-            brand=brand_snapshot,
-        )
+        if template_key == V3_TEMPLATE_OPTION["key"]:
+            html_document = render_demo_site_v3(
+                source=source_snapshot,
+                content=content_snapshot,
+                brand=brand_snapshot,
+            )
+        else:
+            html_document = render_demo_site(
+                source=source_snapshot,
+                content=content_snapshot,
+                brand=brand_snapshot,
+            )
         return self.demo_repository.create_demo(
             place_id=place_id,
             template_key=template_key,
