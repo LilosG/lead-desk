@@ -120,7 +120,7 @@ def render_audit_report_pdf(report: dict) -> bytes:
         ])
     if snapshot.get("source_checked_at"):
         summary_cells.append([
-            Paragraph("Audit source checked", label),
+            Paragraph("Evidence checked", label),
             Paragraph(_text(snapshot.get("source_checked_at")), small),
         ])
 
@@ -141,10 +141,9 @@ def render_audit_report_pdf(report: dict) -> bytes:
 
     story.append(Paragraph("Executive summary", h2))
     intro = (
-        f"We reviewed public business information and the website for {_text(business.get('name'))}. "
-        f"This report highlights {len(findings)} selected, client-facing observations that are "
-        "specific enough to verify and useful enough to review without exposing internal scoring, "
-        "automation logic, or proprietary qualification criteria."
+        f"We reviewed the public business information and website signals currently available for "
+        f"{_text(business.get('name'))}. This report highlights {len(findings)} selected observations "
+        "that are specific to the business and useful to review as part of its local search presence."
     )
     story.append(Paragraph(intro, body))
     story.append(Spacer(1, 8))
