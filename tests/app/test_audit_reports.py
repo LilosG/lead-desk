@@ -198,7 +198,7 @@ def test_unreportable_signal_is_rejected():
         raise AssertionError("unreportable signal should be rejected")
 
 
-def test_pdf_renderer_produces_substantial_valid_pdf_without_internal_scoring_language():
+def test_pdf_renderer_produces_two_page_outreach_report():
     service = AuditReportService(FakeProspectRepository(), FakeReportRepository())
     report = service.create_report(
         "place-1",
@@ -209,6 +209,8 @@ def test_pdf_renderer_produces_substantial_valid_pdf_without_internal_scoring_la
 
     assert pdf.startswith(b"%PDF-")
     assert len(pdf) > 5000
+    page_count = pdf.count(b"/Type /Page") - pdf.count(b"/Type /Pages")
+    assert page_count == 2
 
 
 def test_report_snapshot_is_detached_from_later_prospect_changes():
