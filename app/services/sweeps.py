@@ -43,12 +43,12 @@ class SweepService:
             )
 
         return {
-            "geo_label": market_config.GEO_LABEL,
-            "cities": list(market_config.TARGET_CITIES),
+            "geo_scope": "United States",
             "verticals": verticals,
             "custom_verticals_enabled": True,
             "custom_cities_enabled": True,
-            "grid_scope": "configured_market",
+            "city_selection_required": True,
+            "grid_enabled": False,
             "pricing": {
                 "text_search_per_1000": market_config.COST_PER_1K[
                     "text_search_enterprise"
@@ -68,7 +68,7 @@ class SweepService:
         self,
         *,
         verticals: list[str],
-        cities: list[str] | None,
+        cities: list[str],
         use_grid: bool,
         merge_results: bool,
         crawl_batch: int,
@@ -79,9 +79,12 @@ class SweepService:
                 "Sweep execution is currently disabled."
             )
 
-        if use_grid and cities is not None:
+        if not cities:
+            raise ValueError("select at least one U.S. city for the sweep")
+
+        if use_grid:
             raise ValueError(
-                "Grid search covers the configured market bounding box and cannot be combined with a city-specific sweep. Turn off grid search for selected cities."
+                "Grid search is disabled until city-specific geometry is supported. Use Google Places city selection instead."
             )
 
         ordered_verticals = self._ordered_verticals(verticals)
@@ -89,7 +92,7 @@ class SweepService:
         return self.repo.create_job(
             verticals=ordered_verticals,
             cities=cities,
-            use_grid=use_grid,
+            use_grid=False,
             merge_results=merge_results,
             crawl_batch=crawl_batch,
             psi_batch=psi_batch,
