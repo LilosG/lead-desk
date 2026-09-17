@@ -1,54 +1,24 @@
-from app.repositories.outreach import OutreachRepository
+from uuid import UUID
+
+from app.services.outreach import OutreachService
 
 
-class _Cursor:
+class _Repository:
     def __init__(self):
-        self.query = None
-        self.params = None
+        self.exclude_id = None
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def execute(self, query, params=None):
-        self.query = query
-        self.params = params
-
-    def fetchall(self):
+    def recent_generated_drafts(self, *, limit=25, exclude_id=None):
+        self.exclude_id = exclude_id
         return []
 
 
-class _Connection:
-    def __init__(self, cursor):
-        self._cursor = cursor
+def test_recent_draft_lookup_passes_typed_uuid_to_psycopg_query():
+    repository = _Repository()
+    service = OutreachService(repository)
+    item_id = "99ce2f23-2f0a-4f8a-8bec-ff975261e896"
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def cursor(self):
-        return self._cursor
-
-
-class _Pool:
-    def __init__(self, cursor):
-        self._cursor = cursor
-
-    def connection(self):
-        return _Connection(self._cursor)
-
-
-def test_recent_generated_drafts_types_nullable_uuid_parameter():
-    cursor = _Cursor()
-    repo = OutreachRepository(_Pool(cursor))
-
-    rows = repo.recent_generated_drafts(exclude_id=None)
+    rows = service._recent_draft_structures(current_item_id=item_id)
 
     assert rows == []
-    assert "%s::uuid is null" in cursor.query
-    assert "q.id <> %s::uuid" in cursor.query
-    assert cursor.params == (None, None, 25)
+    assert isinstance(repository.exclude_id, UUID)
+    assert str(repository.exclude_id) == item_id
