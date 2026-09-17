@@ -4,7 +4,7 @@ import AppLayout from '../layouts/AppLayout.astro';
 
 <AppLayout
   title="Outreach"
-  description="Human-reviewed outreach queue with suppression, verification, AI drafting, and Gmail draft-only delivery."
+  description="Human-reviewed outreach queue with verified drafting and Gmail draft-only delivery."
 >
   <div class="space-y-6">
     <section class="grid gap-4 md:grid-cols-4">
@@ -13,12 +13,12 @@ import AppLayout from '../layouts/AppLayout.astro';
         <div id="metric-candidates" class="mt-2 text-3xl font-semibold">—</div>
       </div>
       <div class="rounded-lg border border-[var(--line)] bg-white p-5">
-        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Queued</div>
-        <div id="metric-queued" class="mt-2 text-3xl font-semibold">—</div>
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">In review</div>
+        <div id="metric-review" class="mt-2 text-3xl font-semibold">—</div>
       </div>
       <div class="rounded-lg border border-[var(--line)] bg-white p-5">
-        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Draft ready</div>
-        <div id="metric-ready" class="mt-2 text-3xl font-semibold">—</div>
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Gmail drafts</div>
+        <div id="metric-gmail" class="mt-2 text-3xl font-semibold">—</div>
       </div>
       <div class="rounded-lg border border-[var(--line)] bg-white p-5">
         <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Contacted</div>
@@ -30,107 +30,96 @@ import AppLayout from '../layouts/AppLayout.astro';
       <span class="font-medium">Integrations</span>
       <span id="openrouter-status" class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[var(--muted)]">OpenRouter —</span>
       <span id="gmail-status" class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[var(--muted)]">Gmail —</span>
-      <span class="ml-auto text-[var(--muted)]">Draft-only. Lead Desk has no email send endpoint.</span>
+      <span class="ml-auto text-[var(--muted)]">Draft-only. Lead Desk has no email-send endpoint.</span>
     </section>
 
     <div id="outreach-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"></div>
 
-    <section class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
-      <div class="rounded-lg border border-[var(--line)] bg-white">
-        <div class="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
-          <div>
-            <div class="text-sm font-medium">Outreach candidates</div>
-            <div class="mt-1 text-xs text-[var(--muted)]">Established prospects with a reachable contact method.</div>
-          </div>
-          <button id="refresh-outreach" type="button" class="rounded-md border border-[var(--line)] px-3 py-2 text-xs font-medium">Refresh</button>
-        </div>
-        <div id="candidate-list" class="divide-y divide-[var(--line)]"></div>
-      </div>
-
+    <section class="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(440px,0.95fr)]">
       <div class="space-y-6">
+        <section class="rounded-lg border border-[var(--line)] bg-white">
+          <div class="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
+            <div>
+              <div class="text-sm font-medium">Outreach candidates</div>
+              <div class="mt-1 text-xs text-[var(--muted)]">Queue a qualified prospect for human-reviewed outreach.</div>
+            </div>
+            <button id="refresh-outreach" type="button" class="rounded-md border border-[var(--line)] px-3 py-2 text-xs font-medium">Refresh</button>
+          </div>
+          <div id="candidate-list" class="divide-y divide-[var(--line)]"></div>
+        </section>
+
         <section class="rounded-lg border border-[var(--line)] bg-white">
           <div class="border-b border-[var(--line)] px-5 py-4">
             <div class="text-sm font-medium">Active queue</div>
-            <div class="mt-1 text-xs text-[var(--muted)]">Generate, verify, review, then create a Gmail draft. Nothing is sent automatically.</div>
+            <div class="mt-1 text-xs text-[var(--muted)]">Generate, review, then create the Gmail draft. No manual status workflow is required.</div>
           </div>
           <div id="queue-list" class="divide-y divide-[var(--line)]"></div>
         </section>
-
-        <section id="editor-card" class="hidden rounded-lg border border-[var(--line)] bg-white p-5">
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <div id="editor-title" class="text-sm font-medium">Draft review</div>
-              <div id="editor-name" class="mt-1 text-xs text-[var(--muted)]"></div>
-            </div>
-            <span id="editor-channel" class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase"></span>
-          </div>
-
-          <div class="mt-4 grid gap-2 sm:grid-cols-2">
-            <button id="generate-draft" type="button" class="rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">
-              Generate verified draft
-            </button>
-            <button id="create-gmail-draft" type="button" class="rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">
-              Create Gmail draft
-            </button>
-          </div>
-          <p id="draft-action-note" class="mt-2 text-xs leading-5 text-[var(--muted)]"></p>
-
-          <form id="outreach-editor" class="mt-5 space-y-4">
-            <input id="editor-id" type="hidden" />
-            <input id="editor-version" type="hidden" />
-
-            <div>
-              <label for="editor-to" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">To</label>
-              <input id="editor-to" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
-            </div>
-
-            <div>
-              <label for="editor-subject" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Subject</label>
-              <input id="editor-subject" maxlength="300" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
-            </div>
-
-            <div>
-              <label for="editor-body" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Draft</label>
-              <textarea id="editor-body" rows="12" maxlength="20000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
-            </div>
-
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label for="editor-verification" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Claim verification</label>
-                <select id="editor-verification" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
-                  <option value="pending">Pending</option>
-                  <option value="verified">Verified</option>
-                  <option value="failed">Failed</option>
-                  <option value="not_required">Not required</option>
-                </select>
-              </div>
-              <div>
-                <label for="editor-status" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Status</label>
-                <select id="editor-status" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
-                  <option value="queued">Queued</option>
-                  <option value="researching">Researching</option>
-                  <option value="review_required">Review required</option>
-                  <option value="no_outreach_finding">No outreach finding</option>
-                  <option value="draft_ready">Draft ready</option>
-                  <option value="approved">Approved</option>
-                  <option value="contacted">Contacted</option>
-                  <option value="replied">Replied</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label for="editor-verification-note" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Verification note</label>
-              <textarea id="editor-verification-note" rows="3" maxlength="2000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
-            </div>
-
-            <div id="editor-meta" class="rounded-md bg-[var(--surface-muted)] px-3 py-2 text-xs leading-5 text-[var(--muted)]"></div>
-            <div id="editor-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
-            <button type="submit" class="w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white">Save review state</button>
-          </form>
-        </section>
       </div>
+
+      <section id="editor-card" class="hidden rounded-lg border border-[var(--line)] bg-white p-5">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-sm font-medium">Draft review</div>
+            <div id="editor-name" class="mt-1 text-xs text-[var(--muted)]"></div>
+          </div>
+          <span id="editor-channel" class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase"></span>
+        </div>
+
+        <div class="mt-4 grid gap-2 sm:grid-cols-2">
+          <button id="generate-draft" type="button" class="rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">
+            Generate draft
+          </button>
+          <button id="gmail-action" type="button" class="rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">
+            Save review & create Gmail draft
+          </button>
+        </div>
+        <p id="draft-action-note" class="mt-2 text-xs leading-5 text-[var(--muted)]"></p>
+
+        <div class="mt-5 space-y-4">
+          <input id="editor-id" type="hidden" />
+          <input id="editor-version" type="hidden" />
+
+          <div>
+            <label for="editor-to" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">To</label>
+            <input id="editor-to" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label for="editor-subject" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Subject</label>
+            <input id="editor-subject" maxlength="300" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label for="editor-body" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Draft</label>
+            <textarea id="editor-body" rows="14" maxlength="20000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="rounded-md border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-3">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">Verification</div>
+              <div id="editor-verification" class="mt-1 text-sm font-medium"></div>
+            </div>
+            <div class="rounded-md border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-3">
+              <div class="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">Workflow</div>
+              <div id="editor-status" class="mt-1 text-sm font-medium"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="mb-1.5 text-xs font-medium text-[var(--muted)]">Verification note</div>
+            <div id="editor-verification-note" class="min-h-16 rounded-md border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2 text-sm leading-6 text-[var(--muted)]"></div>
+          </div>
+
+          <div id="editor-meta" class="rounded-md bg-[var(--surface-muted)] px-3 py-2 text-xs leading-5 text-[var(--muted)]"></div>
+          <div id="editor-success" class="hidden rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"></div>
+          <div id="editor-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
+
+          <button id="save-edits" type="button" class="w-full rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">
+            Save edits
+          </button>
+        </div>
+      </section>
     </section>
   </div>
 
@@ -155,24 +144,17 @@ import AppLayout from '../layouts/AppLayout.astro';
       place_id: string;
       name: string | null;
       city: string | null;
-      total_score: number | null;
-      tier: string | null;
       channel: 'email' | 'phone' | 'form';
       status: string;
       to_address: string | null;
       subject: string | null;
       body: string | null;
-      claim_signal: string | null;
       verification_status: string;
       verification_note: string | null;
       generation_model: string | null;
-      generation_prompt_version: string | null;
       draft_generated_at: string | null;
       gmail_draft_id: string | null;
-      gmail_message_id: string | null;
       gmail_draft_created_at: string | null;
-      suppressed: boolean;
-      needs_manual_check: boolean;
       version: number;
     };
 
@@ -181,6 +163,8 @@ import AppLayout from '../layouts/AppLayout.astro';
       openrouter_model: string | null;
       gmail_configured: boolean;
       gmail_sender_email: string | null;
+      gmail_account_email?: string | null;
+      gmail_connection_mode?: string | null;
       send_enabled: boolean;
     };
 
@@ -190,6 +174,8 @@ import AppLayout from '../layouts/AppLayout.astro';
       openrouter_model: null,
       gmail_configured: false,
       gmail_sender_email: null,
+      gmail_account_email: null,
+      gmail_connection_mode: null,
       send_enabled: false,
     };
 
@@ -203,16 +189,40 @@ import AppLayout from '../layouts/AppLayout.astro';
       .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
-    const statusLabel = (status: string): string => status.replaceAll('_', ' ');
+    const label = (value: string): string => value.replaceAll('_', ' ');
 
     async function api(path: string, init?: RequestInit) {
       const response = await fetch(path, {
         ...init,
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(init?.headers || {}) },
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          ...(init?.headers || {}),
+        },
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
       return body;
+    }
+
+    function showPageError(error: unknown) {
+      const box = el('#outreach-error');
+      box.textContent = error instanceof Error ? error.message : 'Outreach request failed.';
+      box.classList.remove('hidden');
+    }
+
+    function showEditorError(error: unknown) {
+      const box = el('#editor-error');
+      box.textContent = error instanceof Error ? error.message : 'Outreach action failed.';
+      box.classList.remove('hidden');
+      el('#editor-success').classList.add('hidden');
+    }
+
+    function showEditorSuccess(text: string) {
+      const box = el('#editor-success');
+      box.textContent = text;
+      box.classList.remove('hidden');
+      el('#editor-error').classList.add('hidden');
     }
 
     function renderIntegrations(data: Integrations) {
@@ -220,8 +230,11 @@ import AppLayout from '../layouts/AppLayout.astro';
       el('#openrouter-status').textContent = data.openrouter_configured
         ? `OpenRouter · ${data.openrouter_model || 'configured'}`
         : 'OpenRouter · not configured';
+
+      const account = data.gmail_account_email || data.gmail_sender_email;
+      const mode = data.gmail_connection_mode === 'legacy_env' ? 'legacy credentials' : 'OAuth';
       el('#gmail-status').textContent = data.gmail_configured
-        ? `Gmail · ${data.gmail_sender_email || 'configured'}`
+        ? `Gmail · ${account || 'configured'} · ${mode}`
         : 'Gmail · not configured';
     }
 
@@ -230,7 +243,6 @@ import AppLayout from '../layouts/AppLayout.astro';
       el('#candidate-list').innerHTML = items.length ? items.map((item) => {
         const channel = item.email ? 'email' : item.phone ? 'phone' : null;
         const blocked = item.suppressed || item.already_queued || !channel;
-        const warning = item.needs_manual_check ? '<span class="text-amber-700">manual check</span>' : '';
         return `
           <div class="p-5">
             <div class="flex items-start justify-between gap-4">
@@ -238,7 +250,7 @@ import AppLayout from '../layouts/AppLayout.astro';
                 <a href="/prospects/${encodeURIComponent(item.place_id)}" class="font-medium hover:underline">${esc(item.name)}</a>
                 <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.city)} · ${esc(item.vertical)} · Tier ${esc(item.tier)} · Score ${esc(item.total_score)}</div>
                 <div class="mt-2 text-sm leading-5">${esc(item.headline_gap)}</div>
-                <div class="mt-2 flex gap-3 text-xs text-[var(--muted)]"><span>${esc(item.email || item.phone || 'No contact')}</span>${warning}</div>
+                <div class="mt-2 text-xs text-[var(--muted)]">${esc(item.email || item.phone || 'No contact')}</div>
               </div>
               <button
                 type="button"
@@ -259,11 +271,12 @@ import AppLayout from '../layouts/AppLayout.astro';
           button.disabled = true;
           try {
             await api(`/api/outreach/${encodeURIComponent(placeId)}`, {
-              method: 'POST', body: JSON.stringify({ channel }),
+              method: 'POST',
+              body: JSON.stringify({ channel }),
             });
             await loadAll();
           } catch (error) {
-            showError(error);
+            showPageError(error);
             button.disabled = false;
           }
         });
@@ -272,18 +285,18 @@ import AppLayout from '../layouts/AppLayout.astro';
 
     function renderQueue(items: QueueItem[]) {
       queueItems = items;
-      el('#metric-queued').textContent = String(items.filter((i) => ['queued', 'researching', 'review_required'].includes(i.status)).length);
-      el('#metric-ready').textContent = String(items.filter((i) => i.status === 'draft_ready' || i.status === 'approved').length);
-      el('#metric-contacted').textContent = String(items.filter((i) => i.status === 'contacted' || i.status === 'replied').length);
+      el('#metric-review').textContent = String(items.filter((item) => ['queued', 'researching', 'review_required', 'draft_ready'].includes(item.status)).length);
+      el('#metric-gmail').textContent = String(items.filter((item) => Boolean(item.gmail_draft_id)).length);
+      el('#metric-contacted').textContent = String(items.filter((item) => ['contacted', 'replied'].includes(item.status)).length);
+
       el('#queue-list').innerHTML = items.length ? items.map((item) => `
         <button type="button" data-edit-id="${esc(item.id)}" class="block w-full p-5 text-left hover:bg-[var(--surface-muted)]">
           <div class="flex items-center justify-between gap-3">
             <div class="font-medium">${esc(item.name)}</div>
-            <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase">${esc(statusLabel(item.status))}</span>
+            <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase">${esc(label(item.status))}</span>
           </div>
-          <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.channel)} · ${esc(item.to_address)} · verification ${esc(item.verification_status)}</div>
-          ${item.status === 'no_outreach_finding' ? '<div class="mt-1 text-xs font-medium text-amber-700">No approved client-facing finding after live verification</div>' : ''}
-          ${item.gmail_draft_id ? '<div class="mt-1 text-xs font-medium text-emerald-700">Gmail draft created</div>' : ''}
+          <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.channel)} · ${esc(item.to_address)} · ${esc(label(item.verification_status))}</div>
+          ${item.gmail_draft_id ? '<div class="mt-1 text-xs font-medium text-emerald-700">Gmail draft recorded — click to verify it still exists</div>' : ''}
         </button>`).join('') : '<div class="p-5 text-sm text-[var(--muted)]">Queue is empty.</div>';
 
       document.querySelectorAll<HTMLButtonElement>('[data-edit-id]').forEach((button) => {
@@ -294,9 +307,8 @@ import AppLayout from '../layouts/AppLayout.astro';
     function openEditor(id: string) {
       const item = queueItems.find((entry) => entry.id === id);
       if (!item) return;
-      const noFinding = item.status === 'no_outreach_finding';
+
       el('#editor-card').classList.remove('hidden');
-      el('#editor-title').textContent = noFinding ? 'Outreach verification' : 'Draft review';
       el('#editor-name').textContent = [item.name, item.city].filter(Boolean).join(' · ');
       el('#editor-channel').textContent = item.channel;
       el<HTMLInputElement>('#editor-id').value = item.id;
@@ -304,57 +316,47 @@ import AppLayout from '../layouts/AppLayout.astro';
       el<HTMLInputElement>('#editor-to').value = item.to_address || '';
       el<HTMLInputElement>('#editor-subject').value = item.subject || '';
       el<HTMLTextAreaElement>('#editor-body').value = item.body || '';
-      el<HTMLSelectElement>('#editor-verification').value = item.verification_status;
-      el<HTMLSelectElement>('#editor-status').value = item.status;
-      el<HTMLTextAreaElement>('#editor-verification-note').value = item.verification_note || '';
+      el('#editor-verification').textContent = label(item.verification_status);
+      el('#editor-status').textContent = label(item.status);
+      el('#editor-verification-note').textContent = item.verification_note || 'No verification note yet.';
       el('#editor-error').classList.add('hidden');
+      el('#editor-success').classList.add('hidden');
 
       const generated = item.draft_generated_at
         ? `Generated ${new Date(item.draft_generated_at).toLocaleString()}${item.generation_model ? ` · ${item.generation_model}` : ''}`
-        : 'No AI draft generated.';
+        : 'No draft generated yet.';
       const gmail = item.gmail_draft_created_at
-        ? `Gmail draft created ${new Date(item.gmail_draft_created_at).toLocaleString()}`
-        : 'No Gmail draft created.';
+        ? `Lead Desk recorded Gmail draft creation ${new Date(item.gmail_draft_created_at).toLocaleString()}`
+        : 'No Gmail draft recorded.';
       el('#editor-meta').textContent = `${generated} · ${gmail}`;
 
-      const generateButton = el<HTMLButtonElement>('#generate-draft');
-      generateButton.textContent = noFinding ? 'Re-check for outreach finding' : 'Generate verified draft';
-      generateButton.disabled = !integrations.openrouter_configured || item.channel !== 'email' || Boolean(item.gmail_draft_id);
+      const locked = Boolean(item.gmail_draft_id);
+      el<HTMLInputElement>('#editor-to').disabled = locked;
+      el<HTMLInputElement>('#editor-subject').disabled = locked;
+      el<HTMLTextAreaElement>('#editor-body').disabled = locked;
+      el<HTMLButtonElement>('#save-edits').disabled = locked || !item.subject || !item.body;
 
-      const gmailButton = el<HTMLButtonElement>('#create-gmail-draft');
+      const generateButton = el<HTMLButtonElement>('#generate-draft');
+      generateButton.textContent = item.draft_generated_at ? 'Regenerate draft' : 'Generate draft';
+      generateButton.disabled = !integrations.openrouter_configured || item.channel !== 'email' || locked;
+
+      const gmailButton = el<HTMLButtonElement>('#gmail-action');
+      gmailButton.textContent = locked ? 'Verify Gmail draft' : 'Save review & create Gmail draft';
+      const verificationReady = ['verified', 'not_required'].includes(item.verification_status);
       gmailButton.disabled = !integrations.gmail_configured
         || item.channel !== 'email'
-        || Boolean(item.gmail_draft_id)
-        || !['draft_ready', 'approved'].includes(item.status)
-        || !['verified', 'not_required'].includes(item.verification_status)
+        || !item.to_address
         || !item.subject
-        || !item.body;
+        || !item.body
+        || (!locked && !verificationReady);
 
-      el('#draft-action-note').textContent = item.gmail_draft_id
-        ? 'A Gmail draft already exists. Content is locked here to prevent divergence from Gmail.'
-        : item.channel !== 'email'
-          ? 'AI generation and Gmail draft creation are email-only. Phone leads remain in the call queue.'
-          : noFinding
-            ? 'Live verification found no approved client-facing issue to use in cold outreach. No email was generated. Re-check later if the prospect site changes.'
-            : 'Generate uses a conservative live claim verifier. Review the result, save it as Draft ready, then create the Gmail draft.';
+      el('#draft-action-note').textContent = locked
+        ? 'Lead Desk has a Gmail draft ID recorded. Verify it against Gmail now; if Gmail no longer has it, Lead Desk will clear the stale lock so you can regenerate or create a new draft.'
+        : item.draft_generated_at
+          ? 'Review or edit the recipient, subject, and body. One click saves the reviewed copy, marks it ready, and creates the Gmail draft. Nothing is sent.'
+          : 'Generate the draft first. Verification is handled by Lead Desk; you do not need to set workflow or verification dropdowns.';
 
-      const gmailLocked = Boolean(item.gmail_draft_id);
-      el<HTMLInputElement>('#editor-to').disabled = gmailLocked;
-      el<HTMLInputElement>('#editor-subject').disabled = gmailLocked || noFinding;
-      el<HTMLTextAreaElement>('#editor-body').disabled = gmailLocked || noFinding;
       el('#editor-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    function editorError(error: unknown) {
-      const box = el('#editor-error');
-      box.textContent = error instanceof Error ? error.message : 'Outreach action failed.';
-      box.classList.remove('hidden');
-    }
-
-    function showError(error: unknown) {
-      const box = el('#outreach-error');
-      box.textContent = error instanceof Error ? error.message : 'Outreach request failed.';
-      box.classList.remove('hidden');
     }
 
     async function loadAll() {
@@ -369,14 +371,13 @@ import AppLayout from '../layouts/AppLayout.astro';
       renderQueue(queue.items as QueueItem[]);
     }
 
-    el('#refresh-outreach').addEventListener('click', () => loadAll().catch(showError));
+    el('#refresh-outreach').addEventListener('click', () => loadAll().catch(showPageError));
 
     el<HTMLButtonElement>('#generate-draft').addEventListener('click', async () => {
       const itemId = el<HTMLInputElement>('#editor-id').value;
       const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
       const button = el<HTMLButtonElement>('#generate-draft');
       button.disabled = true;
-      el('#editor-error').classList.add('hidden');
       try {
         await api(`/api/outreach/items/${encodeURIComponent(itemId)}/generate`, {
           method: 'POST',
@@ -385,32 +386,12 @@ import AppLayout from '../layouts/AppLayout.astro';
         await loadAll();
         openEditor(itemId);
       } catch (error) {
-        editorError(error);
+        showEditorError(error);
         button.disabled = false;
       }
     });
 
-    el<HTMLButtonElement>('#create-gmail-draft').addEventListener('click', async () => {
-      const itemId = el<HTMLInputElement>('#editor-id').value;
-      const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
-      const button = el<HTMLButtonElement>('#create-gmail-draft');
-      button.disabled = true;
-      el('#editor-error').classList.add('hidden');
-      try {
-        await api(`/api/outreach/items/${encodeURIComponent(itemId)}/gmail-draft`, {
-          method: 'POST',
-          body: JSON.stringify({ expected_version: expectedVersion }),
-        });
-        await loadAll();
-        openEditor(itemId);
-      } catch (error) {
-        editorError(error);
-        button.disabled = false;
-      }
-    });
-
-    el<HTMLFormElement>('#outreach-editor').addEventListener('submit', async (event) => {
-      event.preventDefault();
+    el<HTMLButtonElement>('#save-edits').addEventListener('click', async () => {
       const itemId = el<HTMLInputElement>('#editor-id').value;
       const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
       try {
@@ -418,21 +399,46 @@ import AppLayout from '../layouts/AppLayout.astro';
           method: 'PATCH',
           body: JSON.stringify({
             expected_version: expectedVersion,
-            to_address: el<HTMLInputElement>('#editor-to').value || null,
-            subject: el<HTMLInputElement>('#editor-subject').value || null,
-            body: el<HTMLTextAreaElement>('#editor-body').value || null,
-            verification_status: el<HTMLSelectElement>('#editor-verification').value,
-            verification_note: el<HTMLTextAreaElement>('#editor-verification-note').value || null,
-            status: el<HTMLSelectElement>('#editor-status').value,
+            to_address: el<HTMLInputElement>('#editor-to').value,
+            subject: el<HTMLInputElement>('#editor-subject').value,
+            body: el<HTMLTextAreaElement>('#editor-body').value,
           }),
         });
         await loadAll();
         openEditor(itemId);
+        showEditorSuccess('Edits saved.');
       } catch (error) {
-        editorError(error);
+        showEditorError(error);
       }
     });
 
-    loadAll().catch(showError);
+    el<HTMLButtonElement>('#gmail-action').addEventListener('click', async () => {
+      const itemId = el<HTMLInputElement>('#editor-id').value;
+      const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
+      const button = el<HTMLButtonElement>('#gmail-action');
+      button.disabled = true;
+      try {
+        const result = await api(`/api/outreach/items/${encodeURIComponent(itemId)}/review-gmail-draft`, {
+          method: 'POST',
+          body: JSON.stringify({
+            expected_version: expectedVersion,
+            to_address: el<HTMLInputElement>('#editor-to').value,
+            subject: el<HTMLInputElement>('#editor-subject').value,
+            body: el<HTMLTextAreaElement>('#editor-body').value,
+          }),
+        });
+        await loadAll();
+        openEditor(itemId);
+        showEditorSuccess(result.gmail_draft_id
+          ? `Gmail confirmed draft ${result.gmail_draft_id} in the configured account.`
+          : 'Gmail draft state refreshed.');
+      } catch (error) {
+        await loadAll().catch(() => undefined);
+        openEditor(itemId);
+        showEditorError(error);
+      }
+    });
+
+    loadAll().catch(showPageError);
   </script>
 </AppLayout>
