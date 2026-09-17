@@ -32,6 +32,22 @@ class FakeGenerator:
         )
 
 
+class SequenceGenerator:
+    def __init__(self, bodies):
+        self.bodies = list(bodies)
+        self.calls = 0
+
+    def generate_email(self, **kwargs):
+        index = min(self.calls, len(self.bodies) - 1)
+        body = self.bodies[index]
+        self.calls += 1
+        return GeneratedCopy(
+            subject="Example Electric",
+            body=body,
+            model="test/model",
+        )
+
+
 class CapturingGenerator(FakeGenerator):
     def __init__(self):
         self.verified_claim = None
@@ -104,6 +120,8 @@ class FakeRepository:
         self.generated = None
         self.gmail = None
         self.operation = None
+        self.recent_drafts = []
+        self.recent_query = None
         self.item = {
             "id": "11111111-1111-1111-1111-111111111111",
             "place_id": "place-1",
@@ -134,8 +152,12 @@ class FakeRepository:
     def is_suppressed(self, email):
         return False
 
-    def list_items(self, status=None):
-        return [], 0
+    def recent_generated_drafts(self, *, limit=25, exclude_id=None):
+        self.recent_query = {
+            "limit": limit,
+            "exclude_id": exclude_id,
+        }
+        return list(self.recent_drafts)
 
     def record_generated_draft(self, item_id, **kwargs):
         self.generated = kwargs
@@ -308,6 +330,142 @@ def test_copy_validator_requires_verified_finding_slot_exactly_once():
         pass
     else:
         raise AssertionError("verified copy must preserve the finding slot")
+
+
+def test_generation_uses_dedicated_recent_draft_query():
+    repo = FakeRepository()
+    repo.recent_drafts = [
+        {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "name": "Prior Electric",
+            "body": (
+                "Hello,\n\n"
+                "The homepage isn't currently using structured business markup "
+                "to identify the company to Google.\n\n"
+                "If you already know about it, no need to reply."
+            ),
+            "claim_signal": "no_localbusiness_schema",
+            "verification_note": "verified",
+        }
+    ]
+
+    service = OutreachService(
+        repo,
+        generator=FakeGenerator(),
+        verifier=FakeVerifier(),
+        generation_model="test/model",
+    )
+
+    service.generate_draft(
+        repo.item["id"],
+        expected_version=1,
+    )
+
+    assert repo.recent_query == {
+        "limit": 25,
+        "exclude_id": repo.item["id"],
+    }
+
+
+def test_generation_rejects_three_similar_attempts_without_persisting():
+    repo = FakeRepository()
+    repo.recent_drafts = [
+        {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "name": "Prior Electric",
+            "body": (
+                "Hi,\n\n"
+                "The homepage isn't currently using structured business markup "
+                "to identify the company to Google.\n\n"
+                "That is all I wanted to pass along."
+            ),
+            "claim_signal": "no_localbusiness_schema",
+            "verification_note": "verified",
+        }
+    ]
+
+    generator = SequenceGenerator(
+        [
+            "Hi,\n\n"
+            f"{CLAIM_TOKEN}\n\n"
+            "That is all I wanted to pass along."
+        ]
+    )
+
+    service = OutreachService(
+        repo,
+        generator=generator,
+        verifier=FakeVerifier(),
+        generation_model="test/model",
+    )
+
+    try:
+        service.generate_draft(
+            repo.item["id"],
+            expected_version=1,
+        )
+    except OutreachIntegrationUnavailable as exc:
+        assert "after 3 attempts" in str(exc)
+        assert "no draft was saved" in str(exc)
+    else:
+        raise AssertionError("expected similarity retry exhaustion")
+
+    assert generator.calls == 3
+    assert repo.generated is None
+
+
+def test_generation_persists_third_attempt_when_first_two_are_similar():
+    repo = FakeRepository()
+    repo.recent_drafts = [
+        {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "name": "Prior Electric",
+            "body": (
+                "Hi,\n\n"
+                "The homepage isn't currently using structured business markup "
+                "to identify the company to Google.\n\n"
+                "That is all I wanted to pass along."
+            ),
+            "claim_signal": "no_localbusiness_schema",
+            "verification_note": "verified",
+        }
+    ]
+
+    similar = (
+        "Hi,\n\n"
+        f"{CLAIM_TOKEN}\n\n"
+        "That is all I wanted to pass along."
+    )
+    distinct = (
+        "Here is the one website detail I found for Example Electric:\n\n"
+        f"{CLAIM_TOKEN}\n\n"
+        "I can point you to the exact spot if useful."
+    )
+
+    generator = SequenceGenerator(
+        [
+            similar,
+            similar,
+            distinct,
+        ]
+    )
+
+    service = OutreachService(
+        repo,
+        generator=generator,
+        verifier=FakeVerifier(),
+        generation_model="test/model",
+    )
+
+    result = service.generate_draft(
+        repo.item["id"],
+        expected_version=1,
+    )
+
+    assert generator.calls == 3
+    assert result["status"] == "review_required"
+    assert repo.generated is not None
+    assert "exact spot if useful" in repo.generated["body"]
 
 
 def test_generation_blocks_when_gmail_draft_already_exists():
