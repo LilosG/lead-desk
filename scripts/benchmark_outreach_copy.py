@@ -10,7 +10,10 @@ from app.integrations.openrouter import CLAIM_TOKEN
 from app.integrations.openrouter_constrained import ConstrainedOutreachClient
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
 from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
-from app.services.outreach_similarity import structural_similarity
+from app.services.outreach_similarity import (
+    DEFAULT_SIMILARITY_THRESHOLD,
+    structural_similarity,
+)
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
@@ -209,7 +212,7 @@ def main() -> None:
 
     pairs.sort(reverse=True)
     for ratio, first, second in pairs[:15]:
-        marker = "BLOCK" if ratio >= 0.82 else "PASS "
+        marker = "BLOCK" if ratio >= DEFAULT_SIMILARITY_THRESHOLD else "PASS "
         print(f"{marker} {ratio:.3f}  {first} <-> {second}")
 
     print()
@@ -239,7 +242,10 @@ def main() -> None:
     print(f"Generated: {len(results)}/{TARGET_OUTPUTS}")
     if pairs:
         print(f"Highest similarity: {pairs[0][0]:.3f}")
-        print(f"Pairs >= 0.82: {sum(1 for ratio, _, _ in pairs if ratio >= 0.82)}")
+        print(
+            f"Pairs >= {DEFAULT_SIMILARITY_THRESHOLD:.2f}: "
+            f"{sum(1 for ratio, _, _ in pairs if ratio >= DEFAULT_SIMILARITY_THRESHOLD)}"
+        )
     print(f"Unique subjects: {len({item['subject'].lower() for item in results})}/{len(results)}")
     print(f"Unique bodies: {len({item['body'] for item in results})}/{len(results)}")
     print("DATABASE SESSION: READ ONLY")
