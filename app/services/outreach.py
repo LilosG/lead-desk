@@ -21,9 +21,6 @@ CAN_SPAM_FOOTER = (
     "San Diego, CA 92101\n\n"
     "If you'd rather I not reach out again, just reply and I'll make sure I don't."
 )
-NO_CLIENT_FACING_FINDING = (
-    "No approved client-facing finding is available for this prospect."
-)
 
 
 class OutreachConflict(RuntimeError):
@@ -250,39 +247,19 @@ class OutreachService:
         claim = self.verifier.verify(verification_context)
         technical_claim = client_facing_claim(claim.signal, claim.text)
 
-        if not technical_claim:
-            verification_note = claim.note.strip()
-            if verification_note:
-                verification_note = f"{verification_note} {NO_CLIENT_FACING_FINDING}"
-            else:
-                verification_note = NO_CLIENT_FACING_FINDING
-            try:
-                updated, conflict = self.repository.record_no_outreach_finding(
-                    item_id,
-                    expected_version=expected_version,
-                    claim_signal=claim.signal,
-                    verification_status=claim.status,
-                    verification_note=verification_note,
-                )
-            except OutreachOperationLocked as exc:
-                raise OutreachBlocked(str(exc)) from exc
-            if conflict:
-                raise OutreachConflict(
-                    "outreach item changed while verification was being recorded"
-                )
-            return updated
-
         business_name = context.get("name") or "your business"
-        evidence = None
-        if self.evidence_repository is not None:
-            evidence = RecipientEvidence.from_row(
-                self.evidence_repository.get(context["place_id"])
+        visible_claim: str | None = None
+        if technical_claim:
+            evidence = None
+            if self.evidence_repository is not None:
+                evidence = RecipientEvidence.from_row(
+                    self.evidence_repository.get(context["place_id"])
+                )
+            visible_claim = recipient_finding_block(
+                business_name=business_name,
+                technical_claim=technical_claim,
+                evidence=evidence,
             )
-        visible_claim = recipient_finding_block(
-            business_name=business_name,
-            technical_claim=technical_claim,
-            evidence=evidence,
-        )
 
         recent_drafts = self._recent_draft_structures(current_item_id=item_id)
         copy = None
@@ -302,11 +279,19 @@ class OutreachService:
                 raise OutreachIntegrationUnavailable(str(exc)) from exc
 
             note = candidate.body.strip()
-            if note.count(CLAIM_TOKEN) != 1:
-                raise OutreachIntegrationUnavailable(
-                    "generated outreach did not preserve the verified finding slot"
-                )
-            candidate_rendered = note.replace(CLAIM_TOKEN, visible_claim)
+            if visible_claim:
+                if note.count(CLAIM_TOKEN) != 1:
+                    raise OutreachIntegrationUnavailable(
+                        "generated outreach did not preserve the verified finding slot"
+                    )
+                candidate_rendered = note.replace(CLAIM_TOKEN, visible_claim)
+            else:
+                if CLAIM_TOKEN in note:
+                    raise OutreachIntegrationUnavailable(
+                        "generated claim-free outreach inserted an unsupported finding slot"
+                    )
+                candidate_rendered = note
+
             too_similar, ratio, matched_business = is_too_similar(
                 candidate_rendered,
                 candidate_business_name=business_name,
@@ -336,7 +321,7 @@ class OutreachService:
                 expected_version=expected_version,
                 subject=copy.subject,
                 body=body,
-                claim_signal=claim.signal,
+                claim_signal=claim.signal if technical_claim else None,
                 verification_status=claim.status,
                 verification_note=claim.note,
                 generation_model=copy.model,
