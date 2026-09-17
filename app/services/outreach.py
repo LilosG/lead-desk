@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
@@ -196,7 +196,7 @@ class OutreachService:
     ) -> list[tuple[str | None, str, str | None]]:
         items = self.repository.recent_generated_drafts(
             limit=25,
-            exclude_id=current_item_id,
+            exclude_id=UUID(current_item_id),
         )
         recent: list[tuple[str | None, str, str | None]] = []
         for item in items:

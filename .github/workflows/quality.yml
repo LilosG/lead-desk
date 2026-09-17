@@ -46,6 +46,7 @@ jobs:
             tests/app/test_outreach_constrained.py \
             tests/app/test_openrouter_structured.py \
             tests/app/test_outreach_blocked_generation.py \
+            tests/app/test_outreach_recent_drafts_query.py \
             tests/app/test_audit_reports.py \
             tests/app/test_demo_sites.py \
             tests/app/test_demo_sites_v3.py \
