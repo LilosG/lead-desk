@@ -60,12 +60,12 @@ def recipient_context_sentence(
         and evidence.review_count >= 10
     ):
         return (
-            f"Google shows {business_name} at {evidence.rating:.1f} stars "
-            f"across {evidence.review_count:,} reviews."
+            f"You already have a strong review profile at {evidence.rating:.1f} stars "
+            f"across {evidence.review_count:,} reviews"
         )
 
     if evidence.review_count >= 20:
-        return f"Google shows {evidence.review_count:,} reviews for {business_name}."
+        return f"You already have {evidence.review_count:,} Google reviews"
 
     return None
 
@@ -85,4 +85,4 @@ def recipient_finding_block(
     technical = technical_claim.strip()
     if technical:
         technical = technical[0].lower() + technical[1:]
-    return f"{context} On the website, though, {technical}"
+    return f"{context}, but {technical}"
