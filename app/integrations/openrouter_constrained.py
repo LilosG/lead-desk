@@ -221,25 +221,44 @@ class ConstrainedOutreachClient:
     def _fingerprint(business_name: str) -> bytes:
         return hashlib.sha256(business_name.strip().lower().encode("utf-8")).digest()
 
+    @staticmethod
+    def _pack_structure(choice: StyleChoice) -> int:
+        return (
+            (choice.greeting * len(_FRAMES) + choice.frame) * len(_CLOSINGS)
+            + choice.closing
+        )
+
+    @staticmethod
+    def _unpack_structure(slot: int, *, subject: int) -> StyleChoice:
+        closing = slot % len(_CLOSINGS)
+        slot //= len(_CLOSINGS)
+        frame = slot % len(_FRAMES)
+        slot //= len(_FRAMES)
+        greeting = slot % len(_GREETINGS)
+        return StyleChoice(
+            subject=subject,
+            greeting=greeting,
+            frame=frame,
+            closing=closing,
+        )
+
     @classmethod
     def _decorrelate(cls, choice: StyleChoice, business_name: str) -> StyleChoice:
         digest = cls._fingerprint(business_name)
-        return StyleChoice(
-            subject=(choice.subject + digest[0]) % len(_SUBJECTS),
-            greeting=(choice.greeting + digest[5]) % len(_GREETINGS),
-            frame=(choice.frame + int.from_bytes(digest[8:12], "big")) % len(_FRAMES),
-            closing=(choice.closing + int.from_bytes(digest[16:20], "big")) % len(_CLOSINGS),
-        )
+        structure_count = len(_GREETINGS) * len(_FRAMES) * len(_CLOSINGS)
+        model_slot = cls._pack_structure(choice)
+        business_offset = int.from_bytes(digest[8:16], "big") % structure_count
+        structure_slot = (model_slot + business_offset) % structure_count
+        subject = (choice.subject + digest[0]) % len(_SUBJECTS)
+        return cls._unpack_structure(structure_slot, subject=subject)
 
     @classmethod
     def _deterministic_choice(cls, business_name: str) -> StyleChoice:
         digest = cls._fingerprint(business_name)
-        return StyleChoice(
-            subject=digest[1] % len(_SUBJECTS),
-            greeting=digest[2] % len(_GREETINGS),
-            frame=int.from_bytes(digest[12:16], "big") % len(_FRAMES),
-            closing=int.from_bytes(digest[20:24], "big") % len(_CLOSINGS),
-        )
+        structure_count = len(_GREETINGS) * len(_FRAMES) * len(_CLOSINGS)
+        structure_slot = int.from_bytes(digest[8:16], "big") % structure_count
+        subject = digest[1] % len(_SUBJECTS)
+        return cls._unpack_structure(structure_slot, subject=subject)
 
     @staticmethod
     def _render_body(business_name: str, choice: StyleChoice) -> str:
