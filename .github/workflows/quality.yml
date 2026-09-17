@@ -55,6 +55,7 @@ jobs:
             tests/app/test_sweep_request_validation.py \
             tests/app/test_sweep_national_city_scope.py \
             tests/app/test_dynamic_sweep_cities.py \
+            tests/app/test_run_market_scope.py \
             tests/app/test_market_inventory_contract.py
 
       - name: Run deterministic pipeline regressions
