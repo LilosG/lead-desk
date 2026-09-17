@@ -9,6 +9,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.demo_sites import router as demo_sites_router
 from app.api.routes.integrations import router as integrations_router
 from app.api.routes.outreach import router as outreach_router
+from app.api.routes.outreach_draft_sync import router as outreach_draft_sync_router
 from app.api.routes.sweeps import router as sweeps_router
 from app.core.auth import session_from_request
 from app.core.config import get_settings
@@ -67,6 +68,7 @@ app.include_router(prospects.router, prefix="/api")
 app.include_router(runs.router, prefix="/api")
 app.include_router(sweeps_router)
 app.include_router(outreach_router)
+app.include_router(outreach_draft_sync_router)
 app.include_router(audit_reports_router)
 app.include_router(demo_sites_router)
 app.include_router(integrations_router)
