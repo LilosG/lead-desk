@@ -205,12 +205,11 @@ def _executive_summary(
         footprint = f"Google currently shows {int(review_count):,} reviews for {business_name}. "
 
     checked = len(coverage)
+    finding_count = len(findings)
     return (
-        f"{footprint}We reviewed the business's public profile context and core website signals, "
-        f"covering {checked} client-facing checks in this snapshot. "
-        f"The report below focuses on {len(findings)} selected finding"
-        f"{'s' if len(findings) != 1 else ''} that warrant attention or follow-up. "
-        "The goal is to make the observed issues easy to verify and prioritize without relying on hidden scores or speculative ranking claims."
+        f"{footprint}We reviewed the business's public profile and core website signals across "
+        f"{checked} checks. The review identified {finding_count} item"
+        f"{'s' if finding_count != 1 else ''} worth a closer look."
     )
 
 
@@ -331,8 +330,8 @@ class AuditReportService:
                 "audit_scope": coverage,
                 "findings": report_findings,
                 "methodology_note": (
-                    "This audit is a point-in-time review of public business information and technical website signals available to Lead Desk at the evidence date shown. "
-                    "Selected findings are presented as observable conditions and practical review items; the report does not expose internal scoring logic and does not guarantee search placement or business performance."
+                    "Point-in-time review of public business information and website signals as of the evidence date shown. "
+                    "Findings should be rechecked before implementation."
                 ),
             }
         )
