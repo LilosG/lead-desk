@@ -108,3 +108,44 @@ def test_materially_different_note_is_not_blocked():
     )
 
     assert ratio < DEFAULT_SIMILARITY_THRESHOLD
+
+
+def test_structural_similarity_is_order_independent():
+    sal_claim = (
+        "Google shows Sal & Sons Electric Inc at 5.0 stars across 365 reviews. "
+        "On the website, though, " + CLAIM[0].lower() + CLAIM[1:]
+    )
+    wehrly_claim = (
+        "Google shows Wehrly Electric at 5.0 stars across 220 reviews. "
+        "On the website, though, " + CLAIM[0].lower() + CLAIM[1:]
+    )
+    sal = (
+        "I had Sal & Sons Electric Inc open and wanted to pass this along.\n\n"
+        + sal_claim
+        + "\n\nNo need to respond if you already have it covered."
+    )
+    wehrly = (
+        "Hi,\n\nI had one thing from Wehrly Electric I wanted to send over.\n\n"
+        + wehrly_claim
+        + "\n\nNo need to respond if you already have it covered."
+    )
+
+    sal_to_wehrly = structural_similarity(
+        sal,
+        candidate_business_name="Sal & Sons Electric Inc",
+        candidate_verified_claim=sal_claim,
+        existing_body=wehrly,
+        existing_business_name="Wehrly Electric",
+        existing_verified_claim=wehrly_claim,
+    )
+    wehrly_to_sal = structural_similarity(
+        wehrly,
+        candidate_business_name="Wehrly Electric",
+        candidate_verified_claim=wehrly_claim,
+        existing_body=sal,
+        existing_business_name="Sal & Sons Electric Inc",
+        existing_verified_claim=sal_claim,
+    )
+
+    assert sal_to_wehrly == wehrly_to_sal
+    assert sal_to_wehrly >= DEFAULT_SIMILARITY_THRESHOLD
