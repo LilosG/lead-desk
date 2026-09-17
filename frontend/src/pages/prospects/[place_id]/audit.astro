@@ -63,17 +63,19 @@ const { place_id } = Astro.params;
       evidence: string | null;
     };
 
-    const root = document.querySelector<HTMLElement>('#audit-builder');
-    const optionsContainer = document.querySelector<HTMLElement>('#report-options');
-    const businessName = document.querySelector<HTMLElement>('#business-name');
-    const generateButton = document.querySelector<HTMLButtonElement>('#generate-report');
-    const errorBox = document.querySelector<HTMLElement>('#builder-error');
-    const successBox = document.querySelector<HTMLElement>('#builder-success');
-    const viewPdf = document.querySelector<HTMLAnchorElement>('#view-pdf');
+    const required = <T extends HTMLElement>(selector: string): T => {
+      const element = document.querySelector<T>(selector);
+      if (!element) throw new Error(`Missing required element: ${selector}`);
+      return element;
+    };
 
-    if (!root || !optionsContainer || !businessName || !generateButton || !errorBox || !successBox || !viewPdf) {
-      throw new Error('Audit builder failed to initialize');
-    }
+    const root = required<HTMLElement>('#audit-builder');
+    const optionsContainer = required<HTMLElement>('#report-options');
+    const businessName = required<HTMLElement>('#business-name');
+    const generateButton = required<HTMLButtonElement>('#generate-report');
+    const errorBox = required<HTMLElement>('#builder-error');
+    const successBox = required<HTMLElement>('#builder-success');
+    const viewPdf = required<HTMLAnchorElement>('#view-pdf');
 
     const placeId = root.dataset.placeId;
     if (!placeId) throw new Error('Missing prospect place ID');
