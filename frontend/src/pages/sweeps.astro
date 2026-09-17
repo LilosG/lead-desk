@@ -8,24 +8,22 @@ import AppLayout from "../layouts/AppLayout.astro";
       <p class="text-sm uppercase tracking-[0.18em] text-neutral-500">Lead Desk</p>
       <h1 class="mt-2 text-3xl font-semibold text-neutral-950">Market Sweeps</h1>
       <p class="mt-2 max-w-4xl text-sm leading-6 text-neutral-600">
-        Discover any local-business vertical in any U.S. city without replacing prior prospect coverage.
-        Preset cities and verticals are shortcuts; Google Places-backed city search supports markets outside the configured San Diego preset.
+        Discover local businesses in any U.S. city. Choose the business categories you want, add one or more cities through Google Places, and run the sweep against that explicit market scope.
       </p>
     </section>
 
     <section id="execution-warning" class="hidden rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
-      Sweep execution is currently disabled. Existing prospect inventory remains available,
-      but no new market refresh can start until execution is enabled.
+      Sweep execution is currently disabled. Existing prospect inventory remains available, but no new market refresh can start until execution is enabled.
     </section>
 
     <section class="grid gap-4 md:grid-cols-3">
       <div class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-wider text-neutral-500">Preset market</p>
-        <p id="market-label" class="mt-2 text-lg font-semibold text-neutral-950">Loading…</p>
+        <p class="text-xs uppercase tracking-wider text-neutral-500">Coverage</p>
+        <p class="mt-2 text-lg font-semibold text-neutral-950">United States</p>
       </div>
       <div class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <p class="text-xs uppercase tracking-wider text-neutral-500">Preset cities</p>
-        <p id="market-city-count" class="mt-2 text-lg font-semibold text-neutral-950">—</p>
+        <p class="text-xs uppercase tracking-wider text-neutral-500">City targeting</p>
+        <p class="mt-2 text-lg font-semibold text-neutral-950">Google Places</p>
       </div>
       <div class="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
         <p class="text-xs uppercase tracking-wider text-neutral-500">Preset verticals</p>
@@ -35,16 +33,11 @@ import AppLayout from "../layouts/AppLayout.astro";
 
     <div class="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
       <section class="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 class="text-lg font-semibold text-neutral-950">Sweep scope</h2>
-            <p class="mt-1 text-sm text-neutral-500">
-              Choose any preset or enter a custom vertical, then target preset cities or search for any U.S. city.
-            </p>
-          </div>
-          <button id="select-full-market" type="button" class="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-700 hover:border-neutral-500">
-            Select all presets + cities
-          </button>
+        <div>
+          <h2 class="text-lg font-semibold text-neutral-950">Sweep scope</h2>
+          <p class="mt-1 text-sm text-neutral-500">
+            Select any preset or custom business category, then add the U.S. cities you want to target.
+          </p>
         </div>
 
         <form id="sweep-form" class="mt-6 space-y-6">
@@ -58,70 +51,53 @@ import AppLayout from "../layouts/AppLayout.astro";
             <div class="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
               <label for="custom-verticals" class="block text-sm font-medium text-neutral-800">Custom verticals</label>
               <p class="mt-1 text-xs leading-5 text-neutral-500">
-                Enter any business category. Use commas or new lines for more than one. Each custom category uses its own phrase as the Google Places search term; it is not restricted to the presets above.
+                Enter any business category. Use commas or new lines for more than one. Each category becomes its own Google Places search term.
               </p>
               <textarea id="custom-verticals" rows="3" placeholder="dentist&#10;med spa&#10;personal injury attorney" class="mt-3 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm"></textarea>
             </div>
           </div>
 
           <div>
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <label class="text-sm font-medium text-neutral-800">Cities</label>
-                <p class="mt-1 text-xs text-neutral-500">Use the preset market, select preset cities, or search for any U.S. city.</p>
-              </div>
-              <label class="flex items-center gap-2 text-xs font-medium text-neutral-700">
-                <input id="all-cities" type="checkbox" checked />
-                All preset cities
-              </label>
+            <div>
+              <label class="text-sm font-medium text-neutral-800">Target cities</label>
+              <p class="mt-1 text-xs text-neutral-500">Add one or more U.S. cities. There is no default market and no preset service area.</p>
             </div>
 
             <div class="relative mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4">
-              <label for="city-search" class="block text-sm font-medium text-neutral-800">Search any U.S. city</label>
+              <label for="city-search" class="block text-sm font-medium text-neutral-800">Search U.S. cities</label>
               <p class="mt-1 text-xs leading-5 text-neutral-500">
-                Start typing a city and choose the Google Places result. Selecting a searched city switches the sweep to city-specific mode.
+                Start typing and choose a Google Places city result. Add as many cities as you want for this sweep.
               </p>
               <input id="city-search" type="search" autocomplete="off" placeholder="Austin, TX" class="mt-3 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm" />
               <div id="city-search-results" class="absolute left-4 right-4 z-20 mt-1 hidden overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg"></div>
-              <div id="custom-city-selections" class="mt-3 flex flex-wrap gap-2"></div>
+              <div id="city-selections" class="mt-3 flex flex-wrap gap-2"></div>
               <div class="mt-2 flex justify-end">
                 <img src="https://maps.gstatic.com/mapfiles/api-3/images/powered-by-google-on-white3.png" alt="Powered by Google" class="h-4 w-auto" loading="lazy" />
               </div>
             </div>
-
-            <div id="city-options" class="mt-3 hidden max-h-64 grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-neutral-200 p-3 sm:grid-cols-3 lg:grid-cols-4"></div>
           </div>
 
           <div class="rounded-xl bg-neutral-50 p-4">
             <div class="grid gap-4 sm:grid-cols-3">
               <div>
                 <p class="text-xs uppercase tracking-wider text-neutral-500">Scope</p>
-                <p id="scope-summary" class="mt-1 text-sm font-medium text-neutral-900">Loading…</p>
+                <p id="scope-summary" class="mt-1 text-sm font-medium text-neutral-900">0 verticals × 0 cities</p>
               </div>
               <div>
                 <p class="text-xs uppercase tracking-wider text-neutral-500">Base search requests</p>
-                <p id="base-query-count" class="mt-1 text-sm font-medium text-neutral-900">—</p>
+                <p id="base-query-count" class="mt-1 text-sm font-medium text-neutral-900">0</p>
               </div>
               <div>
                 <p class="text-xs uppercase tracking-wider text-neutral-500">Max with pagination</p>
-                <p id="max-query-count" class="mt-1 text-sm font-medium text-neutral-900">—</p>
+                <p id="max-query-count" class="mt-1 text-sm font-medium text-neutral-900">0</p>
               </div>
             </div>
           </div>
 
-          <div class="grid gap-4 sm:grid-cols-2">
-            <label class="flex items-center gap-3 rounded-lg border border-neutral-200 p-3">
-              <input id="merge" type="checkbox" checked />
-              <span class="text-sm text-neutral-700">Merge prior discovery coverage</span>
-            </label>
-            <label class="flex items-center gap-3 rounded-lg border border-neutral-200 p-3">
-              <input id="grid" type="checkbox" />
-              <span>
-                <span class="block text-sm text-neutral-700">Include grid search</span>
-                <span id="grid-note" class="block text-xs text-neutral-500">Configured preset market only</span>
-              </span>
-            </label>
-          </div>
+          <label class="flex items-center gap-3 rounded-lg border border-neutral-200 p-3">
+            <input id="merge" type="checkbox" checked />
+            <span class="text-sm text-neutral-700">Merge prior discovery coverage</span>
+          </label>
 
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
@@ -171,12 +147,8 @@ import AppLayout from "../layouts/AppLayout.astro";
     };
 
     type MarketConfig = {
-      geo_label: string;
-      cities: string[];
+      geo_scope: string;
       verticals: VerticalConfig[];
-      custom_verticals_enabled?: boolean;
-      custom_cities_enabled?: boolean;
-      grid_scope?: string;
       execution_enabled: boolean;
     };
 
@@ -214,22 +186,17 @@ import AppLayout from "../layouts/AppLayout.astro";
     const recentJobs = required<HTMLElement>("#recent-jobs");
     const message = required<HTMLElement>("#form-message");
     const refreshButton = required<HTMLButtonElement>("#refresh-button");
-    const selectFullMarket = required<HTMLButtonElement>("#select-full-market");
     const verticalOptions = required<HTMLElement>("#vertical-options");
     const customVerticalsInput = required<HTMLTextAreaElement>("#custom-verticals");
-    const cityOptions = required<HTMLElement>("#city-options");
-    const allCitiesInput = required<HTMLInputElement>("#all-cities");
     const citySearchInput = required<HTMLInputElement>("#city-search");
     const citySearchResults = required<HTMLElement>("#city-search-results");
-    const customCitySelections = required<HTMLElement>("#custom-city-selections");
-    const gridInput = required<HTMLInputElement>("#grid");
-    const gridNote = required<HTMLElement>("#grid-note");
+    const citySelections = required<HTMLElement>("#city-selections");
     const mergeInput = required<HTMLInputElement>("#merge");
     const crawlBatchInput = required<HTMLInputElement>("#crawl-batch");
     const psiBatchInput = required<HTMLInputElement>("#psi-batch");
 
     let marketConfig: MarketConfig | null = null;
-    let selectedCustomCities: string[] = [];
+    let selectedCities: string[] = [];
     let citySearchTimer: number | null = null;
     let citySearchController: AbortController | null = null;
 
@@ -263,45 +230,29 @@ import AppLayout from "../layouts/AppLayout.astro";
     const checkedVerticals = (): string[] =>
       Array.from(new Set([...presetVerticals(), ...customVerticals()]));
 
-    const checkedCities = (): string[] => {
-      const presets = Array.from(document.querySelectorAll<HTMLInputElement>('input[data-city]:checked'))
-        .map((input) => input.value);
-      return Array.from(new Set([...presets, ...selectedCustomCities]));
-    };
-
-    function renderCustomCities(): void {
-      customCitySelections.innerHTML = selectedCustomCities
+    function renderSelectedCities(): void {
+      citySelections.innerHTML = selectedCities
         .map((city) => `
           <span class="inline-flex items-center gap-2 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-800">
             ${escapeHtml(city)}
-            <button type="button" data-remove-custom-city="${escapeHtml(city)}" aria-label="Remove ${escapeHtml(city)}" class="text-neutral-400 hover:text-neutral-900">×</button>
+            <button type="button" data-remove-city="${escapeHtml(city)}" aria-label="Remove ${escapeHtml(city)}" class="text-neutral-400 hover:text-neutral-900">×</button>
           </span>
         `)
         .join("");
 
-      document.querySelectorAll<HTMLButtonElement>("[data-remove-custom-city]")
+      document.querySelectorAll<HTMLButtonElement>("[data-remove-city]")
         .forEach((button) => button.addEventListener("click", () => {
-          const city = button.dataset.removeCustomCity;
+          const city = button.dataset.removeCity;
           if (!city) return;
-          selectedCustomCities = selectedCustomCities.filter((item) => item !== city);
-          renderCustomCities();
+          selectedCities = selectedCities.filter((item) => item !== city);
+          renderSelectedCities();
           updateScopeSummary();
         }));
     }
 
-    function setCitySpecificMode(): void {
-      allCitiesInput.checked = false;
-      cityOptions.classList.remove("hidden");
-      cityOptions.classList.add("grid");
-      document.querySelectorAll<HTMLInputElement>('input[data-city]')
-        .forEach((input) => { input.checked = false; });
-      updateGridAvailability();
-    }
-
-    function selectCustomCity(label: string): void {
-      setCitySpecificMode();
-      if (!selectedCustomCities.includes(label)) selectedCustomCities.push(label);
-      renderCustomCities();
+    function selectCity(label: string): void {
+      if (!selectedCities.includes(label)) selectedCities.push(label);
+      renderSelectedCities();
       citySearchInput.value = "";
       citySearchResults.classList.add("hidden");
       citySearchResults.innerHTML = "";
@@ -327,7 +278,7 @@ import AppLayout from "../layouts/AppLayout.astro";
       document.querySelectorAll<HTMLButtonElement>("[data-city-suggestion]")
         .forEach((button) => button.addEventListener("click", () => {
           const label = button.dataset.citySuggestion;
-          if (label) selectCustomCity(label);
+          if (label) selectCity(label);
         }));
     }
 
@@ -348,18 +299,7 @@ import AppLayout from "../layouts/AppLayout.astro";
       }
     }
 
-    function updateGridAvailability(): void {
-      const citySpecific = !allCitiesInput.checked;
-      if (citySpecific) gridInput.checked = false;
-      gridInput.disabled = citySpecific;
-      gridNote.textContent = citySpecific
-        ? "Grid is disabled for city-specific sweeps"
-        : "Configured preset market only";
-    }
-
     function renderMarketConfig(config: MarketConfig): void {
-      required<HTMLElement>("#market-label").textContent = config.geo_label;
-      required<HTMLElement>("#market-city-count").textContent = String(config.cities.length);
       required<HTMLElement>("#market-vertical-count").textContent = String(config.verticals.length);
 
       verticalOptions.innerHTML = config.verticals
@@ -374,31 +314,10 @@ import AppLayout from "../layouts/AppLayout.astro";
         `)
         .join("");
 
-      cityOptions.innerHTML = config.cities
-        .map((city) => `
-          <label class="flex items-center gap-2 text-sm text-neutral-700">
-            <input data-city type="checkbox" value="${escapeHtml(city)}" checked />
-            <span>${escapeHtml(city)}</span>
-          </label>
-        `)
-        .join("");
-
-      document.querySelectorAll<HTMLInputElement>('input[data-vertical], input[data-city]')
+      document.querySelectorAll<HTMLInputElement>('input[data-vertical]')
         .forEach((input) => input.addEventListener("change", updateScopeSummary));
 
-      allCitiesInput.addEventListener("change", () => {
-        cityOptions.classList.toggle("hidden", allCitiesInput.checked);
-        cityOptions.classList.toggle("grid", !allCitiesInput.checked);
-        if (allCitiesInput.checked) {
-          selectedCustomCities = [];
-          renderCustomCities();
-        }
-        updateGridAvailability();
-        updateScopeSummary();
-      });
-
       warning.classList.toggle("hidden", config.execution_enabled);
-      updateGridAvailability();
       updateScopeSummary();
       updateStartButton();
     }
@@ -409,39 +328,25 @@ import AppLayout from "../layouts/AppLayout.astro";
       const verticals = checkedVerticals();
       const presets = presetVerticals();
       const customs = customVerticals().filter((vertical) => !presets.includes(vertical));
-      const cities = allCitiesInput.checked ? marketConfig.cities : checkedCities();
       const presetQueryCount = marketConfig.verticals
         .filter((vertical) => presets.includes(vertical.key))
         .reduce((sum, vertical) => sum + vertical.query_count, 0);
       const queryCount = presetQueryCount + customs.length;
-      const baseRequests = queryCount * cities.length;
+      const baseRequests = queryCount * selectedCities.length;
 
       required<HTMLElement>("#vertical-selection-count").textContent = `${verticals.length} selected (${presets.length} preset, ${customs.length} custom)`;
-      required<HTMLElement>("#scope-summary").textContent = `${verticals.length} verticals × ${cities.length} cities`;
+      required<HTMLElement>("#scope-summary").textContent = `${verticals.length} verticals × ${selectedCities.length} cities`;
       required<HTMLElement>("#base-query-count").textContent = baseRequests.toLocaleString();
       required<HTMLElement>("#max-query-count").textContent = (baseRequests * 3).toLocaleString();
 
-      updateGridAvailability();
       updateStartButton();
     }
 
     function updateStartButton(): void {
       const hasScope = Boolean(marketConfig && checkedVerticals().length);
-      const hasCities = Boolean(marketConfig && (allCitiesInput.checked || checkedCities().length));
+      const hasCities = selectedCities.length > 0;
       const activeJob = currentJob.dataset.active === "true";
       startButton.disabled = !marketConfig?.execution_enabled || !hasScope || !hasCities || activeJob;
-    }
-
-    function selectEverything(): void {
-      document.querySelectorAll<HTMLInputElement>('input[data-vertical], input[data-city]')
-        .forEach((input) => { input.checked = true; });
-      selectedCustomCities = [];
-      renderCustomCities();
-      allCitiesInput.checked = true;
-      cityOptions.classList.add("hidden");
-      cityOptions.classList.remove("grid");
-      updateGridAvailability();
-      updateScopeSummary();
     }
 
     async function cancelJob(id: string): Promise<void> {
@@ -451,6 +356,10 @@ import AppLayout from "../layouts/AppLayout.astro";
         window.alert(body.detail || "Unable to cancel sweep.");
       }
       await refreshState();
+    }
+
+    function cityLabel(job: SweepJob): string {
+      return job.cities?.length ? job.cities.join(", ") : "Legacy configured-market sweep";
     }
 
     function renderCurrent(job: SweepJob | null): void {
@@ -467,7 +376,6 @@ import AppLayout from "../layouts/AppLayout.astro";
         return;
       }
 
-      const cityLabel = job.cities?.length ? job.cities.join(", ") : "All preset cities";
       currentJob.innerHTML = `
         <div class="space-y-4 rounded-xl bg-neutral-50 p-5">
           <div class="flex items-start justify-between gap-3">
@@ -479,7 +387,7 @@ import AppLayout from "../layouts/AppLayout.astro";
           </div>
           <div class="space-y-2 text-sm">
             <p><span class="text-neutral-500">Verticals:</span> <span class="font-medium">${escapeHtml(job.verticals.join(", "))}</span></p>
-            <p><span class="text-neutral-500">Cities:</span> <span class="font-medium">${escapeHtml(cityLabel)}</span></p>
+            <p><span class="text-neutral-500">Cities:</span> <span class="font-medium">${escapeHtml(cityLabel(job))}</span></p>
           </div>
           <button id="cancel-active-job" type="button" class="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Stop sweep</button>
         </div>
@@ -508,14 +416,13 @@ import AppLayout from "../layouts/AppLayout.astro";
           : job.status === "failed"
             ? "bg-red-50 text-red-700"
             : "bg-neutral-100 text-neutral-700";
-        const cityLabel = job.cities?.length ? job.cities.join(", ") : "All preset cities";
 
         return `
           <div class="rounded-xl border border-neutral-200 p-4">
             <div class="flex items-start justify-between gap-3">
               <div>
                 <p class="text-sm font-medium text-neutral-950">${escapeHtml(job.verticals.join(", ").replaceAll("_", " "))}</p>
-                <p class="mt-1 text-xs text-neutral-500">${escapeHtml(cityLabel)}</p>
+                <p class="mt-1 text-xs text-neutral-500">${escapeHtml(cityLabel(job))}</p>
               </div>
               <span class="rounded-full px-2.5 py-1 text-xs font-medium ${statusClass}">${escapeHtml(job.status)}</span>
             </div>
@@ -531,7 +438,7 @@ import AppLayout from "../layouts/AppLayout.astro";
 
     async function loadConfig(): Promise<void> {
       const response = await fetch("/api/sweeps/config");
-      if (!response.ok) throw new Error("Unable to load market configuration.");
+      if (!response.ok) throw new Error("Unable to load sweep configuration.");
       marketConfig = await response.json();
       renderMarketConfig(marketConfig as MarketConfig);
     }
@@ -563,11 +470,16 @@ import AppLayout from "../layouts/AppLayout.astro";
       if (!marketConfig) return;
 
       const verticals = checkedVerticals();
-      const cities = allCitiesInput.checked ? null : checkedCities();
-      const cityCount = cities?.length ?? marketConfig.cities.length;
+      const cities = [...selectedCities];
+
+      if (!verticals.length || !cities.length) {
+        message.textContent = "Select at least one vertical and one U.S. city.";
+        message.className = "rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800";
+        return;
+      }
 
       const confirmed = window.confirm(
-        `Start sweep for ${verticals.length} vertical(s) across ${cityCount} city target(s)?`,
+        `Start sweep for ${verticals.length} vertical(s) across ${cities.length} city target(s)?`,
       );
       if (!confirmed) return;
 
@@ -580,7 +492,7 @@ import AppLayout from "../layouts/AppLayout.astro";
         body: JSON.stringify({
           verticals,
           cities,
-          use_grid: gridInput.checked,
+          use_grid: false,
           merge_results: mergeInput.checked,
           crawl_batch: Number(crawlBatchInput.value),
           psi_batch: Number(psiBatchInput.value),
@@ -619,7 +531,6 @@ import AppLayout from "../layouts/AppLayout.astro";
     citySearchInput.addEventListener("focus", () => {
       if (citySearchResults.innerHTML) citySearchResults.classList.remove("hidden");
     });
-    selectFullMarket.addEventListener("click", selectEverything);
     refreshButton.addEventListener("click", () => void refreshState());
 
     void (async () => {
