@@ -4,14 +4,18 @@ from fastapi import APIRouter, HTTPException, Response
 
 from app.core.config import get_settings
 from app.core.database import pool
+from app.repositories.demo_media import DemoMediaRepository
 from app.repositories.demo_sites import DemoSiteRepository
 from app.repositories.prospects import ProspectRepository
 from app.schemas.demo_sites import (
+    DemoMediaGenerateRequest,
+    DemoMediaItem,
     DemoSiteCreateRequest,
     DemoSiteDetail,
     DemoSiteOptionsResponse,
     DemoSiteSummary,
 )
+from app.services.demo_media import DemoMediaError, DemoMediaService
 from app.services.demo_sites import DemoSiteError, DemoSiteService
 
 
@@ -22,6 +26,13 @@ def get_service() -> DemoSiteService:
     return DemoSiteService(
         ProspectRepository(pool),
         DemoSiteRepository(pool),
+    )
+
+
+def get_media_service() -> DemoMediaService:
+    return DemoMediaService(
+        ProspectRepository(pool),
+        DemoMediaRepository(pool),
     )
 
 
@@ -42,6 +53,47 @@ def demo_site_options(place_id: str) -> dict:
 )
 def list_prospect_demos(place_id: str) -> list[dict]:
     return get_service().list_for_prospect(place_id)
+
+
+@router.get(
+    "/prospects/{place_id}/media",
+    response_model=list[DemoMediaItem],
+)
+def list_prospect_demo_media(place_id: str) -> list[dict]:
+    return get_media_service().list_for_prospect(place_id)
+
+
+@router.post(
+    "/prospects/{place_id}/media/generate",
+    response_model=DemoMediaItem,
+    status_code=201,
+)
+def generate_prospect_demo_media(
+    place_id: str,
+    payload: DemoMediaGenerateRequest,
+) -> dict:
+    settings = get_settings()
+    if not settings.demo_image_generation_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="demo image generation is not configured",
+        )
+    try:
+        return get_media_service().generate(
+            place_id,
+            role=payload.role,
+            direction=payload.direction,
+            api_key=settings.openrouter_api_key or "",
+            model=settings.demo_image_model,
+            root=Path(settings.demo_site_root),
+            base_url=settings.demo_site_base_url,
+        )
+    except DemoMediaError as exc:
+        message = str(exc)
+        status_code = 404 if message == "prospect not found" else 422
+        if message == "demo image generation is not configured":
+            status_code = 503
+        raise HTTPException(status_code=status_code, detail=message) from exc
 
 
 @router.post(
