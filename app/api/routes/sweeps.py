@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from app.repositories.sweeps import SweepAlreadyActiveError
+from app.services.sweep_locations import SweepLocationLookupError, suggest_us_cities
 from app.services.sweeps import (
     SweepExecutionDisabledError,
     SweepService,
@@ -34,41 +35,44 @@ class SweepCreateRequest(BaseModel):
             return None
 
         configured_by_lower = {
-            city.lower(): city
+            city.casefold(): city
             for city in market_config.TARGET_CITIES
         }
-        geo_label = market_config.GEO_LABEL.lower()
+        geo_label = market_config.GEO_LABEL.casefold()
         normalized: list[str] = []
+        seen: set[str] = set()
 
         for raw_city in value:
-            city = raw_city.strip()
+            city = " ".join(raw_city.split())
             if not city:
                 continue
-
-            if city.lower() == geo_label:
+            if len(city) > 120:
+                raise ValueError("sweep city is too long")
+            if any(ord(char) < 32 for char in city):
+                raise ValueError("sweep city contains invalid characters")
+            if city.casefold() == geo_label:
                 return None
 
-            if city.lower() in {"ca", "california"}:
+            lower_city = city.casefold()
+            if lower_city in {"ca", "california"}:
                 continue
 
-            lower_city = city.lower()
-            for suffix in (", california", ", ca", " california", " ca"):
-                if lower_city.endswith(suffix):
-                    city = city[: -len(suffix)].strip()
-                    break
-
-            if not city:
-                continue
-
-            canonical = configured_by_lower.get(city.lower())
+            canonical = configured_by_lower.get(lower_city)
             if canonical is None:
-                raise ValueError(
-                    f"unsupported sweep city: {city}. "
-                    f"Use configured cities or {market_config.GEO_LABEL} for full coverage."
-                )
+                for suffix in (", california", ", ca", " california", " ca"):
+                    if not lower_city.endswith(suffix):
+                        continue
+                    base = city[: -len(suffix)].strip()
+                    canonical = configured_by_lower.get(base.casefold())
+                    if canonical is not None:
+                        break
 
-            if canonical not in normalized:
-                normalized.append(canonical)
+            city = canonical or city
+            key = city.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(city)
 
         return normalized or None
 
@@ -76,6 +80,21 @@ class SweepCreateRequest(BaseModel):
 @router.get("/config")
 def sweep_configuration():
     return SweepService.market_configuration()
+
+
+@router.get("/locations")
+def sweep_location_suggestions(
+    q: str = Query(min_length=2, max_length=80),
+):
+    try:
+        items = suggest_us_cities(
+            q,
+            api_key=market_config.GOOGLE_API_KEY,
+        )
+    except SweepLocationLookupError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return {"items": items}
 
 
 @router.get("/current")

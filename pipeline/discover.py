@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import time
 from datetime import datetime, timezone
 from dataclasses import dataclass, field, asdict
@@ -174,13 +175,11 @@ def is_chain(name: str) -> bool:
 
 
 def in_target_geo(rec: dict) -> bool:
-    """Reject results outside the target area.
+    """Reject results outside the configured grid market.
 
-    Text Search is a semantic matcher, not a geofence: querying "electrician in
-    Alpine, CA" happily returned Alpine Electric of Ahwatukee, PHOENIX — a
-    company 350 miles away that matched on name rather than location. The
-    locationBias is a hint, not a constraint. So we verify coordinates against
-    the bounding box ourselves and drop anything outside it.
+    Grid search still uses the configured bounding box. City-scoped searches use
+    `in_requested_city` instead, which is what allows the sweep UI to target a
+    city outside the original San Diego pilot without widening the grid itself.
     """
     lat, lng = rec.get("lat"), rec.get("lng")
     if lat is None or lng is None:
@@ -195,6 +194,47 @@ def in_target_geo(rec: dict) -> bool:
     if state and state not in ("CA", "CALIFORNIA"):
         return False
     return True
+
+
+def _geo_token(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (value or "").casefold()).strip()
+
+
+def in_requested_city(rec: dict, target_city: str) -> bool:
+    """Validate Text Search results against an operator-selected U.S. city.
+
+    Places Text Search is semantic, not a strict geofence. A city prediction from
+    Autocomplete gives us a canonical `City, ST, USA` label; we require the
+    normalized business locality to match that city and, when present, its state.
+    """
+    parts = [part.strip() for part in target_city.split(",") if part.strip()]
+    if not parts:
+        return False
+
+    wanted_city = _geo_token(parts[0])
+    actual_city = _geo_token(rec.get("city"))
+    if not wanted_city or actual_city != wanted_city:
+        return False
+
+    if len(parts) >= 2:
+        wanted_state = parts[1].strip().upper()
+        actual_state = str(rec.get("state") or "").strip().upper()
+        if len(wanted_state) == 2 and actual_state and actual_state != wanted_state:
+            return False
+
+    return True
+
+
+def _configured_city(city: str) -> bool:
+    key = city.strip().casefold()
+    return any(key == configured.casefold() for configured in C.TARGET_CITIES)
+
+
+def _city_query_label(city: str) -> str:
+    city = city.strip()
+    if _configured_city(city):
+        return f"{city}, CA"
+    return city
 
 
 FOREIGN_TYPES = {
@@ -371,12 +411,17 @@ def sweep(
     for vertical in verticals:
         for query_term in V.vertical_queries(vertical):
             if use_grid:
-                targets = [(f"{query_term}", pt)
-                           for pt in build_grid(C.GEO_BBOX, C.GRID_SPACING_KM)]
+                targets = [
+                    (f"{query_term}", pt, None)
+                    for pt in build_grid(C.GEO_BBOX, C.GRID_SPACING_KM)
+                ]
             else:
-                targets = [(f"{query_term} in {city}, CA", None) for city in cities]
+                targets = [
+                    (f"{query_term} in {_city_query_label(city)}", None, city)
+                    for city in cities
+                ]
 
-            for query, point in targets:
+            for query, point, target_city in targets:
                 try:
                     n_new = 0
                     for place in client.text_search(query, point):
@@ -389,7 +434,10 @@ def sweep(
                             continue
                         if is_chain(rec["name"] or ""):
                             continue
-                        if not in_target_geo(rec):
+                        if target_city is None or _configured_city(target_city):
+                            if not in_target_geo(rec):
+                                continue
+                        elif not in_requested_city(rec, target_city):
                             continue
                         if wrong_vertical(rec, vertical):
                             continue
