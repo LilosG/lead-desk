@@ -63,7 +63,14 @@ def structural_similarity(
     )
     if not candidate or not existing:
         return 0.0
-    return SequenceMatcher(None, candidate, existing, autojunk=False).ratio()
+
+    # difflib.SequenceMatcher can produce slightly different ratios when the same
+    # two strings are supplied in reverse order. Diversity enforcement must be
+    # order-independent, otherwise a draft can pass during admission and fail in
+    # the final pairwise audit. Use the stricter of both directions.
+    forward = SequenceMatcher(None, candidate, existing, autojunk=False).ratio()
+    reverse = SequenceMatcher(None, existing, candidate, autojunk=False).ratio()
+    return max(forward, reverse)
 
 
 def most_similar_recent_draft(
