@@ -1,5 +1,6 @@
 import re
 import secrets
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -164,15 +165,23 @@ class DemoSiteService:
                 encoding="utf-8",
             )
         except Exception as exc:
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
             self.demo_repository.mark_build_failed(demo_id, error=str(exc))
             raise DemoSiteError(f"demo publication failed: {exc}") from exc
 
         public_url = f"{base_url.rstrip('/')}/{demo['slug']}/"
-        result = self.demo_repository.mark_published(
-            demo_id,
-            published_path=str(target),
-            public_url=public_url,
-        )
+        try:
+            result = self.demo_repository.mark_published(
+                demo_id,
+                published_path=str(target),
+                public_url=public_url,
+            )
+        except Exception as exc:
+            shutil.rmtree(target, ignore_errors=True)
+            raise DemoSiteError(f"demo publication state update failed: {exc}") from exc
+
         if result is None:
+            shutil.rmtree(target, ignore_errors=True)
             raise DemoSiteError("demo publication state changed before completion")
         return result
