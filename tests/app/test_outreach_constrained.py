@@ -1,6 +1,8 @@
 import json
 
-from app.integrations.openrouter import CLAIM_TOKEN
+import pytest
+
+from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterError
 from app.integrations.openrouter_constrained import ConstrainedOutreachClient
 from app.services.outreach_similarity import structural_similarity
 
@@ -241,27 +243,17 @@ def test_long_business_name_falls_back_only_when_subject_is_unreasonably_long():
     assert subject == "Local search audit"
 
 
-def test_claim_free_copy_does_not_pretend_an_audit_finding_exists(monkeypatch):
+def test_claim_free_copy_is_blocked_instead_of_generating_hollow_outreach(monkeypatch):
     def fake_post(url, *, headers, json, timeout):
-        return FakeResponse({
-            "choices": [{
-                "message": {
-                    "content": '{"subject":0,"greeting":0,"frame":0,"closing":0}'
-                }
-            }]
-        })
+        raise AssertionError("OpenRouter should not be called without verified evidence")
 
     monkeypatch.setattr("app.integrations.openrouter_constrained.requests.post", fake_post)
 
     client = ConstrainedOutreachClient(api_key="test", model="qwen/test")
-    copy = client.generate_email(
-        business_name="TNT Electric",
-        city=None,
-        vertical=None,
-        verified_claim=None,
-    )
-
-    assert CLAIM_TOKEN not in copy.body
-    assert "attached" not in copy.body.lower()
-    assert "audit" not in copy.body.lower()
-    assert all(phrase not in copy.body.lower() for phrase in PROHIBITED_GIMMICKS)
+    with pytest.raises(OpenRouterError, match="will not generate a generic cold email"):
+        client.generate_email(
+            business_name="TNT Electric",
+            city=None,
+            vertical=None,
+            verified_claim=None,
+        )
