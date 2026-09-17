@@ -9,7 +9,16 @@ RUN_SELECT = """
         r.id,
         r.started_at,
         r.finished_at,
-        r.geo_label,
+        coalesce(
+            (
+                select nullif(array_to_string(sj.cities, ' • '), '')
+                from sweep_jobs sj
+                where sj.run_id = r.id
+                order by sj.created_at desc
+                limit 1
+            ),
+            r.geo_label
+        ) as geo_label,
         r.verticals,
         r.grid_points,
         r.status,
@@ -77,7 +86,27 @@ class RunRepository:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("select * from v_latest_completed_run limit 1")
-                return cur.fetchone()
+                row = cur.fetchone()
+                if row is None:
+                    return None
+
+                cur.execute(
+                    """
+                    select cities
+                    from sweep_jobs
+                    where run_id = %s
+                    order by created_at desc
+                    limit 1
+                    """,
+                    (row["id"],),
+                )
+                sweep = cur.fetchone()
+
+                if sweep and sweep.get("cities"):
+                    row = dict(row)
+                    row["geo_label"] = " • ".join(sweep["cities"])
+
+                return row
 
     def list_runs(
         self,
