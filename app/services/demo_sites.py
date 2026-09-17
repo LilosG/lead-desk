@@ -3,6 +3,7 @@ import secrets
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from app.repositories.demo_sites import DemoSiteRepository
 from app.repositories.prospects import ProspectRepository
@@ -16,13 +17,24 @@ class DemoSiteError(Exception):
 def _normalize_list(values: list[str], *, max_items: int) -> list[str]:
     result: list[str] = []
     for value in values:
-        item = str(value).strip()
-        if not item or item in result:
-            continue
-        result.append(item)
-        if len(result) >= max_items:
-            break
+        for raw_item in re.split(r"[\n,;]+", str(value)):
+            item = raw_item.strip()
+            if not item or item in result:
+                continue
+            result.append(item)
+            if len(result) >= max_items:
+                return result
     return result
+
+
+def _normalize_media_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = value.strip()
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise DemoSiteError("demo image URLs must use http or https")
+    return candidate
 
 
 def _slugify(value: str) -> str:
@@ -56,13 +68,16 @@ class DemoSiteService:
             "business_name": business_name,
             "templates": template_options(),
             "defaults": {
-                "headline": f"{primary_type} serving {city}",
+                "headline": f"Local {primary_type.lower()} service for {city}",
                 "subheadline": (
-                    f"A cleaner, more conversion-focused homepage concept for {business_name}, "
-                    "built from confirmed business information and public reputation signals."
+                    f"Explore {business_name}'s core services, local service area, and a direct way "
+                    "to get in touch when you need help."
                 ),
                 "services": [],
                 "service_areas": [prospect.get("city")] if prospect.get("city") else [],
+                "hero_image_url": None,
+                "work_image_url": None,
+                "secondary_image_url": None,
             },
         }
 
@@ -75,6 +90,9 @@ class DemoSiteService:
         service_areas: list[str],
         headline: str | None,
         subheadline: str | None,
+        hero_image_url: str | None = None,
+        work_image_url: str | None = None,
+        secondary_image_url: str | None = None,
     ) -> dict[str, Any]:
         prospect = self.prospect_repository.get_prospect(place_id)
         if prospect is None:
@@ -102,13 +120,16 @@ class DemoSiteService:
             "scored_at": prospect.get("scored_at").isoformat() if prospect.get("scored_at") else None,
         }
         content_snapshot = {
-            "headline": (headline or f"{primary_type_display} serving {city}").strip(),
+            "headline": (headline or f"Local {primary_type_display.lower()} service for {city}").strip(),
             "subheadline": (
                 subheadline
-                or f"A polished local-service homepage concept for {business_name}, built from confirmed business information and public reputation signals."
+                or f"Explore {business_name}'s core services, local service area, and a direct way to get in touch when you need help."
             ).strip(),
             "services": normalized_services,
             "service_areas": normalized_areas,
+            "hero_image_url": _normalize_media_url(hero_image_url),
+            "work_image_url": _normalize_media_url(work_image_url),
+            "secondary_image_url": _normalize_media_url(secondary_image_url),
         }
         brand_snapshot = {
             "template_key": template_key,

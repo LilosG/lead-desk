@@ -5,11 +5,14 @@ from pydantic import BaseModel, Field
 
 
 class DemoSiteCreateRequest(BaseModel):
-    template_key: str = "trade-modern-v1"
-    services: list[str] = Field(default_factory=list, max_length=6)
-    service_areas: list[str] = Field(default_factory=list, max_length=8)
+    template_key: str = "trade-modern-v2"
+    services: list[str] = Field(default_factory=list, max_length=12)
+    service_areas: list[str] = Field(default_factory=list, max_length=16)
     headline: str | None = Field(default=None, max_length=120)
     subheadline: str | None = Field(default=None, max_length=280)
+    hero_image_url: str | None = Field(default=None, max_length=2048)
+    work_image_url: str | None = Field(default=None, max_length=2048)
+    secondary_image_url: str | None = Field(default=None, max_length=2048)
 
 
 class DemoSiteOptionsResponse(BaseModel):
