@@ -199,3 +199,41 @@ def test_internal_finding_cannot_shadow_later_approved_finding():
     assert result["claim_signal"] == "no_localbusiness_schema"
     assert "structured business markup" in result["body"]
     assert "template" not in result["body"].lower()
+
+
+def test_generated_audit_supplies_useful_grounding_without_live_claim():
+    repo = Repo(findings=[{"signal": "template_builder"}])
+    verifier = CapturingNoClaimVerifier()
+    service = OutreachService(
+        repo,
+        generator=ClaimGenerator(),
+        verifier=verifier,
+        generation_model="qwen/qwen3-30b-a3b-instruct-2507",
+    )
+    context = repo.draft_context(repo.item["id"])
+    context["audit_snapshot"] = {
+        "business": {"rating": 4.9, "review_count": 71},
+        "findings": [
+            {"signal": "no_service_pages"},
+            {"signal": "no_city_pages"},
+            {"signal": "no_localbusiness_schema"},
+            {"signal": "no_gbp_link"},
+        ],
+    }
+    context["audit_source_checked_at"] = "2026-09-13T12:00:00+00:00"
+
+    visible_claim, claim_signal, verification_status, verification_note = (
+        service._resolve_draft_grounding(
+            context,
+            business_name="Example Electric",
+        )
+    )
+
+    assert verifier.context is None
+    assert claim_signal == "audit_report"
+    assert verification_status == "not_required"
+    assert "4.9 stars across 71 reviews" in visible_claim
+    assert "service pages" in visible_claim
+    assert "location coverage" in visible_claim
+    assert "structured business data" in visible_claim
+    assert "Local Visibility Audit" in verification_note

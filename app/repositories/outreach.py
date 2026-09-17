@@ -265,12 +265,22 @@ class OutreachRepository:
                 we.resolved_url,
                 we.contact_page_url,
                 we.crawl_error,
-                coalesce(f.needs_manual_check, false) as needs_manual_check
+                coalesce(f.needs_manual_check, false) as needs_manual_check,
+                audit.snapshot as audit_snapshot,
+                audit.source_checked_at as audit_source_checked_at
             from outreach_queue q
             join businesses b on b.place_id = q.place_id
             left join v_lead_worklist w on w.place_id = q.place_id
             left join website_enrichment we on we.place_id = q.place_id
             left join v_lead_findings f on f.place_id = q.place_id
+            left join lateral (
+                select par.snapshot, par.source_checked_at
+                from prospect_audit_reports par
+                where par.place_id = q.place_id
+                  and par.status = 'generated'
+                order by par.created_at desc
+                limit 1
+            ) audit on true
             where q.id = %s::uuid
         """
         findings_query = """

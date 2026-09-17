@@ -12,7 +12,7 @@ from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v8"
+PROMPT_VERSION = "outreach-v9"
 MAX_DRAFT_ATTEMPTS = 3
 CAN_SPAM_FOOTER = (
     "Mike\n"
@@ -189,6 +189,114 @@ class OutreachService:
         ]
         return {**context, "findings": findings}
 
+    @staticmethod
+    def _audit_report_grounding(
+        context: dict,
+        *,
+        business_name: str,
+    ) -> tuple[str, str, str, str] | None:
+        snapshot = context.get("audit_snapshot")
+        if not isinstance(snapshot, dict):
+            return None
+
+        findings = [
+            item
+            for item in (snapshot.get("findings") or [])
+            if isinstance(item, dict) and item.get("signal")
+        ]
+        if not findings:
+            return None
+
+        priority = {
+            "no_service_pages": 0,
+            "no_city_pages": 1,
+            "no_localbusiness_schema": 2,
+            "no_gbp_link": 3,
+            "no_ssl": 4,
+            "no_title": 5,
+        }
+        labels = {
+            "no_service_pages": "service pages",
+            "no_city_pages": "location coverage",
+            "no_localbusiness_schema": "structured business data",
+            "no_gbp_link": "the website-to-Google profile connection",
+            "no_ssl": "HTTPS",
+            "no_title": "the homepage search title",
+        }
+
+        ordered = sorted(
+            findings,
+            key=lambda item: priority.get(str(item.get("signal")), 99),
+        )
+        focus: list[str] = []
+        for item in ordered:
+            label = labels.get(str(item.get("signal")))
+            if label and label not in focus:
+                focus.append(label)
+            if len(focus) == 3:
+                break
+        if not focus:
+            return None
+
+        if len(focus) == 1:
+            focus_text = focus[0]
+        elif len(focus) == 2:
+            focus_text = f"{focus[0]} and {focus[1]}"
+        else:
+            focus_text = f"{focus[0]}, {focus[1]}, and {focus[2]}"
+
+        business = snapshot.get("business")
+        business = business if isinstance(business, dict) else {}
+        rating = business.get("rating")
+        review_count = business.get("review_count")
+
+        if rating is not None and review_count is not None:
+            paragraph = (
+                f"Google shows {business_name} at {float(rating):.1f} stars across "
+                f"{int(review_count):,} reviews, but the audit found several areas where "
+                f"the website could support local search more effectively, particularly around "
+                f"{focus_text}."
+            )
+        else:
+            paragraph = (
+                f"The audit found several areas where {business_name}'s website could support "
+                f"local search more effectively, particularly around {focus_text}."
+            )
+
+        note = "Grounded in the latest generated Local Visibility Audit"
+        if context.get("audit_source_checked_at"):
+            note += f" using evidence dated {context['audit_source_checked_at']}"
+        note += "."
+        return paragraph, "audit_report", "not_required", note
+
+    def _resolve_draft_grounding(
+        self,
+        context: dict,
+        *,
+        business_name: str,
+    ) -> tuple[str | None, str | None, str, str]:
+        audit = self._audit_report_grounding(context, business_name=business_name)
+        if audit is not None:
+            return audit
+
+        verification_context = self._client_facing_verification_context(context)
+        claim = self.verifier.verify(verification_context)
+        technical_claim = client_facing_claim(claim.signal, claim.text)
+        if not technical_claim:
+            return None, None, claim.status, claim.note
+
+        evidence = None
+        if self.evidence_repository is not None:
+            evidence = RecipientEvidence.from_row(
+                self.evidence_repository.get(context["place_id"])
+            )
+        visible_claim = recipient_finding_block(
+            business_name=business_name,
+            technical_claim=technical_claim,
+            evidence=evidence,
+        )
+        return visible_claim, claim.signal, claim.status, claim.note
+
     def _recent_draft_structures(
         self,
         *,
@@ -243,23 +351,13 @@ class OutreachService:
         if self.repository.is_suppressed(context["to_address"]):
             raise OutreachBlocked("email address is suppressed")
 
-        verification_context = self._client_facing_verification_context(context)
-        claim = self.verifier.verify(verification_context)
-        technical_claim = client_facing_claim(claim.signal, claim.text)
-
         business_name = context.get("name") or "your business"
-        visible_claim: str | None = None
-        if technical_claim:
-            evidence = None
-            if self.evidence_repository is not None:
-                evidence = RecipientEvidence.from_row(
-                    self.evidence_repository.get(context["place_id"])
-                )
-            visible_claim = recipient_finding_block(
+        visible_claim, claim_signal, verification_status, verification_note = (
+            self._resolve_draft_grounding(
+                context,
                 business_name=business_name,
-                technical_claim=technical_claim,
-                evidence=evidence,
             )
+        )
 
         recent_drafts = self._recent_draft_structures(current_item_id=item_id)
         copy = None
@@ -321,9 +419,9 @@ class OutreachService:
                 expected_version=expected_version,
                 subject=copy.subject,
                 body=body,
-                claim_signal=claim.signal if technical_claim else None,
-                verification_status=claim.status,
-                verification_note=claim.note,
+                claim_signal=claim_signal,
+                verification_status=verification_status,
+                verification_note=verification_note,
                 generation_model=copy.model,
                 prompt_version=PROMPT_VERSION,
             )

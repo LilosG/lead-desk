@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from app.integrations.gmail import GmailDraftError
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterError
-from app.outreach_policy import client_facing_claim
 from app.repositories.outreach_gmail import OutreachGmailRepository
 from app.services.outreach import (
     CAN_SPAM_FOOTER,
@@ -13,7 +12,6 @@ from app.services.outreach import (
     OutreachIntegrationUnavailable,
     OutreachService,
 )
-from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import is_too_similar
 
 
@@ -163,22 +161,12 @@ class OutreachDraftSyncService:
             raise OutreachBlocked("email address is suppressed")
 
         business_name = context.get("name") or "your business"
-        verification_context = self.outreach._client_facing_verification_context(context)
-        claim = self.outreach.verifier.verify(verification_context)
-        technical_claim = client_facing_claim(claim.signal, claim.text)
-
-        visible_claim: str | None = None
-        if technical_claim:
-            evidence = None
-            if self.outreach.evidence_repository is not None:
-                evidence = RecipientEvidence.from_row(
-                    self.outreach.evidence_repository.get(context["place_id"])
-                )
-            visible_claim = recipient_finding_block(
+        visible_claim, claim_signal, verification_status, verification_note = (
+            self.outreach._resolve_draft_grounding(
+                context,
                 business_name=business_name,
-                technical_claim=technical_claim,
-                evidence=evidence,
             )
+        )
 
         recent_drafts = self.outreach._recent_draft_structures(
             current_item_id=item_id,
@@ -263,9 +251,9 @@ class OutreachDraftSyncService:
                 expected_version=int(cleared["version"]),
                 subject=copy.subject,
                 body=body,
-                claim_signal=claim.signal if technical_claim else None,
-                verification_status=claim.status,
-                verification_note=claim.note,
+                claim_signal=claim_signal,
+                verification_status=verification_status,
+                verification_note=verification_note,
                 generation_model=copy.model,
                 prompt_version=PROMPT_VERSION,
             )
@@ -281,9 +269,9 @@ class OutreachDraftSyncService:
             expected_gmail_draft_id=gmail_draft_id,
             subject=copy.subject,
             body=body,
-            claim_signal=claim.signal if technical_claim else None,
-            verification_status=claim.status,
-            verification_note=claim.note,
+            claim_signal=claim_signal,
+            verification_status=verification_status,
+            verification_note=verification_note,
             generation_model=copy.model,
             prompt_version=PROMPT_VERSION,
             gmail_message_id=remote.message_id,
