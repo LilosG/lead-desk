@@ -28,60 +28,90 @@ _GREETINGS = (
     "",
 )
 
+# Subjects stay tied to the actual work product instead of manufacturing curiosity.
 _SUBJECTS = (
-    "{business}",
-    "{business} website",
-    "{business} homepage",
-    "Website question — {business}",
-    "Website note — {business}",
+    "{business} — local search audit",
+    "Local search audit — {business}",
+    "{business} website audit",
+    "{business} search audit",
+    "{business} audit",
 )
 
 _FALLBACK_SUBJECTS = (
-    "Website question",
-    "Website detail",
-    "Homepage question",
-    "Website note",
-    "Homepage detail",
+    "Local search audit",
+    "Website audit",
+    "Search audit",
+    "Website review",
+    "Local search review",
 )
 
-# The application owns every sent word. These frames are only used when one
-# client-facing technical finding has passed the live verification contract.
+# First-touch copy is intentionally value-forward and transparent. The audit is
+# the value; the email simply explains what was reviewed and why it is attached.
+# Qwen may select among these reviewed structures, but cannot author recipient
+# claims or introduce sales tactics.
 _FRAMES = (
-    "{claim}\n\n{closing}",
-    "I checked {business} before reaching out.\n\n{claim}\n\n{closing}",
-    "I pulled up {business} before emailing.\n\n{claim}\n\n{closing}",
-    "I had {business} open and wanted to pass this along.\n\n{claim}\n\n{closing}",
-    "For context:\n\n{claim}\n\n{closing}",
-    "This is what I was looking at:\n\n{claim}\n\n{closing}",
-    "I checked the Google listing and the website before sending this.\n\n{claim}\n\n{closing}",
-    "I took a look at {business} before sending this.\n\n{claim}\n\n{closing}",
-    "I wanted to pass this along after checking {business}.\n\n{claim}\n\n{closing}",
-    "I had one thing from {business} I wanted to send over.\n\n{claim}\n\n{closing}",
-    "I checked {business} and this was the detail I wanted to share.\n\n{claim}\n\n{closing}",
-    "I was looking at {business} earlier and wanted to send this over.\n\n{claim}\n\n{closing}",
-    "I pulled up the public listing and the website for {business}.\n\n{claim}\n\n{closing}",
-    "Here is what I found when I checked {business}:\n\n{claim}\n\n{closing}",
-    "A note on {business}:\n\n{claim}\n\n{closing}",
-    "I checked {business} and wanted to make sure this got to you.\n\n{claim}\n\n{closing}",
+    (
+        "I reviewed the website and Google profile for {business} and put together a short audit.\n\n"
+        "{claim}\n\n"
+        "I attached the audit so you can see exactly what I found.\n\n"
+        "{closing}"
+    ),
+    (
+        "I put together a short local search audit for {business} after reviewing the website and Google profile.\n\n"
+        "{claim}\n\n"
+        "The audit is attached with the findings and recommendations.\n\n"
+        "{closing}"
+    ),
+    (
+        "I reviewed {business} across the website and Google profile and summarized the findings in a short audit.\n\n"
+        "{claim}\n\n"
+        "I attached it so you can review the findings directly.\n\n"
+        "{closing}"
+    ),
+    (
+        "After reviewing the website and Google profile for {business}, I put together a short local search audit.\n\n"
+        "{claim}\n\n"
+        "I attached the audit with the findings and recommended next steps.\n\n"
+        "{closing}"
+    ),
+    (
+        "I took a direct look at the website and Google profile for {business} and put the findings into a short audit.\n\n"
+        "{claim}\n\n"
+        "The audit is attached so you can see the issues and recommendations in context.\n\n"
+        "{closing}"
+    ),
+    (
+        "I completed a short local search review for {business} using the website and Google profile.\n\n"
+        "{claim}\n\n"
+        "I attached the audit so the findings are easy to review in one place.\n\n"
+        "{closing}"
+    ),
+    (
+        "I reviewed the public website and Google profile for {business} and put together a concise audit from that review.\n\n"
+        "{claim}\n\n"
+        "The audit is attached with the specific findings and recommendations.\n\n"
+        "{closing}"
+    ),
+    (
+        "I put together a short audit for {business} based on the website and Google profile.\n\n"
+        "{claim}\n\n"
+        "I attached the audit so you can review exactly what was found.\n\n"
+        "{closing}"
+    ),
 )
 
+# No manufactured curiosity, hidden information, meeting ask, or trick CTA.
 _CLOSINGS = (
-    "If you already know about it, no need to reply.",
-    "If it is already being handled, all good.",
-    "If you want the exact page I checked, I can send it.",
-    "I can point you to the exact spot if useful.",
-    "If you want, I can send a screenshot of the exact spot.",
-    "If you already have it covered, you can ignore this.",
-    "That is all I wanted to pass along.",
-    "I can send the exact page location if you want it.",
-    "No need to respond if you already have it covered.",
-    "If useful, I can send the page and exact spot I checked.",
-    "Just wanted to pass it along.",
-    "If you want to verify it on your side, I can point you to the page.",
+    "If any of it is useful and you want help fixing it, feel free to reply.",
+    "If the audit is useful and you want help implementing any of it, feel free to reply.",
+    "If you want help with any of the items in the audit, feel free to reply.",
+    "If any of the findings are worth addressing and you want help with them, feel free to reply.",
+    "If you decide you want help implementing any of the recommendations, feel free to reply.",
+    "If the findings are useful and you want a hand fixing any of them, feel free to reply.",
 )
 
-# Claim-free outreach intentionally makes no observation about the recipient's
-# site. It uses only the business name and a neutral offer to share website ideas.
+# Claim-free outreach cannot safely describe a technical issue. Keep it direct
+# and avoid pretending there is a verified audit finding when there is not one.
 _CLAIM_FREE_FRAMES = (
     "I'm reaching out about {business}.\n\n{closing}",
     "I wanted to reach out directly about {business}.\n\n{closing}",
@@ -90,15 +120,15 @@ _CLAIM_FREE_FRAMES = (
 )
 
 _CLAIM_FREE_CLOSINGS = (
-    "If website improvements are something you're considering, I can send a few ideas.",
-    "If useful, I can send a few website ideas for you to look over.",
-    "If the website is on your list this year, I can send a few specific ideas.",
-    "No pressure either way; I can send a few website ideas if useful.",
+    "If website improvements are already on your list and you want another set of eyes on it, feel free to reply.",
+    "If you ever want an outside review of the website, feel free to reply.",
+    "If you want help reviewing the website at some point, feel free to reply.",
+    "If a website review would be useful later, feel free to reply.",
 )
 
 
 class ConstrainedOutreachClient:
-    """Use Qwen only as a rhetoric selector; application owns all sent words.
+    """Use Qwen only as a structure selector; application owns all sent words.
 
     Recipient-facing prose comes exclusively from reviewed application frames.
     When a verified finding exists, the verified finding token contains the
@@ -153,7 +183,7 @@ class ConstrainedOutreachClient:
     def _render_subject(cls, business_name: str, subject_index: int) -> str:
         safe_name = cls._safe_business_name(business_name)
         candidate = _SUBJECTS[subject_index].format(business=safe_name).strip()
-        if len(candidate.split()) > 5 or len(candidate) > 55:
+        if len(candidate) > 80:
             return _FALLBACK_SUBJECTS[subject_index]
         return candidate
 
@@ -161,14 +191,14 @@ class ConstrainedOutreachClient:
         fallback = self._deterministic_choice(business_name)
         payload: dict[str, Any] = {
             "model": self.model,
-            "temperature": 0.9,
+            "temperature": 0.6,
             "max_tokens": 100,
             "messages": [
                 {
                     "role": "system",
                     "content": (
-                        "Choose style indices for one short local-business outreach note. "
-                        "Do not write email prose, facts, names, observations, or explanations. "
+                        "Choose structure indices for one direct professional local-business audit email. "
+                        "Do not write email prose, facts, names, observations, CTAs, or explanations. "
                         "Return JSON only with integer keys subject, greeting, frame, closing. "
                         f"Allowed subject 0-{len(_SUBJECTS)-1}, greeting 0-{len(_GREETINGS)-1}, "
                         f"frame 0-{len(_FRAMES)-1}, closing 0-{len(_CLOSINGS)-1}."
@@ -276,11 +306,12 @@ class ConstrainedOutreachClient:
         subject = digest[1] % len(_SUBJECTS)
         return cls._unpack_structure(structure_slot, subject=subject)
 
-    @staticmethod
-    def _render_body(business_name: str, choice: StyleChoice) -> str:
+    @classmethod
+    def _render_body(cls, business_name: str, choice: StyleChoice) -> str:
         greeting = _GREETINGS[choice.greeting]
+        safe_name = cls._safe_business_name(business_name)
         frame = _FRAMES[choice.frame].format(
-            business=business_name,
+            business=safe_name,
             claim=CLAIM_TOKEN,
             closing=_CLOSINGS[choice.closing],
         ).strip()
