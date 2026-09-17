@@ -11,6 +11,7 @@ from app.integrations.openrouter import (
     CLAIM_TOKEN,
     GeneratedCopy,
     OPENROUTER_CHAT_URL,
+    OpenRouterError,
 )
 
 
@@ -28,7 +29,6 @@ _GREETINGS = (
     "",
 )
 
-# Subjects stay tied to the actual work product instead of manufacturing curiosity.
 _SUBJECTS = (
     "{business} — local search audit",
     "Local search audit — {business}",
@@ -45,10 +45,6 @@ _FALLBACK_SUBJECTS = (
     "Local search review",
 )
 
-# First-touch copy is intentionally value-forward and transparent. The audit is
-# the value; the email simply explains what was reviewed and why it is attached.
-# Qwen may select among these reviewed structures, but cannot author recipient
-# claims or introduce sales tactics.
 _FRAMES = (
     (
         "I reviewed the website and Google profile for {business} and put together a short audit.\n\n"
@@ -100,7 +96,6 @@ _FRAMES = (
     ),
 )
 
-# No manufactured curiosity, hidden information, meeting ask, or trick CTA.
 _CLOSINGS = (
     "If any of it is useful and you want help fixing it, feel free to reply.",
     "If the audit is useful and you want help implementing any of it, feel free to reply.",
@@ -110,31 +105,14 @@ _CLOSINGS = (
     "If the findings are useful and you want a hand fixing any of them, feel free to reply.",
 )
 
-# Claim-free outreach cannot safely describe a technical issue. Keep it direct
-# and avoid pretending there is a verified audit finding when there is not one.
-_CLAIM_FREE_FRAMES = (
-    "I'm reaching out about {business}.\n\n{closing}",
-    "I wanted to reach out directly about {business}.\n\n{closing}",
-    "Sending a short note about {business}.\n\n{closing}",
-    "I wanted to introduce myself and reach out about {business}.\n\n{closing}",
-)
-
-_CLAIM_FREE_CLOSINGS = (
-    "If website improvements are already on your list and you want another set of eyes on it, feel free to reply.",
-    "If you ever want an outside review of the website, feel free to reply.",
-    "If you want help reviewing the website at some point, feel free to reply.",
-    "If a website review would be useful later, feel free to reply.",
-)
-
 
 class ConstrainedOutreachClient:
-    """Use Qwen only as a structure selector; application owns all sent words.
+    """Render only evidence-backed professional audit outreach.
 
-    Recipient-facing prose comes exclusively from reviewed application frames.
-    When a verified finding exists, the verified finding token contains the
-    application-owned public evidence plus the live verified technical finding.
-    When no approved finding exists, a separate claim-free frame is used and no
-    website observation is made. Qwen cannot introduce recipient claims.
+    Qwen may select structure indices, but all recipient-facing prose is owned by
+    the application. A verified client-facing finding is mandatory. Generic
+    claim-free cold email is intentionally blocked rather than sending hollow
+    outreach with no useful substance.
     """
 
     def __init__(
@@ -156,18 +134,17 @@ class ConstrainedOutreachClient:
         vertical: str | None,
         verified_claim: str | None,
     ) -> GeneratedCopy:
+        if not verified_claim:
+            raise OpenRouterError(
+                "No verified client-facing finding is available. Lead Desk will not generate a generic cold email with no useful substance."
+            )
+
         raw_choice, used_model = self._choose_style(business_name)
         choice = self._decorrelate(raw_choice, business_name)
         subject = self._render_subject(business_name, choice.subject)
-
-        if verified_claim:
-            body = self._render_body(business_name, choice)
-            if body.count(CLAIM_TOKEN) != 1:
-                raise RuntimeError("constrained outreach renderer lost verified finding token")
-        else:
-            body = self._render_claim_free_body(business_name, choice)
-            if CLAIM_TOKEN in body:
-                raise RuntimeError("claim-free outreach renderer inserted verified finding token")
+        body = self._render_body(business_name, choice)
+        if body.count(CLAIM_TOKEN) != 1:
+            raise RuntimeError("constrained outreach renderer lost verified finding token")
 
         return GeneratedCopy(
             subject=subject,
@@ -314,18 +291,6 @@ class ConstrainedOutreachClient:
             business=safe_name,
             claim=CLAIM_TOKEN,
             closing=_CLOSINGS[choice.closing],
-        ).strip()
-        if greeting:
-            return f"{greeting}\n\n{frame}"
-        return frame
-
-    @classmethod
-    def _render_claim_free_body(cls, business_name: str, choice: StyleChoice) -> str:
-        greeting = _GREETINGS[choice.greeting]
-        safe_name = cls._safe_business_name(business_name)
-        frame = _CLAIM_FREE_FRAMES[choice.frame % len(_CLAIM_FREE_FRAMES)].format(
-            business=safe_name,
-            closing=_CLAIM_FREE_CLOSINGS[choice.closing % len(_CLAIM_FREE_CLOSINGS)],
         ).strip()
         if greeting:
             return f"{greeting}\n\n{frame}"
