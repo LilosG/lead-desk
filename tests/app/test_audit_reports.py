@@ -1,0 +1,173 @@
+from datetime import datetime, timezone
+
+from app.services.audit_report_pdf import render_audit_report_pdf
+from app.services.audit_reports import AuditReportError, AuditReportService
+
+
+class FakeProspectRepository:
+    def __init__(self):
+        self.prospect = {
+            "place_id": "place-1",
+            "name": "Example Electric",
+            "city": "San Diego",
+            "state": "CA",
+            "website_url": "https://example.com",
+            "rating": 4.9,
+            "review_count": 87,
+            "confirmed_trading": True,
+            "established": True,
+            "scored_at": datetime(2026, 9, 16, tzinfo=timezone.utc),
+            "total_score": 99,
+            "tier": "A",
+        }
+        self.findings = [
+            {
+                "signal": "no_localbusiness_schema",
+                "observed": None,
+                "finding": "internal raw finding",
+            },
+            {
+                "signal": "nap_mismatch",
+                "observed": {
+                    "website_phone": "(619) 555-0101",
+                    "gbp_phone": "(619) 555-0102",
+                },
+                "finding": "internal raw NAP claim",
+            },
+            {
+                "signal": "email_found",
+                "observed": "owner@example.com",
+                "finding": "internal reachability finding",
+            },
+        ]
+        self.audit = {
+            "checked_at": datetime(2026, 9, 16, 20, 0, tzinfo=timezone.utc),
+        }
+
+    def get_prospect(self, place_id):
+        return dict(self.prospect) if place_id == "place-1" else None
+
+    def get_findings(self, place_id):
+        return list(self.findings)
+
+    def get_website_audit(self, place_id):
+        return dict(self.audit)
+
+
+class FakeReportRepository:
+    def __init__(self):
+        self.created = None
+
+    def create_report(self, **kwargs):
+        self.created = kwargs
+        return {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "place_id": kwargs["place_id"],
+            "report_version": 1,
+            "status": "generated",
+            "title": kwargs["title"],
+            "selected_signals": kwargs["selected_signals"],
+            "snapshot": kwargs["snapshot"],
+            "source_checked_at": kwargs["source_checked_at"],
+            "created_at": datetime(2026, 9, 16, 20, 1, tzinfo=timezone.utc),
+        }
+
+    def get_report(self, report_id):
+        return None
+
+    def list_for_prospect(self, place_id):
+        return []
+
+
+def test_options_only_expose_allowlisted_client_safe_findings():
+    service = AuditReportService(FakeProspectRepository(), FakeReportRepository())
+
+    result = service.options_for_prospect("place-1")
+
+    signals = [item["signal"] for item in result["options"]]
+    assert signals == ["no_localbusiness_schema", "nap_mismatch"]
+
+    schema = result["options"][0]
+    assert schema["disposition"] == "recommended"
+    assert schema["default_selected"] is True
+
+    nap = result["options"][1]
+    assert nap["disposition"] == "review_required"
+    assert nap["default_selected"] is False
+    assert "Website phone" in nap["evidence"]
+
+
+def test_snapshot_excludes_internal_scores_and_raw_findings():
+    repo = FakeReportRepository()
+    service = AuditReportService(FakeProspectRepository(), repo)
+
+    report = service.create_report(
+        "place-1",
+        selected_signals=["no_localbusiness_schema"],
+    )
+
+    snapshot = report["snapshot"]
+    serialized = str(snapshot).lower()
+
+    assert "total_score" not in serialized
+    assert "tier" not in serialized
+    assert "internal raw finding" not in serialized
+    assert snapshot["business"]["review_count"] == 87
+    assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
+    assert repo.created["selected_signals"] == ["no_localbusiness_schema"]
+
+
+def test_review_required_finding_must_be_explicitly_selected():
+    repo = FakeReportRepository()
+    service = AuditReportService(FakeProspectRepository(), repo)
+
+    report = service.create_report(
+        "place-1",
+        selected_signals=["nap_mismatch"],
+    )
+
+    finding = report["snapshot"]["findings"][0]
+    assert finding["disposition"] == "review_required"
+    assert "Website phone" in finding["evidence"]
+
+
+def test_unreportable_signal_is_rejected():
+    service = AuditReportService(FakeProspectRepository(), FakeReportRepository())
+
+    try:
+        service.create_report("place-1", selected_signals=["email_found"])
+    except AuditReportError as exc:
+        assert "not reportable" in str(exc)
+    else:
+        raise AssertionError("unreportable signal should be rejected")
+
+
+def test_pdf_renderer_produces_valid_pdf_without_internal_scoring_language():
+    service = AuditReportService(FakeProspectRepository(), FakeReportRepository())
+    report = service.create_report(
+        "place-1",
+        selected_signals=["no_localbusiness_schema", "nap_mismatch"],
+    )
+
+    pdf = render_audit_report_pdf(report)
+
+    assert pdf.startswith(b"%PDF-")
+    assert len(pdf) > 2000
+
+
+def test_report_snapshot_is_detached_from_later_prospect_changes():
+    prospects = FakeProspectRepository()
+    reports = FakeReportRepository()
+    service = AuditReportService(prospects, reports)
+
+    report = service.create_report(
+        "place-1",
+        selected_signals=["no_localbusiness_schema"],
+    )
+    original_name = report["snapshot"]["business"]["name"]
+
+    prospects.prospect["name"] = "Changed Later"
+    prospects.findings[0]["finding"] = "changed later"
+
+    assert report["snapshot"]["business"]["name"] == original_name
+    assert "changed later" not in str(report["snapshot"])
