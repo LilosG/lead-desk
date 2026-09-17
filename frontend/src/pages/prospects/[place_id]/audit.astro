@@ -7,7 +7,7 @@ const { place_id } = Astro.params;
 
 <AppLayout
   title="Audit report"
-  description="Build a verified, client-safe local visibility audit."
+  description="Build an evidence-backed, client-safe local visibility audit."
 >
   <div id="audit-builder" data-place-id={place_id} class="mx-auto max-w-4xl space-y-6">
     <section class="rounded-lg border border-[var(--line)] bg-white p-5">
@@ -16,10 +16,10 @@ const { place_id } = Astro.params;
         <div>
           <h2 class="text-2xl font-semibold tracking-tight">Build audit report</h2>
           <p class="mt-1 max-w-2xl text-sm leading-6 text-[var(--muted)]">
-            Select only the findings you want to present. The PDF uses verified Lead Desk evidence and client-safe language; internal scores and qualification logic are never included.
+            Select only the findings you want to present. The PDF uses current Lead Desk evidence and client-safe language; internal scores and qualification logic are never included.
           </p>
         </div>
-        <span class="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-800">Human reviewed</span>
+        <span class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-medium">Manual selection</span>
       </div>
     </section>
 
