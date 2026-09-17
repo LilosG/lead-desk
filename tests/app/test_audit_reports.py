@@ -13,9 +13,12 @@ class FakeProspectRepository:
             "name": "Example Electric",
             "city": "San Diego",
             "state": "CA",
+            "phone": "(619) 555-0101",
             "website_url": "https://example.com",
+            "primary_type": "electrician",
             "rating": 4.9,
             "review_count": 87,
+            "last_review_days": 12,
             "confirmed_trading": True,
             "established": True,
             "scored_at": datetime(2026, 9, 16, tzinfo=timezone.utc),
@@ -44,6 +47,17 @@ class FakeProspectRepository:
         ]
         self.audit = {
             "checked_at": datetime(2026, 9, 16, 20, 0, tzinfo=timezone.utc),
+            "resolved_url": "https://example.com/",
+            "is_reachable": True,
+            "has_ssl": True,
+            "title": "Example Electric | San Diego Electrician",
+            "title_length": 40,
+            "has_localbusiness_schema": False,
+            "has_contact_form": True,
+            "has_service_pages": True,
+            "has_city_pages": True,
+            "has_gbp_link": False,
+            "nap_matches_gbp": False,
         }
 
     def get_prospect(self, place_id):
@@ -114,9 +128,32 @@ def test_snapshot_excludes_internal_scores_and_raw_findings():
     assert "total_score" not in serialized
     assert "tier" not in serialized
     assert "internal raw finding" not in serialized
+    assert snapshot["report_version"] == 2
     assert snapshot["business"]["review_count"] == 87
     assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
+    assert "Homepage scan" in snapshot["findings"][0]["evidence"]
     assert repo.created["selected_signals"] == ["no_localbusiness_schema"]
+
+
+def test_snapshot_includes_broad_client_safe_audit_coverage():
+    service = AuditReportService(FakeProspectRepository(), FakeReportRepository())
+
+    report = service.create_report(
+        "place-1",
+        selected_signals=["no_localbusiness_schema"],
+    )
+
+    snapshot = report["snapshot"]
+    coverage = {item["label"]: item for item in snapshot["audit_scope"]}
+
+    assert coverage["Website availability"]["value"] == "Reachable"
+    assert coverage["Secure connection"]["value"] == "HTTPS active"
+    assert coverage["Structured business data"]["status"] == "attention"
+    assert coverage["Contact path"]["status"] == "confirmed"
+    assert coverage["Business Profile connection"]["status"] == "attention"
+    assert coverage["Business contact consistency"]["status"] == "review"
+    assert coverage["Primary business category"]["value"] == "Electrician"
+    assert "client-facing checks" in snapshot["executive_summary"]
 
 
 def test_snapshot_normalizes_database_native_values_for_jsonb():
@@ -161,7 +198,7 @@ def test_unreportable_signal_is_rejected():
         raise AssertionError("unreportable signal should be rejected")
 
 
-def test_pdf_renderer_produces_valid_pdf_without_internal_scoring_language():
+def test_pdf_renderer_produces_substantial_valid_pdf_without_internal_scoring_language():
     service = AuditReportService(FakeProspectRepository(), FakeReportRepository())
     report = service.create_report(
         "place-1",
@@ -171,7 +208,7 @@ def test_pdf_renderer_produces_valid_pdf_without_internal_scoring_language():
     pdf = render_audit_report_pdf(report)
 
     assert pdf.startswith(b"%PDF-")
-    assert len(pdf) > 2000
+    assert len(pdf) > 5000
 
 
 def test_report_snapshot_is_detached_from_later_prospect_changes():
@@ -184,9 +221,12 @@ def test_report_snapshot_is_detached_from_later_prospect_changes():
         selected_signals=["no_localbusiness_schema"],
     )
     original_name = report["snapshot"]["business"]["name"]
+    original_coverage = list(report["snapshot"]["audit_scope"])
 
     prospects.prospect["name"] = "Changed Later"
     prospects.findings[0]["finding"] = "changed later"
+    prospects.audit["has_ssl"] = False
 
     assert report["snapshot"]["business"]["name"] == original_name
+    assert report["snapshot"]["audit_scope"] == original_coverage
     assert "changed later" not in str(report["snapshot"])
