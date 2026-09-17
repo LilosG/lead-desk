@@ -153,7 +153,10 @@ def test_snapshot_includes_broad_client_safe_audit_coverage():
     assert coverage["Business Profile connection"]["status"] == "attention"
     assert coverage["Business contact consistency"]["status"] == "review"
     assert coverage["Primary business category"]["value"] == "Electrician"
-    assert "client-facing checks" in snapshot["executive_summary"]
+    assert "public profile and core website signals" in snapshot["executive_summary"]
+    assert "worth a closer look" in snapshot["executive_summary"]
+    assert "hidden scores" not in snapshot["executive_summary"].lower()
+    assert "internal scoring" not in snapshot["methodology_note"].lower()
 
 
 def test_snapshot_normalizes_database_native_values_for_jsonb():
