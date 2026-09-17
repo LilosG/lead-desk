@@ -257,17 +257,12 @@ class OutreachService:
             else:
                 verification_note = NO_CLIENT_FACING_FINDING
             try:
-                updated, conflict = self.repository.update_item(
+                updated, conflict = self.repository.record_no_outreach_finding(
                     item_id,
-                    changes={
-                        "subject": None,
-                        "body": None,
-                        "claim_signal": claim.signal,
-                        "verification_status": claim.status,
-                        "verification_note": verification_note,
-                        "status": "no_outreach_finding",
-                    },
                     expected_version=expected_version,
+                    claim_signal=claim.signal,
+                    verification_status=claim.status,
+                    verification_note=verification_note,
                 )
             except OutreachOperationLocked as exc:
                 raise OutreachBlocked(str(exc)) from exc

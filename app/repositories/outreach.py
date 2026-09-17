@@ -417,6 +417,95 @@ class OutreachRepository:
                     )
         return updated, False
 
+    def record_no_outreach_finding(
+        self,
+        item_id: str,
+        *,
+        expected_version: int,
+        claim_signal: str | None,
+        verification_status: str,
+        verification_note: str,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        """Persist the no-finding state and clear stale draft-generation metadata atomically."""
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        select id::text as id, place_id, version
+                        from outreach_queue
+                        where id = %s::uuid
+                        for update
+                        """,
+                        (item_id,),
+                    )
+                    current = cur.fetchone()
+                    if current is None:
+                        return None, False
+                    if current["version"] != expected_version:
+                        return current, True
+
+                    self._assert_no_pending_gmail_operation(cur, item_id)
+
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set subject = null,
+                            body = null,
+                            claim_signal = %s,
+                            verification_status = %s,
+                            verification_note = %s,
+                            status = 'no_outreach_finding',
+                            generation_model = null,
+                            generation_prompt_version = null,
+                            draft_generated_at = null,
+                            gmail_draft_id = null,
+                            gmail_message_id = null,
+                            gmail_draft_created_at = null,
+                            version = version + 1,
+                            updated_at = now()
+                        where id = %s::uuid
+                        returning id::text as id, place_id, channel, status,
+                                  to_address, subject, body, claim_signal,
+                                  verification_status, verification_note,
+                                  generation_model, generation_prompt_version,
+                                  draft_generated_at, gmail_draft_id,
+                                  gmail_message_id, gmail_draft_created_at,
+                                  version, created_at, updated_at
+                        """,
+                        (
+                            claim_signal,
+                            verification_status,
+                            verification_note,
+                            item_id,
+                        ),
+                    )
+                    updated = cur.fetchone()
+
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (
+                            queue_id, place_id, event_type, changes
+                        )
+                        values (%s::uuid, %s, 'no_outreach_finding', %s)
+                        """,
+                        (
+                            item_id,
+                            updated["place_id"],
+                            Jsonb(
+                                {
+                                    "claim_signal": claim_signal,
+                                    "verification_status": verification_status,
+                                    "generation_model": None,
+                                    "generation_prompt_version": None,
+                                    "draft_generated_at": None,
+                                }
+                            ),
+                        ),
+                    )
+
+        return updated, False
+
     def record_generated_draft(
         self,
         item_id: str,
