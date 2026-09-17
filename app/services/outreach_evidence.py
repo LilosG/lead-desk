@@ -85,4 +85,4 @@ def recipient_finding_block(
     technical = technical_claim.strip()
     if technical:
         technical = technical[0].lower() + technical[1:]
-    return f"{context} On the website, though, {technical}"
+    return f"{context} That is a strong review profile, but {technical}"
