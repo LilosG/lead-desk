@@ -23,6 +23,16 @@ const { place_id } = Astro.params;
       </div>
     </section>
 
+    <section class="rounded-lg border border-[var(--line)] bg-white">
+      <div class="border-b border-[var(--line)] px-5 py-4">
+        <div class="text-sm font-medium">Existing demos</div>
+        <div class="mt-1 text-xs text-[var(--muted)]">Check what already exists for this prospect before generating another concept.</div>
+      </div>
+      <div id="existing-demos" class="divide-y divide-[var(--line)]">
+        <div class="px-5 py-5 text-sm text-[var(--muted)]">Loading…</div>
+      </div>
+    </section>
+
     <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <section class="rounded-lg border border-[var(--line)] bg-white">
         <div class="border-b border-[var(--line)] px-5 py-4">
@@ -125,6 +135,15 @@ const { place_id } = Astro.params;
 
   <script>
     type TemplateOption = { key: string; name: string; description: string };
+    type DemoSummary = {
+      id: string;
+      status: string;
+      template_key: string;
+      slug: string;
+      public_url: string | null;
+      created_at: string;
+      published_at: string | null;
+    };
     type DemoOptions = {
       place_id: string;
       business_name: string;
@@ -143,12 +162,21 @@ const { place_id } = Astro.params;
       return element;
     };
 
+    const escapeHtml = (value: unknown): string =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+
     const root = required<HTMLElement>('#demo-builder');
     const rawPlaceId = root.dataset.placeId;
     if (!rawPlaceId) throw new Error('Missing prospect place ID');
     const placeId = rawPlaceId;
 
     const businessName = required<HTMLElement>('#business-name');
+    const existingDemos = required<HTMLElement>('#existing-demos');
     const form = required<HTMLFormElement>('#demo-form');
     const templateSelect = required<HTMLSelectElement>('#template-key');
     const templateDescription = required<HTMLElement>('#template-description');
@@ -172,6 +200,45 @@ const { place_id } = Astro.params;
 
     const lines = (value: string): string[] =>
       value.split('\n').map((item) => item.trim()).filter(Boolean);
+
+    const statusBadge = (status: string): string => {
+      if (status === 'published') return '<span class="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800">Published</span>';
+      if (status === 'ready_for_review') return '<span class="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">Ready for review</span>';
+      if (status === 'build_failed') return '<span class="rounded-full bg-red-50 px-2 py-1 text-[11px] font-medium text-red-800">Build failed</span>';
+      return `<span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium">${escapeHtml(status.replaceAll('_', ' '))}</span>`;
+    };
+
+    async function loadExistingDemos(): Promise<void> {
+      const response = await fetch(`/api/demo-sites/prospects/${encodeURIComponent(placeId)}`, {
+        headers: { Accept: 'application/json' },
+      });
+      const body = await response.json().catch(() => []);
+      if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+
+      const demos = body as DemoSummary[];
+      existingDemos.innerHTML = demos.length
+        ? demos.map((demo) => {
+            const when = new Date(demo.created_at).toLocaleString();
+            const action = demo.status === 'published' && demo.public_url
+              ? `<a href="${escapeHtml(demo.public_url)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">View live</a>`
+              : demo.status === 'ready_for_review'
+                ? `<a href="/api/demo-sites/${encodeURIComponent(demo.id)}/preview" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Open preview</a>`
+                : '';
+            return `
+              <div class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    ${statusBadge(demo.status)}
+                    <span class="text-xs font-medium">${escapeHtml(demo.template_key)}</span>
+                  </div>
+                  <div class="mt-1 text-[11px] text-[var(--muted)]">Created ${escapeHtml(when)}</div>
+                </div>
+                ${action}
+              </div>
+            `;
+          }).join('')
+        : '<div class="px-5 py-5 text-sm text-[var(--muted)]">No demo sites have been created for this prospect.</div>';
+    }
 
     const updateTemplateDescription = (): void => {
       const selected = templates.find((item) => item.key === templateSelect.value);
@@ -223,7 +290,10 @@ const { place_id } = Astro.params;
         currentDemoId = body.id;
         currentPublicUrl = null;
         previewDemo.href = `/api/demo-sites/${encodeURIComponent(body.id)}/preview`;
+        publishButton.disabled = false;
+        publishButton.textContent = 'Approve & publish';
         reviewPanel.classList.remove('hidden');
+        await loadExistingDemos();
         reviewPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } catch (error) {
         builderError.textContent = error instanceof Error ? error.message : 'Unable to generate demo site.';
@@ -253,6 +323,7 @@ const { place_id } = Astro.params;
         publishSuccess.classList.remove('hidden');
         publishButton.disabled = true;
         publishButton.textContent = 'Published';
+        await loadExistingDemos();
       } catch (error) {
         publishError.textContent = error instanceof Error ? error.message : 'Unable to publish demo.';
         publishError.classList.remove('hidden');
@@ -267,8 +338,8 @@ const { place_id } = Astro.params;
       window.setTimeout(() => { copyDemoUrl.textContent = 'Copy URL'; }, 1500);
     });
 
-    loadOptions().catch((error) => {
-      builderError.textContent = error instanceof Error ? error.message : 'Unable to load demo options.';
+    Promise.all([loadOptions(), loadExistingDemos()]).catch((error) => {
+      builderError.textContent = error instanceof Error ? error.message : 'Unable to load demo builder.';
       builderError.classList.remove('hidden');
       generateButton.disabled = true;
     });
