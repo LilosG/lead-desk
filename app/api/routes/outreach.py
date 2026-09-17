@@ -5,9 +5,11 @@ from fastapi import APIRouter, HTTPException, Query
 from app.core.config import get_settings
 from app.core.database import pool
 from app.integrations.openrouter import OpenRouterClient
+from app.integrations.openrouter_constrained import ConstrainedOutreachClient
 from app.integrations.openrouter_structured import StructuredOpenRouterClient
 from app.repositories.integrations import IntegrationRepository
 from app.repositories.outreach import OutreachRepository
+from app.repositories.outreach_evidence import OutreachEvidenceRepository
 from app.schemas.outreach import (
     OutreachCreate,
     OutreachQueueResponse,
@@ -30,11 +32,13 @@ def get_service() -> OutreachService:
     settings = get_settings()
     generator = None
     if settings.openrouter_configured:
-        generator_class = (
-            StructuredOpenRouterClient
-            if settings.openrouter_model == 'openai/gpt-5-mini'
-            else OpenRouterClient
-        )
+        if settings.openrouter_model == 'qwen/qwen3-30b-a3b-instruct-2507':
+            generator_class = ConstrainedOutreachClient
+        elif settings.openrouter_model == 'openai/gpt-5-mini':
+            generator_class = StructuredOpenRouterClient
+        else:
+            generator_class = OpenRouterClient
+
         generator = generator_class(
             api_key=settings.openrouter_api_key or '',
             model=settings.openrouter_model,
@@ -51,6 +55,7 @@ def get_service() -> OutreachService:
 
     return OutreachService(
         OutreachRepository(pool),
+        evidence_repository=OutreachEvidenceRepository(pool),
         generator=generator,
         gmail=gmail,
         generation_model=settings.openrouter_model if generator else None,

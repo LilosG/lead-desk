@@ -6,10 +6,14 @@ from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
 from app.repositories.outreach import OutreachOperationLocked, OutreachRepository
+from app.repositories.outreach_evidence import OutreachEvidenceRepository
+from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
+from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v6"
+PROMPT_VERSION = "outreach-v8"
+MAX_DRAFT_ATTEMPTS = 3
 CAN_SPAM_FOOTER = (
     "Mike\n"
     "LILOs Growth\n"
@@ -39,6 +43,7 @@ class OutreachService:
         self,
         repository: OutreachRepository,
         *,
+        evidence_repository: OutreachEvidenceRepository | None = None,
         generator: OpenRouterClient | None = None,
         gmail: GmailDraftClient | None = None,
         verifier: OutreachClaimVerifier | None = None,
@@ -46,6 +51,7 @@ class OutreachService:
         gmail_sender_email: str | None = None,
     ) -> None:
         self.repository = repository
+        self.evidence_repository = evidence_repository
         self.generator = generator
         self.gmail = gmail
         self.verifier = verifier or OutreachClaimVerifier()
@@ -179,18 +185,36 @@ class OutreachService:
 
     @staticmethod
     def _client_facing_verification_context(context: dict) -> dict:
-        """Restrict live verification to findings approved for cold outreach.
-
-        Scoring can contain internal-only evidence such as template-builder
-        fingerprints. Those signals must never win claim selection or prevent a
-        later, recipient-safe finding from being verified.
-        """
         findings = [
             finding
             for finding in (context.get("findings") or [])
             if finding.get("signal") in OUTREACHABLE_SIGNALS
         ]
         return {**context, "findings": findings}
+
+    def _recent_draft_structures(
+        self,
+        *,
+        current_item_id: str,
+    ) -> list[tuple[str | None, str, str | None]]:
+        items, _ = self.repository.list_items(status=None)
+        recent: list[tuple[str | None, str, str | None]] = []
+        for item in items:
+            if item.get("id") == current_item_id:
+                continue
+            if item.get("status") not in {"review_required", "draft_ready", "approved"}:
+                continue
+            body = item.get("body")
+            if not body:
+                continue
+            visible_claim = client_facing_claim(
+                item.get("claim_signal"),
+                item.get("verification_note") or "verified",
+            )
+            recent.append((item.get("name"), body, visible_claim))
+            if len(recent) >= 25:
+                break
+        return recent
 
     def generate_draft(self, item_id: str, *, expected_version: int) -> dict | None:
         if self.generator is None:
@@ -224,11 +248,9 @@ class OutreachService:
 
         verification_context = self._client_facing_verification_context(context)
         claim = self.verifier.verify(verification_context)
-        visible_claim = client_facing_claim(claim.signal, claim.text)
+        technical_claim = client_facing_claim(claim.signal, claim.text)
 
-        # No recipient-safe, live-verifiable finding is a real workflow outcome,
-        # not a failed draft. Persist it explicitly and clear any stale copy.
-        if not visible_claim:
+        if not technical_claim:
             verification_note = claim.note.strip()
             if verification_note:
                 verification_note = f"{verification_note} {NO_CLIENT_FACING_FINDING}"
@@ -255,24 +277,63 @@ class OutreachService:
                 )
             return updated
 
-        try:
-            copy = self.generator.generate_email(
-                business_name=context.get("name") or "your business",
-                city=context.get("city"),
-                vertical=context.get("vertical"),
-                verified_claim=visible_claim,
+        business_name = context.get("name") or "your business"
+        evidence = None
+        if self.evidence_repository is not None:
+            evidence = RecipientEvidence.from_row(
+                self.evidence_repository.get(context["place_id"])
             )
-        except OpenRouterError as exc:
-            raise OutreachIntegrationUnavailable(str(exc)) from exc
+        visible_claim = recipient_finding_block(
+            business_name=business_name,
+            technical_claim=technical_claim,
+            evidence=evidence,
+        )
 
-        note = copy.body.strip()
-        if note.count(CLAIM_TOKEN) != 1:
+        recent_drafts = self._recent_draft_structures(current_item_id=item_id)
+        copy = None
+        rendered_note = None
+        last_similarity = 0.0
+        last_match: str | None = None
+
+        for _attempt in range(MAX_DRAFT_ATTEMPTS):
+            try:
+                candidate = self.generator.generate_email(
+                    business_name=business_name,
+                    city=context.get("city"),
+                    vertical=context.get("vertical"),
+                    verified_claim=visible_claim,
+                )
+            except OpenRouterError as exc:
+                raise OutreachIntegrationUnavailable(str(exc)) from exc
+
+            note = candidate.body.strip()
+            if note.count(CLAIM_TOKEN) != 1:
+                raise OutreachIntegrationUnavailable(
+                    "generated outreach did not preserve the verified finding slot"
+                )
+            candidate_rendered = note.replace(CLAIM_TOKEN, visible_claim)
+            too_similar, ratio, matched_business = is_too_similar(
+                candidate_rendered,
+                candidate_business_name=business_name,
+                candidate_verified_claim=visible_claim,
+                recent_drafts=recent_drafts,
+            )
+            if not too_similar:
+                copy = candidate
+                rendered_note = candidate_rendered
+                break
+            last_similarity = ratio
+            last_match = matched_business
+
+        if copy is None or rendered_note is None:
+            matched = last_match or "a recent draft"
             raise OutreachIntegrationUnavailable(
-                "generated outreach did not preserve the verified finding slot"
+                "generated outreach remained too similar to recent draft structure "
+                f"after {MAX_DRAFT_ATTEMPTS} attempts ({last_similarity:.2f} similarity vs {matched}); "
+                "no draft was saved"
             )
-        note = note.replace(CLAIM_TOKEN, visible_claim)
 
-        body = f"{note}\n\n{CAN_SPAM_FOOTER}"
+        body = f"{rendered_note}\n\n{CAN_SPAM_FOOTER}"
 
         try:
             updated, conflict = self.repository.record_generated_draft(

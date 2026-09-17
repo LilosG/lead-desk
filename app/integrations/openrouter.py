@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import requests
@@ -23,6 +24,17 @@ class GeneratedCopy:
     model: str
 
 
+@dataclass(frozen=True)
+class OutreachStyleBrief:
+    """Rhetorical variation only. Never authorizes additional prospect facts."""
+
+    subject_mode: str
+    greeting_mode: str
+    opener_mode: str
+    close_mode: str
+    rhythm_mode: str
+
+
 class OpenRouterClient:
     def __init__(
         self,
@@ -35,6 +47,48 @@ class OpenRouterClient:
         self.model = model
         self.timeout_seconds = timeout_seconds
 
+    @staticmethod
+    def _style_brief(business_name: str) -> OutreachStyleBrief:
+        """Assign a stable style fingerprint without changing recipient facts."""
+
+        digest = hashlib.sha256(business_name.encode("utf-8")).digest()
+        subject_modes = (
+            "business_name_only",
+            "business_name_plus_website",
+            "plain_two_or_three_word_subject_anchored_to_business",
+        )
+        greeting_modes = (
+            "simple_hi",
+            "no_standalone_greeting",
+            "brief_hello",
+        )
+        opener_modes = (
+            "finding_first",
+            "one_neutral_website_context_sentence_then_finding",
+            "business_name_context_then_finding",
+            "direct_note_with_finding_in_first_substantive_paragraph",
+        )
+        close_modes = (
+            "brief_question_about_showing_the_exact_location",
+            "plain_offer_to_send_the_specific_detail",
+            "no_pressure_offer_without_asking_for_a_call",
+            "short_acknowledgement_that_no_reply_is_needed_if_already_known",
+            "brief_offer_to_clarify_what_was_checked",
+        )
+        rhythm_modes = (
+            "two_short_paragraphs",
+            "three_compact_paragraphs",
+            "one_compact_body_with_a_short_final_line",
+        )
+
+        return OutreachStyleBrief(
+            subject_mode=subject_modes[digest[0] % len(subject_modes)],
+            greeting_mode=greeting_modes[digest[1] % len(greeting_modes)],
+            opener_mode=opener_modes[digest[2] % len(opener_modes)],
+            close_mode=close_modes[digest[3] % len(close_modes)],
+            rhythm_mode=rhythm_modes[digest[4] % len(rhythm_modes)],
+        )
+
     def generate_email(
         self,
         *,
@@ -43,22 +97,23 @@ class OpenRouterClient:
         vertical: str | None,
         verified_claim: str | None,
     ) -> GeneratedCopy:
-        # City and vertical are deliberately excluded from model context. They
-        # are operational metadata, not recipient-facing personalization.
+        style = self._style_brief(business_name)
         facts = {
             "business_name": business_name,
             "verified_claim_available": bool(verified_claim),
+            "style_brief": asdict(style),
         }
         system = self._system_prompt()
         user = (
-            "Write one restrained, genuinely human note using only these facts:\n"
+            "Write one restrained, genuinely human first-touch note using only the supplied recipient facts. "
+            "The style_brief controls rhetoric only; it does not authorize any new factual statement.\n"
             + json.dumps(facts, ensure_ascii=False)
         )
 
         subject, body = self._request_copy(
             system=system,
             user=user,
-            temperature=0.45,
+            temperature=0.55,
         )
         subject, body = self._ensure_finding_slot(
             subject=subject,
@@ -78,22 +133,19 @@ class OpenRouterClient:
                 vertical=vertical,
             )
         except OpenRouterError as exc:
-            # One quality-repair pass is allowed. Model noncompliance should not
-            # leak into a draft as invented personalization or unsupported impact.
             repair_user = (
                 user
                 + "\n\nThe previous draft violated this constraint: "
                 + str(exc)
-                + ". Rewrite it from scratch. Before the verified-finding token, "
-                + "you may only greet the recipient and neutrally say you looked at this business's site. "
-                + "Do not mention any page detail, service area, service, hours, reviews, contact information, "
-                + "or anything else you observed. The verified token is the ONLY finding. After the token, "
-                + "do not add a benefit, consequence, prediction, or second observation."
+                + ". Rewrite it from scratch while preserving the style_brief. "
+                + "Use only the business name plus the application-owned verified-finding token as recipient facts. "
+                + "Do not add another observation, consequence, benefit, prediction, or invented familiarity. "
+                + "Do not reuse the same opening and closing structure from the rejected draft."
             )
             subject, body = self._request_copy(
                 system=system,
                 user=repair_user,
-                temperature=0.15,
+                temperature=0.35,
             )
             subject, body = self._ensure_finding_slot(
                 subject=subject,
@@ -102,28 +154,14 @@ class OpenRouterClient:
                 user=repair_user,
                 has_verified_claim=bool(verified_claim),
             )
-            try:
-                self._validate_copy(
-                    subject=subject,
-                    body=body,
-                    has_verified_claim=bool(verified_claim),
-                    business_name=business_name,
-                    city=city,
-                    vertical=vertical,
-                )
-            except OpenRouterError:
-                subject, body = self._safe_fallback(
-                    business_name=business_name,
-                    has_verified_claim=bool(verified_claim),
-                )
-                self._validate_copy(
-                    subject=subject,
-                    body=body,
-                    has_verified_claim=bool(verified_claim),
-                    business_name=business_name,
-                    city=city,
-                    vertical=vertical,
-                )
+            self._validate_copy(
+                subject=subject,
+                body=body,
+                has_verified_claim=bool(verified_claim),
+                business_name=business_name,
+                city=city,
+                vertical=vertical,
+            )
 
         return GeneratedCopy(
             subject=subject,
@@ -136,35 +174,42 @@ class OpenRouterClient:
         return f"""
 You write one short first-touch email from Mike at LILOs Growth to one real local business owner.
 
-This must feel like Mike personally opened this specific business's website/profile and sent a normal note. It must NOT read like a cold-email sequence, lead-gen template, audit pitch, prospecting list, mail merge, or AI copy.
+The note must read like an individual message, not a cold-email sequence, lead-gen template, audit pitch, prospecting list, mail merge, or AI copy. Different businesses must not collapse into the same opening + finding + closing skeleton.
 
-Use only the supplied business name and the existence of one verified finding. Do not invent a contact name, relationship, result, urgency, customer impact, ranking impact, revenue impact, or ANY second finding. Do not imply Mike was browsing, comparing, researching, or checking out other businesses.
+FACT CONTRACT:
+- Use only the supplied business name and the existence of one application-owned verified finding.
+- Do not invent a contact name, relationship, result, urgency, customer impact, ranking impact, revenue impact, or any second finding.
+- Do not imply Mike was browsing, comparing, researching, or checking other businesses.
+- If verified_claim_available is true, place the exact token {CLAIM_TOKEN} exactly once in the body. The token is the only website observation you may make.
+- Do not explain, paraphrase, strengthen, weaken, or add consequences to the token.
+- Do not mention service area, services, hours, reviews, contact details, design, content, pricing, or any other site detail.
 
-The verified finding itself is controlled by the application. If verified_claim_available is true, place the exact token {CLAIM_TOKEN} exactly once in the body. That token is the ONLY website/profile observation you are allowed to make. Do not describe any service area, service, page, contact detail, hours, review, content, design, or other site detail before or after the token. Do not explain or paraphrase the token. Do not add a benefit, harm, prediction, significance claim, or consequence. If no verified finding is available, do not use the token.
-
-The words before the token may do only two things: greet the recipient and neutrally state that Mike looked at this business's site/profile. Nothing else. Put the token early in the note, no later than the first substantive paragraph.
-
-Write the WHOLE note as one coherent message. Do not output separate intro / finding / CTA fields.
+STYLE BRIEF:
+- Follow the supplied style_brief to vary subject shape, greeting, opener shape, closing shape, and paragraph rhythm.
+- The style_brief is rhetorical metadata only. It never authorizes a new fact.
+- Variation must come from syntax and structure, not invented personalization.
+- It is acceptable to put the verified finding immediately after a greeting with no setup sentence.
+- It is acceptable to mention the business name only in the subject if the body is otherwise natural.
+- Avoid awkward possessive constructions for business names ending in s. Prefer "the Bright Electric Services website" or "your website" rather than "Bright Electric Services's website".
 
 STYLE:
-- Subject should usually just be the business name, or at most the business name plus one ordinary word such as "website". No city, industry, urgency, or sales language.
-- Body: 30-65 words before Mike's signature/footer, usually 2 short paragraphs.
-- A simple "Hi," is fine, but do not use fake familiarity.
-- Use contractions and normal spoken business English.
-- The closing should be incidental and concrete: offer to point to the exact spot, send a screenshot, or leave it there. Do not pitch services or explain why the finding matters.
-- Vary syntax naturally. Do not force the same opening or closing pattern every time.
+- Subject: 1-5 words, plain, business-anchored, no city, industry, urgency, or sales language.
+- Body: 25-80 words before Mike's application-owned footer.
+- Use contractions and ordinary spoken business English.
+- Keep the verified finding early.
+- The closing should be low-pressure and concrete, but do not default every note to the same offer.
 - Plain text only.
+- Do not add Mike's name, company, postal address, opt-out language, or a signature; the application appends those.
 
-DO NOT USE:
+PROHIBITED:
+- fake familiarity or generic compliments
+- marketing hype, exclamation points, links, or sales claims
 - "quick note", "quick observation", "worth flagging", "noticed one thing", "I was reviewing", "I came across your business", "hope you're well"
-- "checking out", "looking at other", "researching", "comparing", or any wording that reveals a prospecting list or category search
+- "checking out", "looking at other", "researching", "comparing"
 - "Want me to send over", "Would you be open to", "Would it be useful if", "Happy to send over", "book a call", "schedule a call"
-- "quick fix", "small thing", "easy fix", "could help", "might help", "may help", "should help", "could improve", "make it easier", or any other claim about the effect or value of the finding
+- "quick fix", "small thing", "easy fix", "could help", "might help", "may help", "should help", "could improve", "make it easier"
 - "online presence", "grow your business", "increase leads", "you're losing customers", "rankings", "traffic", "free audit"
 - SEO jargon in your own words such as schema, PageSpeed, map pack, title tag, or Google Business Profile
-- generic compliments, hype, exclamation points, links, or marketing language
-
-Do not include Mike's name, company, postal address, opt-out language, or a signature. The application adds those after the note.
 
 Return JSON only with string keys "subject" and "body".
 """.strip()
@@ -190,11 +235,47 @@ Return JSON only with string keys "subject" and "body".
         subject, body = self._request_copy(
             system=system,
             user=repair_user,
-            temperature=0.2,
+            temperature=0.3,
         )
         if body.count(CLAIM_TOKEN) != 1:
-            body = self._insert_verified_finding_slot(body)
+            raise OpenRouterError(
+                "OpenRouter could not preserve the verified finding slot after repair"
+            )
         return subject, body
+
+    @staticmethod
+    def _insert_verified_finding_slot(body: str) -> str:
+        """Compatibility helper used by slot-repair regressions.
+
+        Runtime generation no longer falls back to this helper after a failed
+        model repair; `_ensure_finding_slot` fails closed instead.
+        """
+
+        cleaned = body.replace(CLAIM_TOKEN, "").strip()
+        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", cleaned) if part.strip()]
+        if not paragraphs:
+            return CLAIM_TOKEN
+
+        target_index = 0
+        if paragraphs[0].lower().rstrip() in {"hi", "hi,", "hello", "hello,"} and len(paragraphs) > 1:
+            target_index = 1
+
+        target = paragraphs[target_index]
+        match = re.search(r"[.!?](?:\s|$)", target)
+        if match:
+            insert_at = match.end()
+            target = (
+                target[:insert_at].rstrip()
+                + " "
+                + CLAIM_TOKEN
+                + " "
+                + target[insert_at:].lstrip()
+            ).strip()
+        else:
+            target = f"{target} {CLAIM_TOKEN}".strip()
+
+        paragraphs[target_index] = target
+        return "\n\n".join(paragraphs)
 
     def _request_copy(
         self,
@@ -246,51 +327,6 @@ Return JSON only with string keys "subject" and "body".
         return subject, body
 
     @staticmethod
-    def _insert_verified_finding_slot(body: str) -> str:
-        cleaned = body.replace(CLAIM_TOKEN, "").strip()
-        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", cleaned) if part.strip()]
-        if not paragraphs:
-            return CLAIM_TOKEN
-
-        target_index = 0
-        if paragraphs[0].lower().rstrip() in {"hi", "hi,", "hello", "hello,"} and len(paragraphs) > 1:
-            target_index = 1
-
-        target = paragraphs[target_index]
-        match = re.search(r"[.!?](?:\s|$)", target)
-        if match:
-            insert_at = match.end()
-            target = (
-                target[:insert_at].rstrip()
-                + " "
-                + CLAIM_TOKEN
-                + " "
-                + target[insert_at:].lstrip()
-            ).strip()
-        else:
-            target = f"{target} {CLAIM_TOKEN}".strip()
-
-        paragraphs[target_index] = target
-        return "\n\n".join(paragraphs)
-
-    @staticmethod
-    def _safe_fallback(*, business_name: str, has_verified_claim: bool) -> tuple[str, str]:
-        subject = business_name
-        if has_verified_claim:
-            body = (
-                f"Hi,\n\nI was on {business_name}'s website earlier. {CLAIM_TOKEN}\n\n"
-                "If you want, I can point to the exact place I'm referring to or send a screenshot. "
-                "No need to reply if it's already on your list."
-            )
-        else:
-            body = (
-                f"Hi,\n\nI was on {business_name}'s website earlier. "
-                "If you want, I can send over the specific thing I was looking at. "
-                "No need to reply if it's already on your list."
-            )
-        return subject, body
-
-    @staticmethod
     def _validate_copy(
         *,
         subject: str,
@@ -317,9 +353,6 @@ Return JSON only with string keys "subject" and "body".
 
         if has_verified_claim:
             prefix = body.split(CLAIM_TOKEN, 1)[0].lower()
-            # Before the immutable finding, the model may only establish that
-            # Mike looked at this business's site. Any separate observation is
-            # unverified personalization and must be rejected.
             unverified_observation_terms = (
                 "noticed",
                 "saw ",
@@ -416,7 +449,7 @@ Return JSON only with string keys "subject" and "body".
         )
         if any(token in lowered for token in forbidden):
             raise OpenRouterError(
-                "Generated copy introduced prospect-list language, an unsupported consequence, sales cliché, jargon, or disallowed outreach pattern"
+                "Generated copy introduced prospect-list language, an unsupported consequence, sales cliché, or jargon"
             )
         if "!" in combined:
             raise OpenRouterError("Generated copy used promotional punctuation")
@@ -428,7 +461,12 @@ Return JSON only with string keys "subject" and "body".
 
         body_scope = body.lower()
         if business_name:
-            body_scope = body_scope.replace(business_name.lower(), "")
+            business_lower = business_name.lower()
+            if business_lower.endswith("s") and f"{business_lower}'s" in body_scope:
+                raise OpenRouterError(
+                    "Generated copy used an awkward possessive form of a business name ending in s"
+                )
+            body_scope = body_scope.replace(business_lower, "")
         if city and city.lower() in body_scope:
             raise OpenRouterError("Generated body exposed geographic prospecting context")
         if vertical:
