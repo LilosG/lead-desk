@@ -22,7 +22,7 @@ router = APIRouter(
 
 class SweepCreateRequest(BaseModel):
     verticals: list[str] = Field(min_length=1)
-    cities: list[str] | None = None
+    cities: list[str] = Field(min_length=1)
     use_grid: bool = False
     merge_results: bool = True
     crawl_batch: int = Field(default=80, ge=1, le=500)
@@ -30,15 +30,7 @@ class SweepCreateRequest(BaseModel):
 
     @field_validator("cities")
     @classmethod
-    def normalize_cities(cls, value: list[str] | None) -> list[str] | None:
-        if value is None:
-            return None
-
-        configured_by_lower = {
-            city.casefold(): city
-            for city in market_config.TARGET_CITIES
-        }
-        geo_label = market_config.GEO_LABEL.casefold()
+    def normalize_cities(cls, value: list[str]) -> list[str]:
         normalized: list[str] = []
         seen: set[str] = set()
 
@@ -50,31 +42,17 @@ class SweepCreateRequest(BaseModel):
                 raise ValueError("sweep city is too long")
             if any(ord(char) < 32 for char in city):
                 raise ValueError("sweep city contains invalid characters")
-            if city.casefold() == geo_label:
-                return None
 
-            lower_city = city.casefold()
-            if lower_city in {"ca", "california"}:
-                continue
-
-            canonical = configured_by_lower.get(lower_city)
-            if canonical is None:
-                for suffix in (", california", ", ca", " california", " ca"):
-                    if not lower_city.endswith(suffix):
-                        continue
-                    base = city[: -len(suffix)].strip()
-                    canonical = configured_by_lower.get(base.casefold())
-                    if canonical is not None:
-                        break
-
-            city = canonical or city
             key = city.casefold()
             if key in seen:
                 continue
             seen.add(key)
             normalized.append(city)
 
-        return normalized or None
+        if not normalized:
+            raise ValueError("select at least one U.S. city for the sweep")
+
+        return normalized
 
 
 @router.get("/config")
