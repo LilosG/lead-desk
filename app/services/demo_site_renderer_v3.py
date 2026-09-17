@@ -10,7 +10,7 @@ V3_TEMPLATE_OPTION = {
     "name": "Trade Modern v3",
     "description": (
         "Full local home-service homepage with conversion-focused hero, services, local trust, "
-        "process, reputation, service areas, FAQ, and final contact CTA."
+        "process, reputation, service areas, FAQ, photography, and multiple contact CTAs."
     ),
 }
 
@@ -95,7 +95,7 @@ def render_demo_site_v3(
         reputation_text = f"{int(review_count):,} Google reviews"
 
     hero_photo = (
-        f'<img class="hero-photo" src="{hero_image}" alt="{business_name} {category_lower} service concept" loading="eager" />'
+        f'<img class="hero-photo" src="{hero_image}" alt="{business_name} {category_lower} service" loading="eager" />'
         if hero_image else ""
     )
     hero_class = "hero has-photo" if hero_image else "hero"
@@ -111,7 +111,7 @@ def render_demo_site_v3(
         f'''<article class="service-card">
           <div class="service-icon">{index:02d}</div>
           <h3>{_safe(service)}</h3>
-          <p>Talk directly with {business_name} to confirm scope, availability, and project details.</p>
+          <p>Call {business_name} to confirm scope, availability, and project details.</p>
           <a href="{call_href}">Ask about this service <span>→</span></a>
         </article>'''
         for index, service in enumerate(services[:6], start=1)
@@ -123,17 +123,14 @@ def render_demo_site_v3(
 
     media = ""
     if work_image:
-        media = f'<img class="about-photo" src="{work_image}" alt="{business_name} service work concept" loading="lazy" />'
+        media = f'<img class="about-photo" src="{work_image}" alt="{business_name} service work" loading="lazy" />'
     elif secondary_image:
-        media = f'<img class="about-photo" src="{secondary_image}" alt="{business_name} local service concept" loading="lazy" />'
+        media = f'<img class="about-photo" src="{secondary_image}" alt="{business_name} local service" loading="lazy" />'
 
-    gallery = ""
-    if work_image and secondary_image:
-        gallery = f'''<section class="gallery-band" aria-label="Service imagery">
-          <div class="wrap gallery-grid">
-            <img src="{work_image}" alt="{business_name} service work concept" loading="lazy" />
-            <img src="{secondary_image}" alt="{business_name} additional service concept" loading="lazy" />
-          </div>
+    photo_band = ""
+    if secondary_image and work_image:
+        photo_band = f'''<section class="photo-band" aria-label="{business_name} service photography">
+          <img src="{secondary_image}" alt="{business_name} local service" loading="lazy" />
         </section>'''
 
     rating_stat = (
@@ -153,8 +150,8 @@ def render_demo_site_v3(
           <div class="wrap reputation-grid">
             <div>
               <div class="section-kicker">Local reputation</div>
-              <h2>Public reputation customers can see before they call.</h2>
-              <p>Google currently shows <strong>{business_name}</strong> at <strong>{float(rating):.1f} stars</strong> across <strong>{int(review_count):,} reviews</strong>. This concept keeps that proof visible near the decision point without inventing testimonial copy.</p>
+              <h2>A strong local reputation customers can verify.</h2>
+              <p>Google currently shows <strong>{business_name}</strong> at <strong>{float(rating):.1f} stars</strong> across <strong>{int(review_count):,} reviews</strong>. Public reputation is kept visible so customers can quickly understand how the business is rated before they call.</p>
             </div>
             <div class="rating-panel"><div class="big-rating">{float(rating):.1f}</div><div class="stars">★★★★★</div><strong>{int(review_count):,} Google reviews</strong><span>Public aggregate reputation data</span></div>
           </div>
@@ -162,20 +159,20 @@ def render_demo_site_v3(
 
     faq_items = [
         (
-            f"What areas does {business_name} serve?",
-            f"The service areas currently confirmed for this concept include {area_names}. Call to confirm availability for your exact address.",
+            f"What areas does {business_name_raw} serve?",
+            f"The service areas highlighted here include {', '.join(service_areas[:5])}. Call to confirm availability for your exact address.",
         ),
         (
-            f"What services does {business_name} offer?",
-            f"The services highlighted here include {service_names}. Call to confirm the exact scope for your project.",
+            f"What services does {business_name_raw} offer?",
+            f"The services highlighted here include {', '.join(services[:4])}. Call to confirm the exact scope for your project.",
         ),
         (
             "How do I request service?",
-            f"Call {phone or business_name} directly to discuss the work, confirm availability, and determine the next step.",
+            f"Call {phone_raw or business_name_raw} directly to discuss the work, confirm availability, and determine the next step.",
         ),
         (
             "Can I ask about a service that is not listed here?",
-            "Yes. The homepage highlights the services confirmed for this concept; call the business directly to verify other work or special requests.",
+            "Yes. Call the business directly to verify other services, project types, or special requests.",
         ),
     ]
     faq_markup = "".join(
@@ -205,15 +202,16 @@ def render_demo_site_v3(
     section{{padding:82px 0}}.section-head{{display:flex;align-items:end;justify-content:space-between;gap:36px;margin-bottom:34px}}.section-head h2,.about-copy h2,.why h2,.process h2,.reputation h2,.areas h2,.faq h2,.contact h2{{font-size:clamp(36px,4.3vw,54px);line-height:1.02;letter-spacing:-.047em;margin:8px 0 0}}.section-head p{{max-width:480px;margin:0;color:var(--muted)}}
     .services{{background:var(--surface)}}.service-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}}.service-card{{background:#fff;border:1px solid var(--line);padding:25px;min-height:225px;display:flex;flex-direction:column}}.service-icon{{font-size:11px;font-weight:850;color:#9a6c13}}.service-card h3{{font-size:22px;line-height:1.15;letter-spacing:-.035em;margin:24px 0 10px}}.service-card p{{font-size:13px;color:var(--muted);margin:0 0 25px}}.service-card a{{margin-top:auto;font-size:12px;font-weight:850;color:#4d5a62}}.service-card a span{{color:#9a6c13}}
     .about-grid{{display:grid;grid-template-columns:{'1fr 1fr' if media else '1fr'};gap:58px;align-items:center}}.about-photo{{width:100%;height:500px;object-fit:cover;border-radius:16px;box-shadow:0 20px 50px #10203018}}.about-copy p{{font-size:16px;color:var(--muted);max-width:650px}}.about-points{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:28px}}.about-point{{border:1px solid var(--line);padding:18px;border-radius:10px}}.about-point strong{{display:block;font-size:14px}}.about-point span{{display:block;color:var(--muted);font-size:12px;margin-top:5px}}
-    .why{{background:var(--dark);color:#fff}}.why h2{{max-width:720px}}.why-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:36px}}.why-card{{border:1px solid #ffffff22;background:#ffffff08;padding:26px;border-radius:12px}}.why-card b{{display:grid;place-items:center;width:34px;height:34px;border-radius:999px;background:var(--accent);color:#111}}.why-card h3{{font-size:20px;margin:22px 0 9px}}.why-card p{{color:#bcc7cd;font-size:13px;margin:0}}
+    .why{{background:var(--dark);color:#fff}}.why h2{{max-width:760px}}.why-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:36px}}.why-card{{border:1px solid #ffffff22;background:#ffffff08;padding:26px;border-radius:12px}}.why-card b{{display:grid;place-items:center;width:34px;height:34px;border-radius:999px;background:var(--accent);color:#111}}.why-card h3{{font-size:20px;margin:22px 0 9px}}.why-card p{{color:#bcc7cd;font-size:13px;margin:0}}
     .process-grid{{display:grid;grid-template-columns:.8fr 1.2fr;gap:60px;align-items:start}}.steps{{display:grid;gap:0;border-top:1px solid var(--line)}}.step{{display:grid;grid-template-columns:56px 1fr;gap:18px;padding:24px 0;border-bottom:1px solid var(--line)}}.step-number{{font-weight:850;color:#9a6c13}}.step h3{{margin:0 0 6px;font-size:20px}}.step p{{margin:0;color:var(--muted);font-size:13px}}
-    .reputation{{background:var(--surface)}}.reputation-grid{{display:grid;grid-template-columns:1.15fr .85fr;gap:58px;align-items:center}}.reputation p{{font-size:16px;color:var(--muted);max-width:700px}}.rating-panel{{background:#fff;border:1px solid var(--line);padding:34px;border-radius:14px;text-align:center;box-shadow:0 18px 45px #1020300d}}.big-rating{{font-size:72px;line-height:1;font-weight:900;letter-spacing:-.06em}}.rating-panel strong,.rating-panel span{{display:block}}.rating-panel strong{{margin-top:12px}}.rating-panel span{{font-size:12px;color:var(--muted);margin-top:5px}}
-    .gallery-band{{padding:0 0 82px}}.gallery-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}.gallery-grid img{{width:100%;height:360px;object-fit:cover;border-radius:14px}}
+    .mid-cta{{padding:0 0 82px}}.mid-cta-card{{display:flex;align-items:center;justify-content:space-between;gap:32px;padding:34px 38px;border-radius:16px;background:var(--ink);color:#fff}}.mid-cta-card strong{{display:block;font-size:28px;line-height:1.1;letter-spacing:-.035em}}.mid-cta-card span{{display:block;color:#cbd4d9;margin-top:7px;font-size:13px}}.mid-cta-card .button{{background:var(--accent);color:#101820;white-space:nowrap}}
+    .reputation{{position:relative;overflow:hidden;background:var(--surface)}}.reputation-grid{{display:grid;grid-template-columns:1.15fr .85fr;gap:58px;align-items:center}}.reputation p{{font-size:16px;color:var(--muted);max-width:700px}}.rating-panel{{background:#fff;border:1px solid var(--line);padding:38px;border-radius:16px;text-align:center;box-shadow:0 24px 60px #10203014}}.big-rating{{font-size:78px;line-height:1;font-weight:900;letter-spacing:-.06em}}.rating-panel strong,.rating-panel span{{display:block}}.rating-panel strong{{margin-top:12px;font-size:17px}}.rating-panel span{{font-size:12px;color:var(--muted);margin-top:5px}}
+    .photo-band{{padding:0;height:430px;overflow:hidden;background:#dfe5e8}}.photo-band img{{width:100%;height:100%;object-fit:cover}}
     .areas{{background:#0d1a24;color:#fff}}.areas-grid{{display:grid;grid-template-columns:.82fr 1.18fr;gap:60px;align-items:center}}.areas p{{color:#bdc7cc}}.areas ul{{display:flex;flex-wrap:wrap;gap:10px;list-style:none;padding:0;margin:0}}.areas li{{border:1px solid #ffffff24;background:#ffffff0b;padding:10px 14px;border-radius:999px;font-size:13px}}
     .faq-grid{{display:grid;grid-template-columns:.72fr 1.28fr;gap:60px;align-items:start}}.faq p{{color:var(--muted)}}details{{border-top:1px solid var(--line);padding:18px 0}}details:last-child{{border-bottom:1px solid var(--line)}}summary{{cursor:pointer;font-weight:800;font-size:16px;list-style:none;display:flex;justify-content:space-between;gap:20px}}summary:after{{content:"+";color:#9a6c13}}details[open] summary:after{{content:"–"}}details p{{margin:10px 36px 0 0!important;font-size:13px}}
     .contact{{background:var(--accent);padding:68px 0}}.contact-grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:60px;align-items:center}}.contact h2{{max-width:760px}}.contact p{{max-width:650px;margin:14px 0 0;color:#27323a}}.contact-card{{background:#0d1a24;color:#fff;padding:28px;border-radius:14px}}.contact-card span{{display:block;color:#b9c4ca;font-size:12px}}.contact-card strong{{display:block;font-size:25px;margin:6px 0 18px}}.contact-card .button{{width:100%;background:#fff;color:#0d1a24}}
     footer{{padding:30px 0;color:var(--muted);font-size:12px}}.footer-grid{{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}}.mobile-call{{display:none;position:fixed;z-index:30;left:12px;right:12px;bottom:12px;background:var(--accent);color:#111820;padding:14px;border-radius:10px;text-align:center;font-weight:850;box-shadow:0 18px 45px #0005}}
-    @media(max-width:840px){{.wrap{{width:min(100% - 28px,1180px)}}.nav-links a:not(.nav-call){{display:none}}.hero{{min-height:650px;padding:125px 0 58px}}.hero-grid,.about-grid,.process-grid,.reputation-grid,.areas-grid,.faq-grid,.contact-grid{{grid-template-columns:1fr;gap:32px}}.hero-grid{{gap:28px}}.proof-card{{max-width:360px}}.trust-grid{{grid-template-columns:1fr 1fr}}.trust-cell:nth-child(3){{border-left:0;border-top:1px solid var(--line)}}.trust-cell:nth-child(4){{border-top:1px solid var(--line)}}section{{padding:64px 0}}.section-head{{display:block}}.section-head p{{margin-top:16px}}.service-grid,.why-grid{{grid-template-columns:1fr}}.about-points{{grid-template-columns:1fr}}.about-photo{{height:360px}}.gallery-grid{{grid-template-columns:1fr}}.gallery-grid img{{height:300px}}.mobile-call{{display:block}}body{{padding-bottom:72px}}}}
+    @media(max-width:840px){{.wrap{{width:min(100% - 28px,1180px)}}.nav-links a:not(.nav-call){{display:none}}.hero{{min-height:650px;padding:125px 0 58px}}.hero-grid,.about-grid,.process-grid,.reputation-grid,.areas-grid,.faq-grid,.contact-grid{{grid-template-columns:1fr;gap:32px}}.hero-grid{{gap:28px}}.proof-card{{max-width:360px}}.trust-grid{{grid-template-columns:1fr 1fr}}.trust-cell:nth-child(3){{border-left:0;border-top:1px solid var(--line)}}.trust-cell:nth-child(4){{border-top:1px solid var(--line)}}section{{padding:64px 0}}.section-head{{display:block}}.section-head p{{margin-top:16px}}.service-grid,.why-grid{{grid-template-columns:1fr}}.about-points{{grid-template-columns:1fr}}.about-photo{{height:360px}}.mid-cta-card{{display:block;padding:28px}}.mid-cta-card .button{{margin-top:22px;width:100%}}.photo-band{{height:300px}}.mobile-call{{display:block}}body{{padding-bottom:72px}}}}
   </style>
 </head>
 <body>
@@ -222,14 +220,15 @@ def render_demo_site_v3(
   <main>
     <section class="{hero_class}">{hero_photo}<div class="wrap hero-grid"><div><div class="eyebrow">{category} · {location}</div><h1>{headline}</h1><p class="hero-copy">{subheadline}</p><div class="actions"><a class="button button-primary" href="{call_href}">{call_label}</a><a class="button button-secondary" href="#services">View services</a></div></div>{proof_card}</div></section>
     <div class="trust-bar"><div class="wrap trust-grid"><div class="trust-cell"><strong>{business_name}</strong><span>{category} serving {area_names}</span></div><div class="trust-cell">{rating_stat}</div><div class="trust-cell">{review_stat}</div><div class="trust-cell"><strong>{len(service_areas[:8])}</strong><span>Service areas highlighted</span></div></div></div>
-    <section id="services" class="services"><div class="wrap"><div class="section-head"><div><div class="section-kicker">Services</div><h2>{category} services for {city}</h2></div><p>Clear service coverage gives customers a faster path from search to the work they need. Call directly to confirm availability and scope.</p></div><div class="service-grid">{service_cards}</div></div></section>
-    <section id="about"><div class="wrap about-grid">{media}<div class="about-copy"><div class="section-kicker">Local service</div><h2>A clearer local presence for customers who are ready to hire.</h2><p>{business_name} is presented here around the facts customers typically look for first: what the business does, where it works, how its public reputation looks, and how to make direct contact.</p><div class="about-points"><div class="about-point"><strong>Local relevance</strong><span>{location} and confirmed nearby service areas are prominent throughout the page.</span></div><div class="about-point"><strong>Service clarity</strong><span>{len(services[:6])} confirmed service categories are easy to scan and act on.</span></div><div class="about-point"><strong>Reputation proof</strong><span>{_safe(reputation_text or 'Public reputation can be added when verified.')}</span></div><div class="about-point"><strong>Direct contact</strong><span>{'Phone contact is visible throughout the page.' if phone else 'A contact path can be added when confirmed.'}</span></div></div></div></div></section>
-    <section class="why"><div class="wrap"><div class="section-kicker">Why this experience works</div><h2>Built around the questions local service customers ask before they call.</h2><div class="why-grid"><article class="why-card"><b>1</b><h3>Can you do the work?</h3><p>Service categories are visible early, with direct paths to ask about scope and availability.</p></article><article class="why-card"><b>2</b><h3>Do you serve my area?</h3><p>Confirmed cities and service areas are reinforced across the page instead of hidden in the footer.</p></article><article class="why-card"><b>3</b><h3>How do I contact you?</h3><p>The primary call action stays visible from the hero through the final conversion section.</p></article></div></div></section>
-    <section class="process"><div class="wrap process-grid"><div><div class="section-kicker">Simple next steps</div><h2>From search to service request.</h2></div><div class="steps"><div class="step"><div class="step-number">01</div><div><h3>Choose the service you need</h3><p>Start with the service categories shown above or call to discuss a project that is not listed.</p></div></div><div class="step"><div class="step-number">02</div><div><h3>Confirm the details</h3><p>Use direct phone contact to confirm the address, scope, timing, and availability.</p></div></div><div class="step"><div class="step-number">03</div><div><h3>Determine the next step</h3><p>The business can then confirm scheduling, an estimate, or any additional information needed.</p></div></div></div></div></section>
+    <section id="services" class="services"><div class="wrap"><div class="section-head"><div><div class="section-kicker">Services</div><h2>{category} services for {city}</h2></div><p>Explore the core services available from {business_name}, then call directly to confirm scope, scheduling, and availability for your project.</p></div><div class="service-grid">{service_cards}</div></div></section>
+    <section id="about"><div class="wrap about-grid">{media}<div class="about-copy"><div class="section-kicker">Local service</div><h2>{business_name} serving {city} and nearby communities.</h2><p>Customers looking for {category_lower} service need the essentials quickly: the work available, the areas served, public reputation, and a clear way to get in touch. This page brings those details together in one straightforward experience.</p><div class="about-points"><div class="about-point"><strong>Local coverage</strong><span>{location} and nearby service areas are easy to find.</span></div><div class="about-point"><strong>Service clarity</strong><span>{len(services[:6])} core service categories are highlighted.</span></div><div class="about-point"><strong>Public reputation</strong><span>{_safe(reputation_text or 'Reputation details can be added when verified.')}</span></div><div class="about-point"><strong>Direct contact</strong><span>{'Phone contact is available throughout the page.' if phone else 'A contact path can be added when confirmed.'}</span></div></div></div></div></section>
+    <section class="why"><div class="wrap"><div class="section-kicker">What customers need to know</div><h2>The information homeowners look for before choosing a local service company.</h2><div class="why-grid"><article class="why-card"><b>1</b><h3>Services that match the project</h3><p>Core service categories are easy to scan, with a direct path to confirm project scope.</p></article><article class="why-card"><b>2</b><h3>Coverage for the property</h3><p>Confirmed service areas are visible throughout the page so customers can quickly understand local coverage.</p></article><article class="why-card"><b>3</b><h3>A direct way to get started</h3><p>The primary call action stays visible from the hero through the final contact section.</p></article></div></div></section>
+    <section class="process"><div class="wrap process-grid"><div><div class="section-kicker">Getting started</div><h2>A simple path from project question to next step.</h2></div><div class="steps"><div class="step"><div class="step-number">01</div><div><h3>Choose the service you need</h3><p>Start with the services above or call to discuss a project that is not listed.</p></div></div><div class="step"><div class="step-number">02</div><div><h3>Confirm the project details</h3><p>Share the property location, scope, timing, and other details needed to confirm availability.</p></div></div><div class="step"><div class="step-number">03</div><div><h3>Determine the next step</h3><p>{business_name} can then confirm scheduling, an estimate, or any additional information needed.</p></div></div></div></div></section>
+    <section class="mid-cta"><div class="wrap"><div class="mid-cta-card"><div><strong>Have a project in mind?</strong><span>Call {business_name} to confirm service availability and discuss the next step.</span></div><a class="button" href="{call_href}">{call_label}</a></div></div></section>
     {reputation_section}
-    {gallery}
-    <section id="areas" class="areas"><div class="wrap areas-grid"><div><div class="section-kicker">Service area</div><h2>Serving {city} and nearby communities.</h2><p>These are the service areas currently confirmed for this concept. Call to verify availability for your exact property.</p></div><ul>{area_chips}</ul></div></section>
-    <section id="faq" class="faq"><div class="wrap faq-grid"><div><div class="section-kicker">Frequently asked questions</div><h2>Quick answers before you call.</h2><p>Useful local-service FAQs help customers understand coverage and next steps without making unverified claims.</p></div><div>{faq_markup}</div></div></section>
+    {photo_band}
+    <section id="areas" class="areas"><div class="wrap areas-grid"><div><div class="section-kicker">Service area</div><h2>Serving {city} and nearby communities.</h2><p>Service coverage currently includes the areas shown here. Call to confirm availability for your exact property.</p></div><ul>{area_chips}</ul></div></section>
+    <section id="faq" class="faq"><div class="wrap faq-grid"><div><div class="section-kicker">Frequently asked questions</div><h2>Quick answers before you call.</h2><p>Find the core service and coverage information customers commonly need before contacting a local service company.</p></div><div>{faq_markup}</div></div></section>
     <section id="contact" class="contact"><div class="wrap contact-grid"><div><div class="section-kicker" style="color:#26313a">Contact</div><h2>Need {category_lower} service in {city}?</h2><p>Call {business_name} directly to discuss your project, confirm service availability, and determine the next step.</p></div><div class="contact-card"><span>Direct contact</span><strong>{phone or business_name}</strong><a class="button" href="{call_href}">{call_label}</a></div></div></section>
   </main>
   <footer><div class="wrap footer-grid"><strong>{business_name}</strong><span>{phone} · {location}</span><span>Concept website by LILOs Growth</span></div></footer>
