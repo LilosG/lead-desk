@@ -8,6 +8,7 @@ import requests
 
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GMAIL_PROFILE_URL = "https://gmail.googleapis.com/gmail/v1/users/me/profile"
 GMAIL_DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts"
 
 
@@ -47,9 +48,8 @@ class GmailDraftClient:
         body: str,
         message_id_header: str,
     ) -> GmailDraftResult:
-        # Token refresh happens before any Gmail draft side effect, so failures
-        # raised by _access_token are always safe to retry.
         access_token = self._access_token()
+        self._assert_sender_account(access_token)
 
         message = EmailMessage()
         message["To"] = to_address
@@ -71,16 +71,12 @@ class GmailDraftClient:
                 timeout=self.timeout_seconds,
             )
         except requests.RequestException as exc:
-            # A transport failure can happen after Gmail accepted the request.
-            # Never blindly retry this operation; reconcile by Message-ID first.
             raise GmailDraftError(
                 "Gmail draft request outcome is uncertain",
                 uncertain_side_effect=True,
             ) from exc
 
         if not response.ok:
-            # Gmail returned an explicit rejection, so no successful draft
-            # response was accepted by this call and the operation can be retried.
             raise GmailDraftError(
                 f"Gmail returned {response.status_code}: {response.text[:500]}"
             )
@@ -90,8 +86,6 @@ class GmailDraftClient:
             draft_id = str(data["id"])
             message_id = data.get("message", {}).get("id")
         except (KeyError, TypeError, ValueError) as exc:
-            # HTTP success means a draft may already exist even if the body was
-            # malformed or unexpected. Reconcile instead of recreating it.
             raise GmailDraftError(
                 "Gmail accepted the request but returned an invalid draft response",
                 uncertain_side_effect=True,
@@ -102,15 +96,44 @@ class GmailDraftClient:
             message_id=str(message_id) if message_id else None,
         )
 
-    def find_draft_by_message_id(self, message_id_header: str) -> GmailDraftResult | None:
-        """Find a previously-created draft by its RFC 5322 Message-ID.
-
-        Gmail's drafts.create endpoint has no idempotency-key parameter. Lead
-        Desk therefore writes a unique Message-ID before creation and records it
-        durably so a pending operation can be reconciled without duplicating a
-        draft after a process, network, or database failure.
-        """
+    def get_draft(self, draft_id: str) -> GmailDraftResult | None:
+        """Return one Gmail draft by id, or None when Gmail says it no longer exists."""
         access_token = self._access_token()
+        self._assert_sender_account(access_token)
+        try:
+            response = requests.get(
+                f"{GMAIL_DRAFTS_URL}/{draft_id}",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={"format": "minimal"},
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            raise GmailDraftError("Gmail draft verification request failed") from exc
+
+        if response.status_code == 404:
+            return None
+        if not response.ok:
+            raise GmailDraftError(
+                f"Gmail draft verification returned {response.status_code}: "
+                f"{response.text[:500]}"
+            )
+
+        try:
+            data = response.json()
+            returned_id = str(data["id"])
+            message_id = data.get("message", {}).get("id")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GmailDraftError("Gmail returned an invalid draft response") from exc
+
+        return GmailDraftResult(
+            draft_id=returned_id,
+            message_id=str(message_id) if message_id else None,
+        )
+
+    def find_draft_by_message_id(self, message_id_header: str) -> GmailDraftResult | None:
+        """Find a previously-created draft by its RFC 5322 Message-ID."""
+        access_token = self._access_token()
+        self._assert_sender_account(access_token)
         try:
             response = requests.get(
                 GMAIL_DRAFTS_URL,
@@ -153,6 +176,33 @@ class GmailDraftClient:
             draft_id=draft_id,
             message_id=str(message_id) if message_id else None,
         )
+
+    def _assert_sender_account(self, access_token: str) -> None:
+        try:
+            response = requests.get(
+                GMAIL_PROFILE_URL,
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            raise GmailDraftError("Gmail account verification failed") from exc
+
+        if not response.ok:
+            raise GmailDraftError(
+                f"Gmail account verification returned {response.status_code}: "
+                f"{response.text[:500]}"
+            )
+
+        try:
+            account_email = str(response.json()["emailAddress"]).strip().lower()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GmailDraftError("Gmail account verification returned no email address") from exc
+
+        expected = self.sender_email.strip().lower()
+        if account_email != expected:
+            raise GmailDraftError(
+                f"Gmail OAuth is connected to {account_email}, not {expected}. Reconnect the correct Gmail account before creating drafts."
+            )
 
     def _access_token(self) -> str:
         try:
