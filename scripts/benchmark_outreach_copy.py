@@ -9,6 +9,7 @@ from psycopg.rows import dict_row
 from app.integrations.openrouter import CLAIM_TOKEN
 from app.integrations.openrouter_constrained import ConstrainedOutreachClient
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
+from app.services.outreach import MAX_DRAFT_ATTEMPTS
 from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import (
     DEFAULT_SIMILARITY_THRESHOLD,
@@ -19,6 +20,24 @@ from app.services.outreach_verification import OutreachClaimVerifier
 
 TARGET_OUTPUTS = 10
 SCAN_LIMIT = 40
+
+
+def candidate_similarity(candidate: dict, accepted: list[dict]) -> tuple[float, str | None]:
+    best_ratio = 0.0
+    best_name: str | None = None
+    for existing in accepted:
+        ratio = structural_similarity(
+            candidate["body"],
+            candidate_business_name=candidate["name"],
+            candidate_verified_claim=candidate["finding"],
+            existing_body=existing["body"],
+            existing_business_name=existing["name"],
+            existing_verified_claim=existing["finding"],
+        )
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_name = existing["name"]
+    return best_ratio, best_name
 
 
 def main() -> None:
@@ -92,6 +111,8 @@ def main() -> None:
 
         results: list[dict] = []
         scanned = 0
+        retry_count = 0
+        similarity_rejections = 0
 
         for prospect in prospects:
             scanned += 1
@@ -142,35 +163,63 @@ def main() -> None:
                 evidence=evidence,
             )
 
-            try:
-                copy = generator.generate_email(
-                    business_name=prospect["name"],
-                    city=prospect.get("city"),
-                    vertical=prospect.get("vertical"),
-                    verified_claim=finding_block,
-                )
-            except Exception as exc:
-                print(f"SKIP {prospect['name']}: generator {type(exc).__name__}: {exc}")
-                continue
+            accepted = None
+            last_ratio = 0.0
+            last_match: str | None = None
 
-            if copy.body.count(CLAIM_TOKEN) != 1:
-                print(f"SKIP {prospect['name']}: verified token contract failed")
-                continue
+            for attempt in range(1, MAX_DRAFT_ATTEMPTS + 1):
+                try:
+                    copy = generator.generate_email(
+                        business_name=prospect["name"],
+                        city=prospect.get("city"),
+                        vertical=prospect.get("vertical"),
+                        verified_claim=finding_block,
+                    )
+                except Exception as exc:
+                    print(f"SKIP {prospect['name']}: generator {type(exc).__name__}: {exc}")
+                    break
 
-            rendered = copy.body.replace(CLAIM_TOKEN, finding_block)
-            results.append(
-                {
+                if copy.body.count(CLAIM_TOKEN) != 1:
+                    print(f"SKIP {prospect['name']}: verified token contract failed")
+                    break
+
+                candidate = {
                     "name": prospect["name"],
                     "rating": prospect.get("rating"),
                     "review_count": prospect.get("review_count"),
                     "signal": verified.signal,
                     "finding": finding_block,
                     "subject": copy.subject,
-                    "body": rendered,
+                    "body": copy.body.replace(CLAIM_TOKEN, finding_block),
                     "model": copy.model,
+                    "attempt": attempt,
                 }
-            )
 
+                ratio, matched = candidate_similarity(candidate, results)
+                last_ratio = ratio
+                last_match = matched
+                if ratio < DEFAULT_SIMILARITY_THRESHOLD:
+                    accepted = candidate
+                    if attempt > 1:
+                        retry_count += attempt - 1
+                    break
+
+                similarity_rejections += 1
+                if attempt < MAX_DRAFT_ATTEMPTS:
+                    print(
+                        f"RETRY {prospect['name']}: attempt {attempt} was {ratio:.3f} "
+                        f"similar to {matched}"
+                    )
+
+            if accepted is None:
+                if last_ratio >= DEFAULT_SIMILARITY_THRESHOLD:
+                    print(
+                        f"SKIP {prospect['name']}: remained {last_ratio:.3f} similar to "
+                        f"{last_match} after {MAX_DRAFT_ATTEMPTS} attempts"
+                    )
+                continue
+
+            results.append(accepted)
             if len(results) >= TARGET_OUTPUTS:
                 break
 
@@ -178,8 +227,11 @@ def main() -> None:
     print("REAL PROSPECT OUTREACH BENCHMARK")
     print("=" * 100)
     print(f"Model: {model}")
+    print(f"Similarity gate: {DEFAULT_SIMILARITY_THRESHOLD:.2f}")
     print(f"Scanned: {scanned}")
     print(f"Generated: {len(results)}/{TARGET_OUTPUTS}")
+    print(f"Similarity retries: {retry_count}")
+    print(f"Rejected attempts: {similarity_rejections}")
 
     for index, item in enumerate(results, 1):
         print()
@@ -189,6 +241,7 @@ def main() -> None:
         print(f"Google: {item['rating']} / {item['review_count']} reviews")
         print(f"Verified signal: {item['signal']}")
         print(f"Generator: {item['model']}")
+        print(f"Accepted attempt: {item['attempt']}")
         print(f"Subject: {item['subject']}")
         print()
         print(item["body"])
