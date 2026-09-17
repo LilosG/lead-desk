@@ -88,7 +88,7 @@ def test_v3_renders_complete_local_service_homepage_without_invented_credentials
 def test_v3_keeps_indexing_disabled_and_escapes_content():
     html = render_demo_site_v3(
         source={
-            "name": "Example & Sons <script>",
+            "name": "Example & Sons </script><script>alert(1)</script>",
             "city": "Vista",
             "state": "CA",
             "phone": "(760) 555-0100",
@@ -108,6 +108,7 @@ def test_v3_keeps_indexing_disabled_and_escapes_content():
         brand={"palette": {"ink": "#102033", "accent": "#f0b22c", "surface": "#f4f6f7"}},
     )
     assert '<meta name="robots" content="noindex,nofollow,noarchive" />' in html
-    assert "<script>" not in html.replace('<script type="application/ld+json">', "")
+    assert "</script><script>alert(1)</script>" not in html
+    assert "<\\/script><script>alert(1)<\\/script>" in html
     assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html
     assert "Panel &lt;Upgrades&gt;" in html
