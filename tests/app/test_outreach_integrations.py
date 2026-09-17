@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import ValidationError
 
 from app.integrations.gmail import GmailDraftError, GmailDraftResult
@@ -67,7 +69,6 @@ class FakeEvidenceRepository:
             "recent_reviews_90d": 3,
             "confirmed_trading": True,
             "established": True,
-            # Internal scoring fields are intentionally ignored by RecipientEvidence.
             "total_score": 13,
             "tier": "A",
             "authority_score": 5,
@@ -363,7 +364,7 @@ def test_generation_uses_dedicated_recent_draft_query():
 
     assert repo.recent_query == {
         "limit": 25,
-        "exclude_id": repo.item["id"],
+        "exclude_id": UUID(repo.item["id"]),
     }
 
 
