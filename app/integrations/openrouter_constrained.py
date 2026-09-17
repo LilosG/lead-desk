@@ -44,10 +44,8 @@ _FALLBACK_SUBJECTS = (
     "Homepage detail",
 )
 
-# The application owns every sent word. The immutable claim block contains the
-# recipient-specific public evidence plus one separately verified technical finding.
-# Frames exist only to make the note read naturally; they do not explain the sales
-# process, claim personalization, or add any prospect facts.
+# The application owns every sent word. These frames are only used when one
+# client-facing technical finding has passed the live verification contract.
 _FRAMES = (
     "{claim}\n\n{closing}",
     "I checked {business} before reaching out.\n\n{claim}\n\n{closing}",
@@ -82,15 +80,31 @@ _CLOSINGS = (
     "If you want to verify it on your side, I can point you to the page.",
 )
 
+# Claim-free outreach intentionally makes no observation about the recipient's
+# site. It uses only the business name and a neutral offer to share website ideas.
+_CLAIM_FREE_FRAMES = (
+    "I'm reaching out about {business}.\n\n{closing}",
+    "I wanted to reach out directly about {business}.\n\n{closing}",
+    "Sending a short note about {business}.\n\n{closing}",
+    "I wanted to introduce myself and reach out about {business}.\n\n{closing}",
+)
+
+_CLAIM_FREE_CLOSINGS = (
+    "If website improvements are something you're considering, I can send a few ideas.",
+    "If useful, I can send a few website ideas for you to look over.",
+    "If the website is on your list this year, I can send a few specific ideas.",
+    "No pressure either way; I can send a few website ideas if useful.",
+)
+
 
 class ConstrainedOutreachClient:
     """Use Qwen only as a rhetoric selector; application owns all sent words.
 
-    Recipient-facing prose comes exclusively from reviewed application frames. The
-    verified finding token contains application-owned public evidence plus the live
-    verified technical finding. Qwen cannot introduce names, observations, benefits,
-    or claims. A stable business fingerprint is mixed into the model choice so
-    repeated model output cannot directly create repeated recipient copy.
+    Recipient-facing prose comes exclusively from reviewed application frames.
+    When a verified finding exists, the verified finding token contains the
+    application-owned public evidence plus the live verified technical finding.
+    When no approved finding exists, a separate claim-free frame is used and no
+    website observation is made. Qwen cannot introduce recipient claims.
     """
 
     def __init__(
@@ -112,16 +126,18 @@ class ConstrainedOutreachClient:
         vertical: str | None,
         verified_claim: str | None,
     ) -> GeneratedCopy:
-        if not verified_claim:
-            raise RuntimeError("No approved client-facing finding is available")
-
         raw_choice, used_model = self._choose_style(business_name)
         choice = self._decorrelate(raw_choice, business_name)
         subject = self._render_subject(business_name, choice.subject)
-        body = self._render_body(business_name, choice)
 
-        if body.count(CLAIM_TOKEN) != 1:
-            raise RuntimeError("constrained outreach renderer lost verified finding token")
+        if verified_claim:
+            body = self._render_body(business_name, choice)
+            if body.count(CLAIM_TOKEN) != 1:
+                raise RuntimeError("constrained outreach renderer lost verified finding token")
+        else:
+            body = self._render_claim_free_body(business_name, choice)
+            if CLAIM_TOKEN in body:
+                raise RuntimeError("claim-free outreach renderer inserted verified finding token")
 
         return GeneratedCopy(
             subject=subject,
@@ -267,6 +283,18 @@ class ConstrainedOutreachClient:
             business=business_name,
             claim=CLAIM_TOKEN,
             closing=_CLOSINGS[choice.closing],
+        ).strip()
+        if greeting:
+            return f"{greeting}\n\n{frame}"
+        return frame
+
+    @classmethod
+    def _render_claim_free_body(cls, business_name: str, choice: StyleChoice) -> str:
+        greeting = _GREETINGS[choice.greeting]
+        safe_name = cls._safe_business_name(business_name)
+        frame = _CLAIM_FREE_FRAMES[choice.frame % len(_CLAIM_FREE_FRAMES)].format(
+            business=safe_name,
+            closing=_CLAIM_FREE_CLOSINGS[choice.closing % len(_CLAIM_FREE_CLOSINGS)],
         ).strip()
         if greeting:
             return f"{greeting}\n\n{frame}"
