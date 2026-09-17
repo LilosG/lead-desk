@@ -47,6 +47,8 @@ class SweepService:
             "cities": list(market_config.TARGET_CITIES),
             "verticals": verticals,
             "custom_verticals_enabled": True,
+            "custom_cities_enabled": True,
+            "grid_scope": "configured_market",
             "pricing": {
                 "text_search_per_1000": market_config.COST_PER_1K[
                     "text_search_enterprise"
@@ -75,6 +77,11 @@ class SweepService:
         if not self.execution_enabled():
             raise SweepExecutionDisabledError(
                 "Sweep execution is currently disabled."
+            )
+
+        if use_grid and cities is not None:
+            raise ValueError(
+                "Grid search covers the configured market bounding box and cannot be combined with a city-specific sweep. Turn off grid search for selected cities."
             )
 
         ordered_verticals = self._ordered_verticals(verticals)
