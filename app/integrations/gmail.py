@@ -40,6 +40,23 @@ class GmailDraftClient:
         self.sender_email = sender_email
         self.timeout_seconds = timeout_seconds
 
+    def _raw_message(
+        self,
+        *,
+        to_address: str,
+        subject: str,
+        body: str,
+        message_id_header: str | None = None,
+    ) -> str:
+        message = EmailMessage()
+        message["To"] = to_address
+        message["From"] = self.sender_email
+        message["Subject"] = subject
+        if message_id_header:
+            message["Message-ID"] = message_id_header
+        message.set_content(body)
+        return base64.urlsafe_b64encode(message.as_bytes()).decode("ascii").rstrip("=")
+
     def create_draft(
         self,
         *,
@@ -50,15 +67,12 @@ class GmailDraftClient:
     ) -> GmailDraftResult:
         access_token = self._access_token()
         self._assert_sender_account(access_token)
-
-        message = EmailMessage()
-        message["To"] = to_address
-        message["From"] = self.sender_email
-        message["Subject"] = subject
-        message["Message-ID"] = message_id_header
-        message.set_content(body)
-
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii").rstrip("=")
+        raw = self._raw_message(
+            to_address=to_address,
+            subject=subject,
+            body=body,
+            message_id_header=message_id_header,
+        )
 
         try:
             response = requests.post(
@@ -93,6 +107,65 @@ class GmailDraftClient:
 
         return GmailDraftResult(
             draft_id=draft_id,
+            message_id=str(message_id) if message_id else None,
+        )
+
+    def update_draft(
+        self,
+        draft_id: str,
+        *,
+        to_address: str,
+        subject: str,
+        body: str,
+    ) -> GmailDraftResult | None:
+        """Replace an existing Gmail draft in place.
+
+        Returns None when Gmail reports the recorded draft no longer exists.
+        """
+        access_token = self._access_token()
+        self._assert_sender_account(access_token)
+        raw = self._raw_message(
+            to_address=to_address,
+            subject=subject,
+            body=body,
+        )
+
+        try:
+            response = requests.put(
+                f"{GMAIL_DRAFTS_URL}/{draft_id}",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json={"id": draft_id, "message": {"raw": raw}},
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            raise GmailDraftError(
+                "Gmail draft update outcome is uncertain",
+                uncertain_side_effect=True,
+            ) from exc
+
+        if response.status_code == 404:
+            return None
+        if not response.ok:
+            raise GmailDraftError(
+                f"Gmail draft update returned {response.status_code}: "
+                f"{response.text[:500]}"
+            )
+
+        try:
+            data = response.json()
+            returned_id = str(data["id"])
+            message_id = data.get("message", {}).get("id")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GmailDraftError(
+                "Gmail updated the draft but returned an invalid response",
+                uncertain_side_effect=True,
+            ) from exc
+
+        return GmailDraftResult(
+            draft_id=returned_id,
             message_id=str(message_id) if message_id else None,
         )
 
