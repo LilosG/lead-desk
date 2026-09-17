@@ -58,6 +58,9 @@ def create_demo_site(place_id: str, payload: DemoSiteCreateRequest) -> dict:
             service_areas=payload.service_areas,
             headline=payload.headline,
             subheadline=payload.subheadline,
+            hero_image_url=payload.hero_image_url,
+            work_image_url=payload.work_image_url,
+            secondary_image_url=payload.secondary_image_url,
         )
     except DemoSiteError as exc:
         message = str(exc)
