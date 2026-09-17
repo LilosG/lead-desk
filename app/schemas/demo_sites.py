@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class DemoSiteCreateRequest(BaseModel):
-    template_key: str = "trade-modern-v2"
+    template_key: str = "trade-modern-v3"
     services: list[str] = Field(default_factory=list, max_length=12)
     service_areas: list[str] = Field(default_factory=list, max_length=16)
     headline: str | None = Field(default=None, max_length=120)
