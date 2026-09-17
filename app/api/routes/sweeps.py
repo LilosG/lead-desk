@@ -34,6 +34,10 @@ class SweepCreateRequest(BaseModel):
         if value is None:
             return None
 
+        configured_by_lower = {
+            city.casefold(): city
+            for city in market_config.TARGET_CITIES
+        }
         geo_label = market_config.GEO_LABEL.casefold()
         normalized: list[str] = []
         seen: set[str] = set()
@@ -49,6 +53,21 @@ class SweepCreateRequest(BaseModel):
             if city.casefold() == geo_label:
                 return None
 
+            lower_city = city.casefold()
+            if lower_city in {"ca", "california"}:
+                continue
+
+            canonical = configured_by_lower.get(lower_city)
+            if canonical is None:
+                for suffix in (", california", ", ca", " california", " ca"):
+                    if not lower_city.endswith(suffix):
+                        continue
+                    base = city[: -len(suffix)].strip()
+                    canonical = configured_by_lower.get(base.casefold())
+                    if canonical is not None:
+                        break
+
+            city = canonical or city
             key = city.casefold()
             if key in seen:
                 continue
