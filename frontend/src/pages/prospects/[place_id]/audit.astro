@@ -77,8 +77,9 @@ const { place_id } = Astro.params;
     const successBox = required<HTMLElement>('#builder-success');
     const viewPdf = required<HTMLAnchorElement>('#view-pdf');
 
-    const placeId = root.dataset.placeId;
-    if (!placeId) throw new Error('Missing prospect place ID');
+    const rawPlaceId = root.dataset.placeId;
+    if (!rawPlaceId) throw new Error('Missing prospect place ID');
+    const placeId: string = rawPlaceId;
 
     const escapeHtml = (value: unknown): string =>
       String(value ?? '')
