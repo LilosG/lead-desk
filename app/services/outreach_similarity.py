@@ -6,7 +6,7 @@ from typing import Iterable
 
 
 FOOTER_MARKER = "\n\nMike\nLILOs Growth\n"
-DEFAULT_SIMILARITY_THRESHOLD = 0.82
+DEFAULT_SIMILARITY_THRESHOLD = 0.80
 
 
 def normalize_outreach_note(
