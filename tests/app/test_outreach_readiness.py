@@ -52,7 +52,6 @@ def test_readiness_explains_each_blocker():
     assert result["eligible"] is False
 
     assert result["reasons"] == [
-        "Business is not in the established prospect segment.",
         "Business has fewer than 10 Google reviews.",
         "Manual verification is required before outreach.",
         "The prospect email address is suppressed.",
@@ -80,3 +79,22 @@ def test_readiness_requires_reachable_contact():
     assert result["reasons"] == [
         "No reachable email address or phone number is available."
     ]
+
+
+def test_readiness_does_not_block_non_established_prospect():
+    result = service_for(
+        {
+            "review_count": 22,
+            "email": "owner@example.com",
+            "phone": None,
+            "confirmed_trading": True,
+            "established": False,
+            "needs_manual_check": False,
+            "suppressed": False,
+            "already_queued": False,
+        }
+    ).candidate_readiness("place-1")
+
+    assert result["eligible"] is True
+    assert result["reasons"] == []
+    assert result["established"] is False

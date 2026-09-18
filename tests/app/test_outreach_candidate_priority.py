@@ -51,7 +51,7 @@ class FakePool:
 
 
 def assert_candidate_eligibility_contract(query: str) -> None:
-    assert "seg.established = true" in query
+    assert "seg.established = true" not in query
     assert "coalesce(w.review_count, 0) >= 10" in query
     assert "coalesce(f.needs_manual_check, false) = false" in query
     assert "not exists ( select 1 from outreach_queue q where q.place_id = w.place_id )" in query

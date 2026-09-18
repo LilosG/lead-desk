@@ -81,8 +81,6 @@ class OutreachService:
 
         reasons: list[str] = []
 
-        if not item.get("established"):
-            reasons.append("Business is not in the established prospect segment.")
         if review_count < 10:
             reasons.append("Business has fewer than 10 Google reviews.")
         if item.get("needs_manual_check"):

@@ -18,8 +18,7 @@ class OutreachRepository:
           on seg.place_id = w.place_id
         left join v_lead_findings f
           on f.place_id = w.place_id
-        where seg.established = true
-          and coalesce(w.review_count, 0) >= 10
+        where coalesce(w.review_count, 0) >= 10
           and coalesce(f.needs_manual_check, false) = false
           and (
                 cardinality(coalesce(w.emails_found, '{}'::text[])) > 0
