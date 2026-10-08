@@ -46,6 +46,14 @@ def _phone_href(phone: str | None) -> str:
     return f"tel:{digits}" if digits else "#contact"
 
 
+def _stars(rating: object) -> str:
+    """Stars that match the real rating, never a flat five."""
+    if rating is None:
+        return ""
+    full = max(0, min(5, int(round(float(rating)))))
+    return "★" * full + "☆" * (5 - full)
+
+
 def _reputation_text(rating: object, review_count: object) -> str:
     if rating is not None and review_count is not None:
         return f"{float(rating):.1f} Google rating · {int(review_count):,} reviews"
@@ -60,7 +68,7 @@ def _render_v2(*, source: dict[str, Any], content: dict[str, Any], brand: dict[s
     state = _safe(source.get("state"))
     location = ", ".join(part for part in [city, state] if part)
     phone = _safe(source.get("phone"))
-    category = _safe(source.get("primary_type_display") or "Home Service Professional")
+    category = _safe(source.get("primary_type_display") or "Local Business")
     category_lower = _safe((source.get("primary_type_display") or "home service").lower())
     rating = source.get("rating")
     review_count = source.get("review_count")
@@ -74,7 +82,7 @@ def _render_v2(*, source: dict[str, Any], content: dict[str, Any], brand: dict[s
     palette = brand.get("palette") or PALETTES["default"]
 
     if not services:
-        services = [str(source.get("primary_type_display") or "Home Service")]
+        services = [str(source.get("primary_type_display") or "Local Business")]
     if not service_areas and city:
         service_areas = [str(source.get("city"))]
 
@@ -90,7 +98,7 @@ def _render_v2(*, source: dict[str, Any], content: dict[str, Any], brand: dict[s
     hero_class = "hero has-photo" if hero_image else "hero"
 
     reputation_badge = (
-        f'<div class="proof-card"><div class="stars">★★★★★</div><strong>{_safe(reputation)}</strong><span>Public Google reputation</span></div>'
+        f'<div class="proof-card"><div class="stars">{_stars(rating)}</div><strong>{_safe(reputation)}</strong><span>Public Google reputation</span></div>'
         if reputation else ""
     )
 
@@ -175,7 +183,7 @@ def _render_v1(*, source: dict[str, Any], content: dict[str, Any], brand: dict[s
     state = _safe(source.get("state"))
     location = ", ".join(part for part in [city, state] if part)
     phone = _safe(source.get("phone"))
-    category = _safe(source.get("primary_type_display") or "Home Service Professional")
+    category = _safe(source.get("primary_type_display") or "Local Business")
     rating = source.get("rating")
     review_count = source.get("review_count")
     services = [str(item).strip() for item in content.get("services", []) if str(item).strip()]

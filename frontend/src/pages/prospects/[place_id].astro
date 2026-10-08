@@ -300,6 +300,8 @@ const { place_id } = Astro.params;
       confirmed_trading: boolean;
       category_opportunity: boolean;
       established: boolean;
+      labels?: string[];
+      market?: string | null;
       needs_manual_check: boolean;
       findings: Finding[];
       website_audit: WebsiteAudit | null;
@@ -401,17 +403,26 @@ const { place_id } = Astro.params;
         const readiness =
           (await readinessResponse.json()) as OutreachReadiness;
         setText('#business-name', data.name);
-        setText('#business-location', [data.city, data.state, data.vertical].filter(Boolean).join(' · '));
+        setText('#business-location', [data.city, data.state, data.vertical?.replaceAll('_', ' '), data.market ? `market: ${data.market.replace(/, USA$/, '')}` : null].filter(Boolean).join(' · '));
         setText('#detail-score', data.total_score);
         setText('#detail-tier', data.tier);
         setText('#detail-reviews', data.review_count);
         setText('#headline-gap', data.headline_gap);
         setText('#gbp-gap', data.gbp_gap_score);
-        setText('#website-gap', data.website_gap_score);
+        setText('#website-gap', data.website_gap_score ?? 'Not audited');
         setText('#reachability', data.reachability_score);
         setText('#real-gaps', data.real_gap_count);
 
         const badges: string[] = [];
+        const LABEL_NAMES: Record<string, string> = {
+          no_website: 'No website', site_down: 'Site not loading', verify_first: 'Verify first',
+          email_found: 'Email found', phone_only: 'Phone only', no_contact: 'No contact found',
+          online_booking: 'Online booking', franchise: 'Franchise', no_reviews: 'No reviews yet',
+          low_rating: 'Rating under 4.0', template_site: 'Site builder', strong_reviews: 'Strong reviews',
+        };
+        (data.labels || [])
+          .filter((key) => key in LABEL_NAMES)
+          .forEach((key) => badges.push(`<span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium">${escapeHtml(LABEL_NAMES[key])}</span>`));
         if (data.established) badges.push('<span class="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800">Established</span>');
         if (data.confirmed_trading) badges.push('<span class="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-800">Trading</span>');
         if (data.category_opportunity) badges.push('<span class="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">Category gap</span>');

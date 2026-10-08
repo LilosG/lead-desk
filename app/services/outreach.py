@@ -81,8 +81,6 @@ class OutreachService:
 
         reasons: list[str] = []
 
-        if review_count < 10:
-            reasons.append("Business has fewer than 10 Google reviews.")
         if item.get("needs_manual_check"):
             reasons.append("Manual verification is required before outreach.")
         if not email and not phone:
@@ -205,21 +203,51 @@ class OutreachService:
         if not findings:
             return None
 
+        # Every finding the audit report can contain maps to a short, plain
+        # phrase, so any lead with a generated report can be drafted — not just
+        # the few website signals the live verifier re-checks.
         priority = {
-            "no_service_pages": 0,
-            "no_city_pages": 1,
-            "no_localbusiness_schema": 2,
-            "no_gbp_link": 3,
-            "no_ssl": 4,
-            "no_title": 5,
+            "no_website": 0,
+            "no_service_pages": 1,
+            "no_city_pages": 2,
+            "reviews_bottom_quartile": 3,
+            "reviews_below_median": 3,
+            "no_reviews": 3,
+            "psi_mobile_critical": 4,
+            "psi_mobile_poor": 4,
+            "no_localbusiness_schema": 5,
+            "no_review_replies": 6,
+            "no_services_listed": 7,
+            "no_business_description": 8,
+            "no_hours": 9,
+            "no_photos": 10,
+            "no_gbp_link": 11,
+            "no_ssl": 12,
+            "no_title": 13,
         }
         labels = {
+            "no_website": "a website for the Google listing",
             "no_service_pages": "service pages",
             "no_city_pages": "location coverage",
+            "reviews_bottom_quartile": "review volume compared with nearby competitors",
+            "reviews_below_median": "review volume compared with nearby competitors",
+            "no_reviews": "Google reviews",
+            "psi_mobile_critical": "mobile page speed",
+            "psi_mobile_poor": "mobile page speed",
             "no_localbusiness_schema": "structured business data",
+            "no_review_replies": "replies to reviews",
+            "no_services_listed": "the services listed on the Google profile",
+            "no_business_description": "the Google profile description",
+            "no_hours": "the hours on the Google profile",
+            "no_photos": "profile photos",
             "no_gbp_link": "the website-to-Google profile connection",
             "no_ssl": "HTTPS",
             "no_title": "the homepage search title",
+        }
+        website_signals = {
+            "no_service_pages", "no_city_pages", "psi_mobile_critical",
+            "psi_mobile_poor", "no_localbusiness_schema", "no_gbp_link",
+            "no_ssl", "no_title",
         }
 
         ordered = sorted(
@@ -227,10 +255,16 @@ class OutreachService:
             key=lambda item: priority.get(str(item.get("signal")), 99),
         )
         focus: list[str] = []
+        focus_signals: list[str] = []
         for item in ordered:
-            label = labels.get(str(item.get("signal")))
+            signal = str(item.get("signal"))
+            label = labels.get(signal)
+            if signal == "no_service_pages" and item.get("title"):
+                # Niche wording from the report itself, e.g. "treatment pages".
+                label = str(item["title"]).removesuffix(" coverage").strip().lower() or label
             if label and label not in focus:
                 focus.append(label)
+                focus_signals.append(signal)
             if len(focus) == 3:
                 break
         if not focus:
@@ -248,16 +282,20 @@ class OutreachService:
         rating = business.get("rating")
         review_count = business.get("review_count")
 
+        # ("online presence" is on the copy blocklist, so name the surfaces.)
+        website_only = all(sig in website_signals for sig in focus_signals)
+        surface = "the website" if website_only else "the Google profile and website"
         if rating is not None and review_count is not None:
             paragraph = (
                 f"Google shows {business_name} at {float(rating):.1f} stars across "
                 f"{int(review_count):,} reviews, but the audit found several areas where "
-                f"the website could support local search more effectively, particularly around "
+                f"{surface} could support local search more effectively, particularly around "
                 f"{focus_text}."
             )
         else:
+            possessive = "website" if website_only else "Google profile and website"
             paragraph = (
-                f"The audit found several areas where {business_name}'s website could support "
+                f"The audit found several areas where {business_name}'s {possessive} could support "
                 f"local search more effectively, particularly around {focus_text}."
             )
 

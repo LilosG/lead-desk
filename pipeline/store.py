@@ -401,6 +401,8 @@ class PostgresStore:
             "website_gap_score": s.website_gap_score,
             "reachability_score": s.reachability_score,
             "tier": s.tier, "headline_gap": s.headline_gap,
+            "labels": list(getattr(s, "labels", []) or []),
+            "market": getattr(s, "market", None),
         } for s in scored]
 
         inserted = self.insert("scores", score_rows, returning=True)

@@ -38,17 +38,21 @@ import statistics
 from dataclasses import dataclass, field
 
 import config as C
+import verticals as V
 
 # Maximum raw points each axis can emit, used to normalize to 0-100.
 # Derived by summing the mutually-compatible signals in each scorer:
-#   GBP:     22 no_reviews + 10 rating_poor + 14 no_website_on_gbp + 6 no_phone
+#   GBP:     22 no_reviews + 10 rating_poor + 6 no_phone
 #          +  8 no_hours + 8 no_photos + 6 thin_categories + 3 temp_closed
-#          + 15 category_generic = 92
+#          + 15 category_generic = 78
+#   ("no website linked on GBP" carries 0 points: the website axis already
+#    scores the missing site at 100, and counting it twice made no-website
+#    leads crowd out everything else.)
 #   WEBSITE:  8 no_ssl + 10 no_schema + 9 no_service + 8 no_city + 7 nap
 #          +  3 no_gbp_link + 7 no_title + 4 no_meta + 4 no_h1 + 5 thin
 #          + 12 psi_critical + 5 psi_seo + 5 template + 6 no_form = 93
 # If you add or reweight a signal, update these or scores drift silently.
-GBP_MAX_POINTS = 92
+GBP_MAX_POINTS = 78
 WEBSITE_MAX_POINTS = 93
 
 # The two dominant website outcomes bypass the itemized path and map straight
@@ -85,36 +89,76 @@ class Baseline:
     median_psi_perf: float | None = None
 
 
-def compute_baselines(businesses: list, geo_label: str) -> dict:
-    """Per-vertical medians from the current sweep."""
+ALL_MARKETS = "All markets"
+
+
+def baseline_key(vertical: str | None, market: str | None) -> str:
+    return f"{vertical or 'unknown'}|{market or ALL_MARKETS}"
+
+
+def market_display(market: str | None) -> str:
+    """'Austin, TX, USA' -> 'Austin, TX'."""
+    if not market or market == ALL_MARKETS:
+        return "the area"
+    parts = [p.strip() for p in market.split(",") if p.strip()]
+    if parts and parts[-1].upper() in {"USA", "US", "UNITED STATES"}:
+        parts = parts[:-1]
+    return ", ".join(parts[:2]) or market
+
+
+def _baseline(vertical: str, label: str, rows: list) -> Baseline:
+    reviews = sorted([r.get("review_count") or 0 for r in rows])
+    ratings = [float(r["rating"]) for r in rows if r.get("rating")]
+    with_site = sum(1 for r in rows if r.get("website_url"))
+    n = len(rows)
+
+    def pct(vals, p):
+        if not vals:
+            return 0.0
+        k = max(0, min(len(vals) - 1, int(round((p / 100) * (len(vals) - 1)))))
+        return float(vals[k])
+
+    return Baseline(
+        vertical=vertical,
+        geo_label=label,
+        sample_size=n,
+        median_reviews=float(statistics.median(reviews)) if reviews else 0.0,
+        p25_reviews=pct(reviews, 25),
+        p75_reviews=pct(reviews, 75),
+        median_rating=float(statistics.median(ratings)) if ratings else 0.0,
+        pct_with_website=(with_site / n * 100) if n else 0.0,
+    )
+
+
+def compute_baselines(businesses: list, geo_label: str | None = None) -> dict:
+    """Medians per niche AND per searched market, plus a niche-wide fallback.
+
+    A Phoenix dentist is compared with Phoenix dentists, not with every dentist
+    the run touched. Markets too small to trust fall back to the niche-wide
+    numbers for the run (see baseline_for).
+    """
     by_vertical: dict = {}
+    by_market: dict = {}
     for b in businesses:
-        by_vertical.setdefault(b.get("vertical") or "unknown", []).append(b)
+        v = b.get("vertical") or "unknown"
+        by_vertical.setdefault(v, []).append(b)
+        by_market.setdefault((v, b.get("market") or geo_label or ALL_MARKETS), []).append(b)
 
     out: dict = {}
     for vertical, rows in by_vertical.items():
-        reviews = sorted([r.get("review_count") or 0 for r in rows])
-        ratings = [float(r["rating"]) for r in rows if r.get("rating")]
-        with_site = sum(1 for r in rows if r.get("website_url"))
-        n = len(rows)
-
-        def pct(vals, p):
-            if not vals:
-                return 0.0
-            k = max(0, min(len(vals) - 1, int(round((p / 100) * (len(vals) - 1)))))
-            return float(vals[k])
-
-        out[vertical] = Baseline(
-            vertical=vertical,
-            geo_label=geo_label,
-            sample_size=n,
-            median_reviews=float(statistics.median(reviews)) if reviews else 0.0,
-            p25_reviews=pct(reviews, 25),
-            p75_reviews=pct(reviews, 75),
-            median_rating=float(statistics.median(ratings)) if ratings else 0.0,
-            pct_with_website=(with_site / n * 100) if n else 0.0,
-        )
+        out[baseline_key(vertical, None)] = _baseline(vertical, ALL_MARKETS, rows)
+    for (vertical, market), rows in by_market.items():
+        if market == ALL_MARKETS:
+            continue
+        out[baseline_key(vertical, market)] = _baseline(vertical, market, rows)
     return out
+
+
+def baseline_for(baselines: dict, vertical: str | None, market: str | None) -> Baseline | None:
+    local = baselines.get(baseline_key(vertical, market)) if market else None
+    if local is not None and local.sample_size >= C.MIN_MARKET_BASELINE_SAMPLE:
+        return local
+    return baselines.get(baseline_key(vertical, None)) or local
 
 
 # ---------------------------------------------------------------------------
@@ -129,24 +173,28 @@ def score_gbp(b: dict, base: Baseline) -> tuple[int, list]:
     name = b.get("name") or "This business"
 
     # Review volume vs local peers
+    where = market_display(base.geo_label)
+    niche = V.vertical_label(base.vertical) if base.vertical != "unknown" else "local"
+    peer_obs = {"median": base.median_reviews, "market": where,
+                "niche": niche, "sample_size": base.sample_size}
     if reviews == 0:
         pts += 22
         ev.append(Evidence("gbp", "no_reviews", "critical", 22,
-            f"{name} has zero Google reviews. Competitors in {base.geo_label} average "
-            f"{base.median_reviews:.0f}. This alone keeps them out of the map pack.",
-            {"reviews": 0, "median": base.median_reviews}))
+            f"{name} has zero Google reviews. Comparable {niche} businesses in {where} "
+            f"have a median of {base.median_reviews:.0f}.",
+            {"reviews": 0, **peer_obs}))
     elif reviews < base.p25_reviews:
         pts += 16
         ev.append(Evidence("gbp", "reviews_bottom_quartile", "high", 16,
-            f"{reviews} reviews puts them in the bottom 25% of {base.vertical}s in the area "
-            f"(median is {base.median_reviews:.0f}).",
-            {"reviews": reviews, "p25": base.p25_reviews, "median": base.median_reviews}))
+            f"{reviews} reviews puts them in the bottom 25% of {niche} businesses in "
+            f"{where} (median is {base.median_reviews:.0f}).",
+            {"reviews": reviews, "p25": base.p25_reviews, **peer_obs}))
     elif reviews < base.median_reviews:
         pts += 9
         ev.append(Evidence("gbp", "reviews_below_median", "medium", 9,
-            f"{reviews} reviews is below the local median of {base.median_reviews:.0f} "
-            f"for {base.vertical}s.",
-            {"reviews": reviews, "median": base.median_reviews}))
+            f"{reviews} reviews is below the {where} median of {base.median_reviews:.0f} "
+            f"for {niche} businesses.",
+            {"reviews": reviews, **peer_obs}))
 
     # Rating
     if rating and rating < 3.8:
@@ -165,8 +213,7 @@ def score_gbp(b: dict, base: Baseline) -> tuple[int, list]:
     # plenty of businesses have a site but never linked it, which is a
     # 5-minute fix and a great opener because it's so obviously free money.
     if not b.get("website_url"):
-        pts += 14
-        ev.append(Evidence("gbp", "no_website_on_gbp", "critical", 14,
+        ev.append(Evidence("gbp", "no_website_on_gbp", "info", 0,
             "No website linked on the Google Business Profile. Google has nothing to "
             "crawl and no destination to send map-pack traffic to.",
             {"website_url": None}))
@@ -246,10 +293,12 @@ def score_gbp(b: dict, base: Baseline) -> tuple[int, list]:
 # ---------------------------------------------------------------------------
 # Website gaps — 40% of score
 # ---------------------------------------------------------------------------
-def score_website(b: dict, w, base: Baseline) -> tuple[int, list]:
+def score_website(b: dict, w, base: Baseline) -> tuple[int | None, list]:
+    """Website gap axis. Returns None when the site could not be audited."""
     ev: list = []
     pts = 0
     name = b.get("name") or "This business"
+    profile = V.niche_profile(b.get("vertical"))
 
     if w is None or getattr(w, "crawl_error", None) == "no_website":
         # The single strongest signal in the entire model. No website means the
@@ -270,8 +319,9 @@ def score_website(b: dict, w, base: Baseline) -> tuple[int, list]:
                 "Their site blocked automated access, so it could not be audited. "
                 "Needs a manual look before outreach — do not claim it is down.",
                 {"http_status": w.http_status, "error": w.crawl_error}))
-            # Score on GBP signals alone rather than guessing about the website.
-            return 0, ev
+            # Score on profile signals alone rather than guessing about the
+            # website. None (not 0) so the lead isn't halved for being blocked.
+            return None, ev
 
         ev.append(Evidence("website", "site_down", "critical", SITE_DOWN_AXIS_SCORE,
             f"Their website does not load (status {w.http_status or 'unreachable'}). "
@@ -296,14 +346,18 @@ def score_website(b: dict, w, base: Baseline) -> tuple[int, list]:
     if not w.has_service_pages:
         pts += 9
         ev.append(Evidence("website", "no_service_pages", "high", 9,
-            "No dedicated service pages found. Individual pages per service are how these "
-            "sites capture 'X repair near me' searches.", {"has_service_pages": False}))
+            f"No dedicated {profile['offering_label']} found. A page per "
+            f"{profile['offering_singular']} gives searches for that specific "
+            f"{profile['offering_singular']} somewhere relevant to land.",
+            {"has_service_pages": False, "label": profile["offering_label"],
+             "sitemap_urls": getattr(w, "sitemap_url_count", None)}))
 
     if not w.has_city_pages:
         pts += 8
         ev.append(Evidence("website", "no_city_pages", "high", 8,
-            "No city or service-area pages. They're invisible for every neighboring town "
-            "they actually serve.", {"has_city_pages": False}))
+            f"No {profile['location_label']} found. Searches that name a nearby town "
+            f"or neighborhood have no page on the site written for them.",
+            {"has_city_pages": False, "label": profile["location_label"]}))
 
     if w.nap_matches_gbp is False:
         pts += 7
@@ -381,10 +435,11 @@ def score_website(b: dict, w, base: Baseline) -> tuple[int, list]:
             f"but the platform caps what's achievable on local SEO — a clean rebuild pitch.",
             {"cms": w.cms_detected}))
 
-    if not w.has_contact_form:
+    if not w.has_contact_form and not getattr(w, "has_online_booking", False):
         pts += 6
         ev.append(Evidence("website", "no_contact_form", "high", 6,
-            "No contact form found. Every visitor who won't call on the spot is lost.",
+            "No contact form or online booking found. Visitors who won't call on the "
+            "spot have no other way to reach out.",
             {"has_contact_form": False}))
 
     return _normalize(pts, WEBSITE_MAX_POINTS), ev
@@ -409,7 +464,12 @@ def score_reachability(b: dict, w) -> tuple[int, list]:
         pts += 45
         ev.append(Evidence("reachability", "phone_available", "info", 45,
             f"Phone: {b['phone']}", {"phone": b["phone"]}))
-    if w and w.contact_page_url:
+    if w and getattr(w, "has_online_booking", False):
+        pts += 15
+        ev.append(Evidence("reachability", "online_booking", "info", 15,
+            f"Online booking via {w.booking_provider or 'a scheduling tool'}",
+            {"provider": w.booking_provider}))
+    elif w and w.contact_page_url:
         pts += 15
         ev.append(Evidence("reachability", "contact_form", "info", 15,
             f"Contact form at {w.contact_page_url}", {"url": w.contact_page_url}))
@@ -435,12 +495,14 @@ class ScoredLead:
     place_id: str
     total_score: int
     gbp_gap_score: int
-    website_gap_score: int
+    website_gap_score: int | None
     reachability_score: int
     tier: str
     headline_gap: str
     evidence: list
     activity: str = "unknown"
+    labels: list = field(default_factory=list)
+    market: str | None = None
 
 
 def _headline(ev: list) -> str:
@@ -555,6 +617,54 @@ def reachability_multiplier(r: int) -> float:
     return 0.40 + 0.60 * (min(max(r, 0), 100) / 100)
 
 
+try:
+    from .scoring_labels import LABEL_NAMES, REAL_GAP_SIGNALS  # noqa: F401
+except ImportError:  # pipeline scripts are also executed directly
+    from scoring_labels import LABEL_NAMES, REAL_GAP_SIGNALS  # noqa: F401
+
+
+def lead_labels(b: dict, w, base: Baseline | None, evidence: list,
+                activity: str, reach: int) -> list[str]:
+    """Plain labels that explain a lead. Labels never remove a lead."""
+    labels: list[str] = []
+    signals = {e.signal for e in evidence}
+    reviews = b.get("review_count") or 0
+    trading = b.get("last_review_days") is not None and b["last_review_days"] <= 365
+    real_gaps = len(signals & REAL_GAP_SIGNALS)
+
+    if trading:
+        labels.append("trading")
+    if base is not None and trading and reviews >= base.median_reviews and real_gaps >= 2:
+        labels.append("established")
+    if base is not None and reviews and reviews >= base.p75_reviews:
+        labels.append("strong_reviews")
+    if "no_website" in signals:
+        labels.append("no_website")
+    if "site_down" in signals:
+        labels.append("site_down")
+    if signals & {"crawl_blocked", "site_down", "nap_mismatch"}:
+        labels.append("verify_first")
+    emails = list(getattr(w, "emails_found", []) or []) if w else []
+    if emails:
+        labels.append("email_found")
+    elif b.get("phone"):
+        labels.append("phone_only")
+    if reach == 0:
+        labels.append("no_contact")
+    if w is not None and getattr(w, "has_online_booking", False):
+        labels.append("online_booking")
+    if b.get("is_franchise"):
+        labels.append("franchise")
+    if reviews == 0:
+        labels.append("no_reviews")
+    rating = b.get("rating")
+    if rating and float(rating) < 4.0:
+        labels.append("low_rating")
+    if w is not None and getattr(w, "is_template_builder", False):
+        labels.append("template_site")
+    return labels
+
+
 def score_lead(b: dict, w, base: Baseline, deep: dict | None = None) -> ScoredLead:
     g_raw, ev_g = score_gbp(b, base)
     s, ev_s = score_website(b, w, base)
@@ -572,9 +682,15 @@ def score_lead(b: dict, w, base: Baseline, deep: dict | None = None) -> ScoredLe
         g = g_raw
     ev_g = ev_g + ev_d
 
-    opportunity = g * C.WEIGHTS["gbp"] + s * C.WEIGHTS["website"]
+    if s is None:
+        # Website couldn't be audited (bot-blocked): rank on the profile alone
+        # instead of treating the site as perfect.
+        opportunity = g
+    else:
+        opportunity = g * C.WEIGHTS["gbp"] + s * C.WEIGHTS["website"]
     act_mult, act_label = activity_multiplier(b)
-    total = round(opportunity * reachability_multiplier(r) * act_mult)
+    franchise_mult = C.FRANCHISE_MULTIPLIER if b.get("is_franchise") else 1.0
+    total = round(opportunity * reachability_multiplier(r) * act_mult * franchise_mult)
 
     d = b.get("last_review_days")
     if act_label in ("active", "steady"):
@@ -592,17 +708,15 @@ def score_lead(b: dict, w, base: Baseline, deep: dict | None = None) -> ScoredLe
             "No reviews at all, so no way to confirm the business is active. "
             "Could be new, could be abandoned.", {}))
 
+    # Tier is a priority grade for working the list, never a filter. A lead
+    # with no contact route keeps its grade and gets a "no_contact" label.
     tier = "D"
     for label, cutoff in C.TIER_CUTOFFS:
         if total >= cutoff:
             tier = label
             break
 
-    # Hard gate: no contact route at all means it can't be worked today,
-    # regardless of how the arithmetic came out.
-    if r == 0:
-        tier = "D"
-
+    evidence = ev_g + ev_s + ev_r
     return ScoredLead(
         place_id=b["place_id"],
         total_score=int(total),
@@ -611,18 +725,22 @@ def score_lead(b: dict, w, base: Baseline, deep: dict | None = None) -> ScoredLe
         reachability_score=r,
         tier=tier,
         headline_gap=_headline(ev_g + ev_s),
-        evidence=ev_g + ev_s + ev_r,
+        evidence=evidence,
         activity=act_label,
+        labels=lead_labels(b, w, base, evidence, act_label, r),
+        market=b.get("market"),
     )
 
 
-def score_all(businesses: list, enrichment: dict, geo_label: str,
+def score_all(businesses: list, enrichment: dict, geo_label: str | None = None,
               deep: dict | None = None) -> tuple[list, dict]:
     baselines = compute_baselines(businesses, geo_label)
     deep = deep or {}
     out = []
     for b in businesses:
-        base = baselines.get(b.get("vertical") or "unknown")
+        if geo_label and not b.get("market"):
+            b = {**b, "market": geo_label}
+        base = baseline_for(baselines, b.get("vertical") or "unknown", b.get("market"))
         if base is None:
             continue
         out.append(score_lead(b, enrichment.get(b["place_id"]), base,

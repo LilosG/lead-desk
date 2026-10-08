@@ -49,6 +49,8 @@ class ProspectListItem(BaseModel):
     category_opportunity: bool
     established: bool
     real_gap_count: int
+    labels: list[str] = []
+    market: str | None = None
 
     needs_manual_check: bool
     scored_at: datetime
@@ -114,6 +116,13 @@ class WebsiteAudit(BaseModel):
     psi_mobile_friendly: bool | None
 
     crawl_error: str | None
+
+    offering_page_count: int | None = None
+    offering_titles: list[str] | None = None
+    location_page_count: int | None = None
+    sitemap_url_count: int | None = None
+    has_online_booking: bool | None = None
+    booking_provider: str | None = None
 
 
 class ProspectWorkflowState(BaseModel):
@@ -193,6 +202,8 @@ class ProspectDetail(BaseModel):
     category_opportunity: bool
     established: bool
     real_gap_count: int
+    labels: list[str] = []
+    market: str | None = None
 
     what_to_fix: str | None
     major_issues: int
@@ -207,5 +218,7 @@ class ProspectDetail(BaseModel):
 class ProspectFilterMeta(BaseModel):
     cities: list[str]
     verticals: list[str]
+    markets: list[str] = []
+    labels: dict[str, str] = {}
     tiers: list[str]
     total_prospects: int

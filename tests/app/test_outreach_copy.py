@@ -1,112 +1,64 @@
-import json
-
+"""Copy guardrails for the current (v9) first-touch email validator."""
 import pytest
 
-from app.integrations.openrouter import OpenRouterClient, OpenRouterError
+from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
 from app.services.outreach import PROMPT_VERSION
 
 
-def test_outreach_prompt_version_is_v4():
-    assert PROMPT_VERSION == "outreach-v4"
+def _body(prefix: str = "Hi,", suffix: str = "") -> str:
+    tail = suffix or (
+        "If that is useful, I can put the specific change in writing for your team "
+        "so it is easy to hand off. Either way, thanks for reading this note today."
+    )
+    return f"{prefix}\n\n{CLAIM_TOKEN}\n\n{tail}"
 
 
-def test_copy_guardrails_accept_claim_aligned_reply_oriented_copy():
+def test_prompt_version_is_current():
+    assert PROMPT_VERSION == "outreach-v9"
+
+
+def test_validator_accepts_short_claim_slot_copy():
     OpenRouterClient._validate_copy(
         subject="Volt Electric website",
-        intro="I took a look at Volt Electric's website before reaching out.",
-        cta="Want me to send over the fix I'd make?",
-        verified_claim="I noticed the homepage does not appear to include LocalBusiness schema markup.",
+        body=_body(),
+        has_verified_claim=True,
+        business_name="Volt Electric",
     )
 
 
-def test_copy_guardrails_reject_context_not_supported_by_claim():
-    with pytest.raises(OpenRouterError, match="context not supported"):
+@pytest.mark.parametrize(
+    "subject,body,message",
+    [
+        ("A subject line that is far too long", _body(), "subject"),
+        ("Volt Electric website", "Hi,\n\nToo short.", "length"),
+        ("Volt Electric website", _body().replace(CLAIM_TOKEN, "no slot"), "slot"),
+        ("Volt Electric website", _body(prefix="Hi, I noticed your reviews and hours,"), "unverified observation"),
+    ],
+)
+def test_validator_rejects_structural_problems(subject, body, message):
+    with pytest.raises(OpenRouterError):
         OpenRouterClient._validate_copy(
-            subject="Sunnydale Electric search",
-            intro="I was looking at Sunnydale Electric in local search before reaching out.",
-            cta="Want me to send over the recommendation?",
-            verified_claim="I noticed the homepage does not appear to include LocalBusiness schema markup.",
+            subject=subject, body=body, has_verified_claim=True,
         )
 
 
 @pytest.mark.parametrize(
-    "subject,intro,cta",
-    [
-        (
-            "Quick note for Volt Electric",
-            "I came across your business and wanted to reach out.",
-            "Would you like to book a call?",
-        ),
-        (
-            "RE: Volt Electric",
-            "I reviewed Volt Electric online before reaching out.",
-            "Would you like the details?",
-        ),
-        (
-            "Volt Electric website",
-            "I reviewed Volt Electric online before reaching out!",
-            "Would you like the details?",
-        ),
-        (
-            "Volt Electric website",
-            "I reviewed Volt Electric online before reaching out.",
-            "I can send the details.",
-        ),
-        (
-            "Volt Electric website",
-            "I reviewed Volt Electric's online presence before reaching out.",
-            "Would you be open to me sending the exact change I'd recommend?",
-        ),
-    ],
+    "phrase",
+    ["https://example.com", "book a call", "free audit", "online presence", "skyrocket"],
 )
-def test_copy_guardrails_reject_spammy_or_non_reply_patterns(subject, intro, cta):
+def test_validator_rejects_spam_and_link_phrases(phrase):
+    body = _body(suffix=(
+        f"I can share more detail here, {phrase}, and keep it short for your team "
+        "so the change is easy to hand off whenever it suits you."
+    ))
     with pytest.raises(OpenRouterError):
         OpenRouterClient._validate_copy(
-            subject=subject,
-            intro=intro,
-            cta=cta,
-            verified_claim="I noticed the homepage does not appear to include LocalBusiness schema markup.",
+            subject="Volt Electric website", body=body, has_verified_claim=True,
         )
 
 
-def test_generation_prompt_receives_verified_claim_for_context(monkeypatch):
-    captured = {}
-
-    class FakeResponse:
-        ok = True
-
-        def json(self):
-            return {
-                "choices": [
-                    {
-                        "message": {
-                            "content": json.dumps(
-                                {
-                                    "subject": "Sunnydale Electric website",
-                                    "intro": "I took a look at Sunnydale Electric's website before reaching out.",
-                                    "cta": "Want me to send over the fix I'd make?",
-                                }
-                            )
-                        }
-                    }
-                ]
-            }
-
-    def fake_post(url, **kwargs):
-        captured.update(kwargs["json"])
-        return FakeResponse()
-
-    monkeypatch.setattr("app.integrations.openrouter.requests.post", fake_post)
-    claim = "I noticed the homepage does not appear to include LocalBusiness schema markup."
-    client = OpenRouterClient(api_key="test", model="test/model")
-
-    result = client.generate_email(
-        business_name="Sunnydale Electric",
-        city="Ramona",
-        vertical="electrician",
-        verified_claim=claim,
-    )
-
-    user_message = captured["messages"][1]["content"]
-    assert claim in user_message
-    assert result.subject == "Sunnydale Electric website"
+def test_validator_rejects_slot_when_no_claim_was_verified():
+    with pytest.raises(OpenRouterError):
+        OpenRouterClient._validate_copy(
+            subject="Volt Electric website", body=_body(), has_verified_claim=False,
+        )

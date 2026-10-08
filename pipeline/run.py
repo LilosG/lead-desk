@@ -67,9 +67,9 @@ def summarize(scored: list, businesses: list, baselines: dict) -> None:
         tiers[s.tier] = tiers.get(s.tier, 0) + 1
 
     log("\n" + "=" * 78)
-    log("BASELINES (per vertical, this run)")
+    log("BASELINES (per niche and market, this run)")
     for v, b in baselines.items():
-        log(f"  {v:<16} n={b.sample_size:<4} median_reviews={b.median_reviews:<6.0f} "
+        log(f"  {v:<40} n={b.sample_size:<4} median_reviews={b.median_reviews:<6.0f} "
             f"median_rating={b.median_rating:<4.1f} with_website={b.pct_with_website:.0f}%")
 
     log("\nTIER DISTRIBUTION")
@@ -112,7 +112,8 @@ def main() -> int:
         os.execv(sys.executable,
                  [sys.executable, "discover.py", "--dry-run",
                   *(["--grid"] if args.grid else []),
-                  "--verticals", *args.verticals])
+                  "--verticals", *args.verticals,
+                  *(["--cities", *args.cities] if args.cities else [])])
 
     ledger = discover.CostLedger()
     store = None
@@ -126,8 +127,9 @@ def main() -> int:
             log("   or re-run with --no-db to work from CSV only.")
             return 1
         run_id = store.start_run(
-            C.GEO_LABEL, args.verticals,
-            len(discover.build_grid(C.GEO_BBOX, C.GRID_SPACING_KM)),
+            discover.run_geo_label(args.cities), args.verticals,
+            len(discover.build_grid(C.GEO_BBOX, C.GRID_SPACING_KM))
+            if (args.grid and C.GEO_BBOX) else 0,
             notes=f"model={C.MODEL_VERSION}",
         )
         log(f"run_id={run_id}")
@@ -138,7 +140,7 @@ def main() -> int:
         with open(args.rescore_from) as fh:
             businesses = json.load(fh)
     else:
-        log(f"DISCOVERY — {C.GEO_LABEL} — {args.verticals}")
+        log(f"DISCOVERY — {discover.run_geo_label(args.cities)} — {args.verticals}")
         found, ledger = discover.sweep(
             args.verticals, cities=args.cities, use_grid=args.grid,
             ledger=ledger, progress=log,
@@ -165,7 +167,7 @@ def main() -> int:
 
     # -- 3. score ------------------------------------------------------------
     log("\nSCORING")
-    scored, baselines = S.score_all(businesses, enrichment, C.GEO_LABEL)
+    scored, baselines = S.score_all(businesses, enrichment)
     summarize(scored, businesses, baselines)
 
     # -- 4. persist ----------------------------------------------------------

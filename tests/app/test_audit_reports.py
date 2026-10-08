@@ -11,6 +11,8 @@ class FakeProspectRepository:
         self.prospect = {
             "place_id": "place-1",
             "name": "Example Electric",
+            "vertical": "electrician",
+            "market": "San Diego, CA, USA",
             "city": "San Diego",
             "state": "CA",
             "phone": "(619) 555-0101",
@@ -145,7 +147,7 @@ def test_snapshot_excludes_internal_scores_and_raw_findings():
     assert "total_score" not in serialized
     assert "tier" not in serialized
     assert "internal raw finding" not in serialized
-    assert snapshot["report_version"] == 3
+    assert snapshot["report_version"] == 4
     assert snapshot["business"]["review_count"] == 87
     assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
     assert "Homepage scan" in snapshot["findings"][0]["evidence"]
@@ -286,3 +288,106 @@ def test_service_and_local_page_gaps_are_client_safe_report_opportunities():
     assert "service-area" in findings["no_city_pages"]["what_we_found"].lower()
     assert "website crawl" in findings["no_service_pages"]["evidence"].lower()
     assert "website crawl" in findings["no_city_pages"]["evidence"].lower()
+
+
+
+# --- v4: wider findings, niche wording, local comparison, next step, batch -----
+
+class PeerProspectRepository(FakeProspectRepository):
+    def __init__(self):
+        super().__init__()
+        self.findings = self.findings + [
+            {
+                "signal": "reviews_below_median",
+                "observed": {"reviews": 87, "median": 140, "market": "San Diego, CA",
+                             "niche": "electrician", "sample_size": 42},
+                "finding": "internal",
+            },
+            {
+                "signal": "psi_mobile_poor",
+                "observed": {"psi_performance": 41, "lcp_ms": 6200},
+                "finding": "internal",
+            },
+            {
+                "signal": "title_length",
+                "observed": {"title_length": 12, "title": "Home"},
+                "finding": "internal",
+            },
+        ]
+
+    def market_peers(self, place_id, *, vertical, market, city, limit=3):
+        assert vertical == "electrician"
+        assert market == "San Diego, CA, USA"
+        return {
+            "sample_size": 42,
+            "median_reviews": 140,
+            "leaders": [
+                {"name": "Big Volt", "rating": 4.8, "review_count": 900, "has_website": True},
+                {"name": "Amp Co", "rating": 4.7, "review_count": 610, "has_website": True},
+            ],
+        }
+
+
+class FakeDemoRepository:
+    def list_for_prospect(self, place_id):
+        return [{"status": "published", "public_url": "https://demo.example/x-1/"}]
+
+
+def test_review_and_speed_findings_are_reportable_with_evidence():
+    service = AuditReportService(PeerProspectRepository(), FakeReportRepository())
+    options = {o["signal"]: o for o in service.options_for_prospect("place-1")["options"]}
+
+    assert options["reviews_below_median"]["default_selected"] is True
+    assert "87 reviews vs. a median of 140" in options["reviews_below_median"]["evidence"]
+    assert "San Diego, CA" in options["reviews_below_median"]["evidence"]
+    assert options["psi_mobile_poor"]["evidence"].startswith("Google PageSpeed Insights, mobile: 41/100")
+    assert "6.2s" in options["psi_mobile_poor"]["evidence"]
+    # Options are ordered priority first.
+    dispositions = [o["disposition"] for o in service.options_for_prospect("place-1")["options"]]
+    assert dispositions.index("recommended") < dispositions.index("optional")
+
+
+def test_title_length_wording_matches_the_actual_problem():
+    service = AuditReportService(PeerProspectRepository(), FakeReportRepository())
+    report = service.create_report("place-1", selected_signals=["title_length"])
+    found = report["snapshot"]["findings"][0]["what_we_found"]
+    assert "only 12 characters" in found
+    assert "longer" not in found
+
+
+def test_report_includes_local_comparison_and_next_step_with_demo_link():
+    service = AuditReportService(
+        PeerProspectRepository(), FakeReportRepository(), FakeDemoRepository()
+    )
+    report = service.create_report("place-1", selected_signals=["reviews_below_median"])
+    snapshot = report["snapshot"]
+
+    comparison = snapshot["market_comparison"]
+    assert comparison["market"] == "San Diego, CA"
+    assert comparison["median_reviews"] == 140
+    assert [row["name"] for row in comparison["leaders"]] == ["Big Volt", "Amp Co"]
+    assert comparison["business"]["review_count"] == 87
+    assert snapshot["next_step"]["demo_url"] == "https://demo.example/x-1/"
+    assert "reply" in snapshot["next_step"]["text"].lower()
+
+    pdf = render_audit_report_pdf(report)
+    assert pdf.startswith(b"%PDF")
+
+
+def test_niche_wording_follows_the_prospect():
+    repo = FakeProspectRepository()
+    repo.prospect["vertical"] = "med_spa"
+    repo.prospect["primary_type"] = "spa"
+    service = AuditReportService(repo, FakeReportRepository())
+    report = service.create_report("place-1", selected_signals=["no_service_pages"])
+    finding = report["snapshot"]["findings"][0]
+    assert finding["title"] == "Treatment pages coverage"
+    assert "treatment pages" in finding["what_we_found"]
+    assert "service" not in finding["what_we_found"]
+
+
+def test_batch_creates_default_reports_and_skips_unknowns():
+    service = AuditReportService(PeerProspectRepository(), FakeReportRepository())
+    results = service.create_default_reports(["place-1", "missing", "place-1"])
+    assert [r["status"] for r in results] == ["created", "skipped"]
+    assert results[1]["place_id"] == "missing"

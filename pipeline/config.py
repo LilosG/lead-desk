@@ -72,78 +72,251 @@ MAX_PAGES_PER_QUERY = 3      # Google hard cap: 60 results / 3 pages
 RESULTS_PER_PAGE    = 20
 
 # ---------------------------------------------------------------------------
-# Pilot target: San Diego County
+# Market scope
 # ---------------------------------------------------------------------------
-GEO_LABEL = "San Diego County"
+# Lead Desk is not tied to one metro. Every sweep names its own U.S. cities
+# (canonical "City, ST, USA" labels from Places Autocomplete), and each lead is
+# compared against businesses in the SAME niche and the SAME searched market.
+#
+# There is deliberately no default city list: a sweep without cities is an
+# operator error, not a silent fallback to one region.
+TARGET_CITIES: list[str] = []
 
-# Bounding box for San Diego County (approximate, trimmed to populated coastal
-# and inland corridor — the eastern desert is mostly empty and would waste calls)
-GEO_BBOX = {
-    "min_lat": 32.53,   # US/Mexico border
-    "max_lat": 33.51,   # Camp Pendleton / Riverside County line
-    "min_lng": -117.32, # coast
-    "max_lng": -116.75, # east of Ramona/Alpine; past this is desert
-}
+# Label used only when a run has no city scope at all (legacy grid CLI runs).
+DEFAULT_GEO_LABEL = "Custom market"
 
-# Grid spacing. Text Search caps at 60 results per query, so in dense areas a
-# coarse grid silently truncates and you never know what you missed. ~8km cells
-# keep most vertical+cell combinations under the cap.
+# Places Text Search is semantic, not a geofence. A business whose locality is a
+# neighborhood or suburb of the searched city (e.g. "La Jolla" for "San Diego")
+# is still in that market. Results within this radius of the searched market's
+# center, in the same state, are kept and attributed to that market.
+NEARBY_RADIUS_KM = 25.0
+
+# Google caps one Text Search at 60 results (3 pages x 20). When a query comes
+# back full, the market is denser than one query can see, so the area the
+# results cover is split into smaller rectangles and searched again.
+SPLIT_SATURATED_QUERIES = True
+MAX_SPLIT_DEPTH = 2          # 1 split = 4 cells, 2 splits = up to 16 cells
+
+# A market needs at least this many businesses in a niche before its own
+# medians are trusted; below that, the niche-wide medians for the run are used.
+MIN_MARKET_BASELINE_SAMPLE = 8
+
+# Legacy grid mode (CLI only, disabled in the app). Requires an explicit box;
+# nothing defaults to a particular region any more.
+GEO_BBOX: dict | None = None
 GRID_SPACING_KM = 8.0
 
-# Cities used for query text — Text Search responds much better to
-# "electrician in Carlsbad CA" than to a bare lat/lng radius nudge.
-TARGET_CITIES = [
-    "San Diego", "Carlsbad", "Oceanside", "Vista", "San Marcos", "Escondido",
-    "Encinitas", "Solana Beach", "Del Mar", "Poway", "Rancho Bernardo",
-    "Chula Vista", "National City", "La Mesa", "El Cajon", "Santee",
-    "Lemon Grove", "Spring Valley", "Imperial Beach", "Coronado",
-    "Ramona", "Alpine", "Lakeside", "Fallbrook", "Bonsall", "Julian",
+# ---------------------------------------------------------------------------
+# Niche profiles. A profile tells the crawler and scorer what "offering pages"
+# and "location pages" look like for that kind of business, and how to word
+# findings. Any niche can be swept; niches without a preset use the generic
+# profile, which is intentionally broad so it errs toward NOT claiming a gap.
+# ---------------------------------------------------------------------------
+NICHE_PROFILES = {
+    "home_service": {
+        "offering_label": "service pages",
+        "offering_singular": "service",
+        "location_label": "service-area pages",
+        "offering_words": [
+            "service", "repair", "install", "replacement", "maintenance",
+            "inspection", "upgrade", "cleaning", "emergency", "remodel",
+            "panel", "wiring", "lighting", "ev-charger", "water-heater", "drain",
+            "repipe", "leak", "sewer", "ac-", "air-conditioning", "furnace",
+            "heating", "heat-pump", "duct", "mini-split", "roof", "gutter",
+            "landscap", "irrigation", "hardscape", "lawn", "tree", "restoration",
+            "water-damage", "mold", "fire-damage", "pest", "pool", "solar",
+            "garage-door", "fence", "concrete", "paint", "handyman",
+            "rental", "tent", "bounce", "party",
+        ],
+    },
+    "medical_aesthetic": {
+        "offering_label": "treatment pages",
+        "offering_singular": "treatment",
+        "location_label": "location pages",
+        "offering_words": [
+            "treatment", "service", "botox", "dysport", "filler", "injectable",
+            "laser", "facial", "hydrafacial", "microneedling", "peel", "prp",
+            "coolsculpt", "body-contour", "sculpt", "skin", "hair-removal",
+            "iv-therapy", "weight-loss", "semaglutide", "tirzepatide", "lip",
+            "rejuvenation", "tightening", "morpheus", "ipl", "medspa", "med-spa",
+            "wellness", "hormone",
+        ],
+    },
+    "dental": {
+        "offering_label": "procedure pages",
+        "offering_singular": "procedure",
+        "location_label": "location pages",
+        "offering_words": [
+            "service", "treatment", "implant", "invisalign", "aligner",
+            "orthodont", "braces", "crown", "veneer", "whitening", "cleaning",
+            "root-canal", "endodont", "extraction", "wisdom", "emergency",
+            "pediatric", "cosmetic", "denture", "bridge", "periodont", "gum",
+            "sedation", "family-dentistry", "general-dentistry", "smile",
+        ],
+    },
+    "real_estate": {
+        "offering_label": "buyer, seller and listing pages",
+        "offering_singular": "page",
+        "location_label": "neighborhood or community pages",
+        "offering_words": [
+            "listing", "homes-for-sale", "for-sale", "property", "properties",
+            "buy", "buyer", "sell", "seller", "home-value", "home-valuation",
+            "valuation", "search", "idx", "mls", "relocation", "luxury",
+            "condo", "new-construction", "open-house", "sold", "featured",
+        ],
+    },
+    "legal": {
+        "offering_label": "practice-area pages",
+        "offering_singular": "practice area",
+        "location_label": "office or location pages",
+        "offering_words": [
+            "practice-area", "practice", "injury", "accident", "car-accident",
+            "truck", "wrongful-death", "slip", "malpractice", "workers-comp",
+            "criminal", "dui", "family-law", "divorce", "custody", "estate",
+            "probate", "trust", "will", "bankruptcy", "immigration",
+            "employment", "business-law", "real-estate-law", "litigation",
+        ],
+    },
+    "wellness_health": {
+        "offering_label": "service pages",
+        "offering_singular": "service",
+        "location_label": "location pages",
+        "offering_words": [
+            "service", "treatment", "therapy", "condition", "adjustment",
+            "chiropractic", "physical-therapy", "massage", "acupuncture",
+            "sports", "injury", "pain", "back", "neck", "sciatica", "rehab",
+            "spinal", "decompression", "prenatal", "pediatric", "wellness",
+        ],
+    },
+    "auto": {
+        "offering_label": "service pages",
+        "offering_singular": "service",
+        "location_label": "location pages",
+        "offering_words": [
+            "service", "repair", "brake", "oil-change", "transmission",
+            "diagnostic", "engine", "tire", "alignment", "smog", "inspection",
+            "detail", "tint", "body", "collision", "paint", "maintenance",
+        ],
+    },
+}
+
+# Custom niches have no preset vocabulary, so the generic profile is the UNION
+# of every profile's offering words plus general business words. Over-detecting
+# offering pages only means we stay quiet; under-detecting would put a false
+# claim in front of a business owner.
+_GENERIC_WORDS = [
+    "service", "services", "product", "products", "menu", "pricing", "price",
+    "package", "packages", "what-we-do", "offering", "solutions", "specialt",
+    "programs", "classes", "catering", "shop", "store", "collection",
+]
+NICHE_PROFILES["generic_local_business"] = {
+    "offering_label": "pages for individual services or offerings",
+    "offering_singular": "offering",
+    "location_label": "location pages",
+    "offering_words": sorted(
+        {w for prof in NICHE_PROFILES.values() for w in prof["offering_words"]}
+        | set(_GENERIC_WORDS)
+    ),
+}
+
+# Words that mark a page as a location / market page in any niche, in addition
+# to the business's own city and the searched market's city.
+LOCATION_PAGE_WORDS = [
+    "service-area", "service-areas", "areas-we-serve", "areas-served",
+    "areas", "locations", "location", "neighborhood", "neighborhoods",
+    "communities", "community", "cities", "near-me", "serving",
 ]
 
 # ---------------------------------------------------------------------------
-# Verticals. Electrician leads because Wheyland Electric is the strongest
-# case study — the outreach hook writes itself for that vertical.
+# Niche presets. Presets add curated query expansion and a profile; they are
+# NOT an allow-list. Any operator-entered niche can be swept and falls back to
+# the generic profile. `case_study` is optional proof copy for that niche and is
+# omitted everywhere when None.
 # ---------------------------------------------------------------------------
 VERTICALS = {
     "electrician": {
         "queries": ["electrician", "electrical contractor", "residential electrician"],
         "priority": 1,
+        "profile": "home_service",
         "case_study": "Wheyland Electric — 20 to 306 keywords and 1 to 29 top-3 rankings in 5 months",
     },
     "plumber": {
         "queries": ["plumber", "plumbing contractor", "emergency plumber"],
         "priority": 2,
+        "profile": "home_service",
         "case_study": None,
     },
     "hvac": {
         "queries": ["hvac contractor", "air conditioning repair", "heating and cooling"],
         "priority": 2,
+        "profile": "home_service",
         "case_study": None,
     },
     "roofing": {
         "queries": ["roofing contractor", "roof repair"],
         "priority": 3,
+        "profile": "home_service",
         "case_study": None,
     },
     "restoration": {
         "queries": ["water damage restoration", "fire damage restoration"],
         "priority": 2,
+        "profile": "home_service",
         "case_study": "Tamarack Restoration — 12 to 420 keywords in 12 months",
     },
     "landscaping": {
         "queries": ["landscaping contractor", "landscape design"],
         "priority": 3,
+        "profile": "home_service",
         "case_study": None,
     },
     "party_rentals": {
         "queries": ["party rentals", "event rentals"],
         "priority": 3,
+        "profile": "home_service",
         "case_study": "Kelari Party Rentals — 0 to 38 keywords, 8 top-3 from launch",
     },
     "handyman": {
         "queries": ["handyman service", "home repair service"],
         "priority": 3,
-        "case_study": "Carlsbad Fix It",
+        "profile": "home_service",
+        "case_study": None,
+    },
+    "real_estate_agent": {
+        "queries": ["real estate agent", "realtor", "real estate team"],
+        "priority": 3,
+        "profile": "real_estate",
+        "case_study": None,
+    },
+    "med_spa": {
+        "queries": ["med spa", "medical spa", "botox clinic"],
+        "priority": 3,
+        "profile": "medical_aesthetic",
+        "case_study": None,
+    },
+    "dentist": {
+        "queries": ["dentist", "dental office", "cosmetic dentist"],
+        "priority": 3,
+        "profile": "dental",
+        "case_study": None,
+    },
+    "chiropractor": {
+        "queries": ["chiropractor", "chiropractic clinic"],
+        "priority": 3,
+        "profile": "wellness_health",
+        "case_study": None,
+    },
+    "personal_injury_attorney": {
+        "queries": ["personal injury attorney", "car accident lawyer"],
+        "priority": 3,
+        "profile": "legal",
+        "case_study": None,
+    },
+    "auto_repair": {
+        "queries": ["auto repair shop", "auto mechanic"],
+        "priority": 3,
+        "profile": "auto",
+        "case_study": None,
     },
 }
 
@@ -169,7 +342,7 @@ CONTACT_PAGE_HINTS = [
 # ---------------------------------------------------------------------------
 # Scoring model
 # ---------------------------------------------------------------------------
-MODEL_VERSION = "v1.0"
+MODEL_VERSION = "v2.0"
 
 # gbp and website split the "opportunity" score 50/50. Reachability is NOT a
 # weight — it's applied as a multiplier afterwards (see scoring.py), because
@@ -184,17 +357,25 @@ TIER_CUTOFFS = [("A", 45), ("B", 33), ("C", 22), ("D", 0)]
 # Businesses we should not bother pitching.
 EXCLUDE_BUSINESS_STATUS = ["CLOSED_PERMANENTLY"]
 
-# National chains / franchises — they don't buy local SEO from a local agency.
-# Filtering these out matters more than it sounds: they're heavily represented
-# in map results and they pollute the top of a gap-based score because their
-# local pages are often genuinely thin.
+# National chains / franchises rarely buy local SEO from a local agency, and
+# their thin local pages inflate gap scores. They are KEPT and labelled
+# "franchise" (with a priority discount) rather than dropped, so the operator
+# decides — some franchise owners do buy locally.
 CHAIN_NAME_PATTERNS = [
     "mister sparky", "roto-rooter", "roto rooter", "benjamin franklin plumbing",
     "one hour heating", "ars/rescue rooter", "servpro", "servicemaster",
     "paul davis", "911 restoration", "home depot", "lowes", "lowe's",
     "sears", "aire serv", "mr. rooter", "mr rooter", "mr. electric",
     "mr electric", "mrelectric", "milestone", "mr. handyman", "mr handyman",
+    # healthcare / beauty / auto chains for the wider niche set
+    "aspen dental", "western dental", "pacific dental", "gentle dental",
+    "ideal image", "laseraway", "massage envy", "hand & stone", "european wax",
+    "the joint chiropractic", "jiffy lube", "midas", "meineke", "firestone",
+    "pep boys", "valvoline", "goodyear", "les schwab", "big o tires",
 ]
+
+# Priority discount for franchises. Not zero: the lead stays in the list.
+FRANCHISE_MULTIPLIER = 0.6
 
 
 # ---------------------------------------------------------------------------

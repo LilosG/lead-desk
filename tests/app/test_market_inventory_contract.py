@@ -16,13 +16,14 @@ class FakeProspectRepository:
         }
 
 
-def test_prospect_meta_keeps_configured_market_and_observed_extras():
+def test_prospect_meta_lists_only_swept_markets_and_niches():
     meta = ProspectService(FakeProspectRepository()).filter_meta()
 
-    assert meta["cities"][: len(market_config.TARGET_CITIES)] == market_config.TARGET_CITIES
-    assert meta["verticals"][: len(market_config.VERTICALS)] == list(market_config.VERTICALS)
-    assert "Unlisted City" in meta["cities"]
-    assert "custom_vertical" in meta["verticals"]
+    # No region is assumed: only cities and niches that were actually swept.
+    assert meta["cities"] == ["Carlsbad", "Unlisted City"]
+    assert meta["verticals"] == ["electrician", "custom_vertical"]
+    assert market_config.TARGET_CITIES == []
+    assert "established" in meta["labels"]
     assert meta["total_prospects"] == 42
 
 
@@ -43,15 +44,27 @@ def test_sweep_vertical_order_accepts_and_normalizes_custom_verticals():
 
 
 def test_custom_vertical_uses_entered_phrase_as_default_query():
-    assert vertical_config.vertical_queries("Personal Injury Attorney") == [
-        "personal injury attorney"
+    assert vertical_config.vertical_queries("Mobile Dog Groomer") == [
+        "mobile dog groomer"
     ]
-    assert vertical_config.vertical_priority("Personal Injury Attorney") > max(
+    assert vertical_config.vertical_priority("Mobile Dog Groomer") > max(
         spec["priority"] for spec in market_config.VERTICALS.values()
     )
-    assert vertical_config.vertical_profile("Personal Injury Attorney") == (
+    assert vertical_config.vertical_profile("Mobile Dog Groomer") == (
         "generic_local_business"
     )
+
+
+def test_non_trade_presets_have_their_own_profiles():
+    assert vertical_config.vertical_profile("Real Estate Agent") == "real_estate"
+    assert vertical_config.vertical_profile("med spa") == "medical_aesthetic"
+    assert vertical_config.vertical_profile("Dentist") == "dental"
+    assert vertical_config.vertical_profile("electrician") == "home_service"
+    # Generic profile is the union of every niche's vocabulary, so a custom
+    # niche errs toward NOT claiming missing offering pages.
+    generic = set(market_config.NICHE_PROFILES["generic_local_business"]["offering_words"])
+    for name, profile in market_config.NICHE_PROFILES.items():
+        assert set(profile["offering_words"]) <= generic, name
 
 
 def test_custom_vertical_discovery_does_not_use_home_service_noise_exclusions():
@@ -97,7 +110,7 @@ def test_pipeline_records_all_matched_verticals_and_recomputes_canonical():
 
     assert '"matched_verticals": [vertical]' in discover
     assert "merge_vertical_memberships" in discover
-    assert "found[pid] = merge_vertical_memberships(found[pid], rec)" in discover
+    assert "merge_vertical_memberships(found[pid], rec)" in discover
     assert 'r.pop("matched_verticals", None)' in store
     assert "insert into business_vertical_memberships" in store
     assert "canonical_vertical" in store

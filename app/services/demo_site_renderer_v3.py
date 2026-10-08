@@ -15,6 +15,48 @@ V3_TEMPLATE_OPTION = {
 }
 
 
+# Copy that changes with the kind of business, so a dental office isn't told
+# about "homeowners" and "projects". Keyed by niche profile name.
+NICHE_COPY: dict[str, dict[str, str]] = {
+    "home_service": {"audience": "homeowners", "unit": "service", "engagement": "project",
+                     "cta": "Request service", "start": "Choose the service you need",
+                     "details": "Share the property location, scope, timing, and other details needed to confirm availability."},
+    "medical_aesthetic": {"audience": "clients", "unit": "treatment", "engagement": "appointment",
+                          "cta": "Book a consultation", "start": "Choose the treatment you're interested in",
+                          "details": "Share your goals and timing so the team can recommend the right next step."},
+    "dental": {"audience": "patients", "unit": "treatment", "engagement": "appointment",
+               "cta": "Book an appointment", "start": "Choose the care you need",
+               "details": "Share your needs, insurance questions and preferred times so the office can confirm availability."},
+    "real_estate": {"audience": "buyers and sellers", "unit": "service", "engagement": "move",
+                    "cta": "Schedule a call", "start": "Tell us whether you're buying or selling",
+                    "details": "Share the neighborhoods, price range and timing you have in mind."},
+    "legal": {"audience": "clients", "unit": "practice area", "engagement": "case",
+              "cta": "Request a consultation", "start": "Choose the practice area that fits",
+              "details": "Share the basics of your situation so the firm can confirm whether it can help."},
+    "wellness_health": {"audience": "patients", "unit": "service", "engagement": "visit",
+                        "cta": "Book a visit", "start": "Choose the care you need",
+                        "details": "Share what's going on and your preferred times so the team can confirm availability."},
+    "auto": {"audience": "drivers", "unit": "service", "engagement": "repair",
+             "cta": "Schedule service", "start": "Choose the service your vehicle needs",
+             "details": "Share the vehicle, the issue and your timing so the shop can confirm availability."},
+    "generic_local_business": {"audience": "customers", "unit": "service", "engagement": "request",
+                               "cta": "Get in touch", "start": "Choose what you need",
+                               "details": "Share the details and timing so the business can confirm availability."},
+}
+
+
+def niche_copy(profile: str | None) -> dict[str, str]:
+    return NICHE_COPY.get(profile or "", NICHE_COPY["generic_local_business"])
+
+
+def star_string(rating: float | None) -> str:
+    """Stars that match the real rating (rounded to the nearest whole star)."""
+    if rating is None:
+        return ""
+    full = max(0, min(5, int(round(float(rating)))))
+    return "★" * full + "☆" * (5 - full)
+
+
 def _safe(value: object) -> str:
     return escape(str(value or ""), quote=True)
 
@@ -41,12 +83,8 @@ def _schema_json(source: dict[str, Any], services: list[str], service_areas: lis
         ] or [{"@type": "City", "name": source.get("city")}]
     if services:
         schema["knowsAbout"] = services[:6]
-    if source.get("rating") is not None and source.get("review_count") is not None:
-        schema["aggregateRating"] = {
-            "@type": "AggregateRating",
-            "ratingValue": float(source["rating"]),
-            "reviewCount": int(source["review_count"]),
-        }
+    # No aggregateRating: Google's guidelines don't allow a business to mark up
+    # reviews collected on a third-party site (its Google reviews) as its own.
     return json.dumps(schema, separators=(",", ":")).replace("</", "<\\/")
 
 
@@ -64,7 +102,11 @@ def render_demo_site_v3(
     location = ", ".join(part for part in [city, state] if part)
     phone_raw = source.get("phone")
     phone = _safe(phone_raw)
-    category_raw = str(source.get("primary_type_display") or "Home Service Professional")
+    category_raw = str(source.get("primary_type_display") or "Local Business")
+    copy = niche_copy(source.get("niche_profile"))
+    unit = copy["unit"]
+    engagement = copy["engagement"]
+    stars = star_string(rating if (rating := source.get("rating")) is not None else None)
     category = _safe(category_raw)
     category_lower = _safe(category_raw.lower())
     rating = source.get("rating")
@@ -86,7 +128,7 @@ def render_demo_site_v3(
     secondary_image = _safe(content.get("secondary_image_url"))
     palette = brand.get("palette") or {"ink": "#102033", "accent": "#f0b22c", "surface": "#f4f6f7"}
     call_href = _safe(_phone_href(phone_raw))
-    call_label = f"Call {phone}" if phone else "Request service"
+    call_label = f"Call {phone}" if phone else copy["cta"]
 
     reputation_text = ""
     if rating is not None and review_count is not None:
@@ -95,7 +137,7 @@ def render_demo_site_v3(
         reputation_text = f"{int(review_count):,} Google reviews"
 
     hero_photo = (
-        f'<img class="hero-photo" src="{hero_image}" alt="{business_name} {category_lower} service" loading="eager" />'
+        f'<img class="hero-photo" src="{hero_image}" alt="{business_name}, {category_lower}" loading="eager" />'
         if hero_image else ""
     )
     hero_class = "hero has-photo" if hero_image else "hero"
@@ -103,7 +145,7 @@ def render_demo_site_v3(
     proof_card = ""
     if reputation_text:
         proof_card = (
-            '<div class="proof-card"><div class="stars">★★★★★</div>'
+            f'<div class="proof-card"><div class="stars" aria-label="{_safe(rating)} out of 5">{stars}</div>'
             f'<strong>{_safe(reputation_text)}</strong><span>Public Google reputation</span></div>'
         )
 
@@ -111,8 +153,8 @@ def render_demo_site_v3(
         f'''<article class="service-card">
           <div class="service-icon">{index:02d}</div>
           <h3>{_safe(service)}</h3>
-          <p>Call {business_name} to confirm scope, availability, and project details.</p>
-          <a href="{call_href}">Ask about this service <span>→</span></a>
+          <p>Contact {business_name} to confirm details and availability for this {unit}.</p>
+          <a href="{call_href}">Ask about this {unit} <span>→</span></a>
         </article>'''
         for index, service in enumerate(services[:6], start=1)
     )
@@ -123,7 +165,7 @@ def render_demo_site_v3(
 
     media = ""
     if work_image:
-        media = f'<img class="about-photo" src="{work_image}" alt="{business_name} service work" loading="lazy" />'
+        media = f'<img class="about-photo" src="{work_image}" alt="{business_name} at work" loading="lazy" />'
     elif secondary_image:
         media = f'<img class="about-photo" src="{secondary_image}" alt="{business_name} local service" loading="lazy" />'
 
@@ -150,29 +192,29 @@ def render_demo_site_v3(
           <div class="wrap reputation-grid">
             <div>
               <div class="section-kicker">Local reputation</div>
-              <h2>A strong local reputation customers can verify.</h2>
+              <h2>A local reputation customers can verify.</h2>
               <p>Google currently shows <strong>{business_name}</strong> at <strong>{float(rating):.1f} stars</strong> across <strong>{int(review_count):,} reviews</strong>. Public reputation is kept visible so customers can quickly understand how the business is rated before they call.</p>
             </div>
-            <div class="rating-panel"><div class="big-rating">{float(rating):.1f}</div><div class="stars">★★★★★</div><strong>{int(review_count):,} Google reviews</strong><span>Public aggregate reputation data</span></div>
+            <div class="rating-panel"><div class="big-rating">{float(rating):.1f}</div><div class="stars" aria-label="{float(rating):.1f} out of 5">{stars}</div><strong>{int(review_count):,} Google reviews</strong><span>Public aggregate reputation data</span></div>
           </div>
         </section>'''
 
     faq_items = [
         (
             f"What areas does {business_name_raw} serve?",
-            f"The service areas highlighted here include {', '.join(service_areas[:5])}. Call to confirm availability for your exact address.",
+            f"The areas highlighted here include {', '.join(service_areas[:5])}. Call to confirm availability for your location.",
         ),
         (
             f"What services does {business_name_raw} offer?",
-            f"The services highlighted here include {', '.join(services[:4])}. Call to confirm the exact scope for your project.",
+            f"The {unit}s highlighted here include {', '.join(services[:4])}. Call to confirm details for your {engagement}.",
         ),
         (
-            "How do I request service?",
-            f"Call {phone_raw or business_name_raw} directly to discuss the work, confirm availability, and determine the next step.",
+            f"How do I get started?",
+            f"Call {phone_raw or business_name_raw} directly to discuss your {engagement}, confirm availability, and determine the next step.",
         ),
         (
-            "Can I ask about a service that is not listed here?",
-            "Yes. Call the business directly to verify other services, project types, or special requests.",
+            f"Can I ask about a {unit} that is not listed here?",
+            f"Yes. Contact the business directly to ask about other {unit}s or special requests.",
         ),
     ]
     faq_markup = "".join(
@@ -189,7 +231,7 @@ def render_demo_site_v3(
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex,nofollow,noarchive" />
   <meta name="referrer" content="no-referrer" />
-  <meta name="description" content="{business_name} {category_lower} services in {location}. View services, service areas, public reputation, FAQs, and direct contact information." />
+  <meta name="description" content="{business_name}, {category_lower} in {location}. View {unit}s, areas served, public reputation, FAQs, and direct contact information." />
   <title>{business_name} | {category} in {location}</title>
   <script type="application/ld+json">{schema_json}</script>
   <style>
@@ -220,16 +262,16 @@ def render_demo_site_v3(
   <main>
     <section class="{hero_class}">{hero_photo}<div class="wrap hero-grid"><div><div class="eyebrow">{category} · {location}</div><h1>{headline}</h1><p class="hero-copy">{subheadline}</p><div class="actions"><a class="button button-primary" href="{call_href}">{call_label}</a><a class="button button-secondary" href="#services">View services</a></div></div>{proof_card}</div></section>
     <div class="trust-bar"><div class="wrap trust-grid"><div class="trust-cell"><strong>{business_name}</strong><span>{category} serving {area_names}</span></div><div class="trust-cell">{rating_stat}</div><div class="trust-cell">{review_stat}</div><div class="trust-cell"><strong>{len(service_areas[:8])}</strong><span>Service areas highlighted</span></div></div></div>
-    <section id="services" class="services"><div class="wrap"><div class="section-head"><div><div class="section-kicker">Services</div><h2>{category} services for {city}</h2></div><p>Explore the core services available from {business_name}, then call directly to confirm scope, scheduling, and availability for your project.</p></div><div class="service-grid">{service_cards}</div></div></section>
-    <section id="about"><div class="wrap about-grid">{media}<div class="about-copy"><div class="section-kicker">Local service</div><h2>{business_name} serving {city} and nearby communities.</h2><p>Customers looking for {category_lower} service need the essentials quickly: the work available, the areas served, public reputation, and a clear way to get in touch. This page brings those details together in one straightforward experience.</p><div class="about-points"><div class="about-point"><strong>Local coverage</strong><span>{location} and nearby service areas are easy to find.</span></div><div class="about-point"><strong>Service clarity</strong><span>{len(services[:6])} core service categories are highlighted.</span></div><div class="about-point"><strong>Public reputation</strong><span>{_safe(reputation_text or 'Reputation details can be added when verified.')}</span></div><div class="about-point"><strong>Direct contact</strong><span>{'Phone contact is available throughout the page.' if phone else 'A contact path can be added when confirmed.'}</span></div></div></div></div></section>
-    <section class="why"><div class="wrap"><div class="section-kicker">What customers need to know</div><h2>The information homeowners look for before choosing a local service company.</h2><div class="why-grid"><article class="why-card"><b>1</b><h3>Services that match the project</h3><p>Core service categories are easy to scan, with a direct path to confirm project scope.</p></article><article class="why-card"><b>2</b><h3>Coverage for the property</h3><p>Confirmed service areas are visible throughout the page so customers can quickly understand local coverage.</p></article><article class="why-card"><b>3</b><h3>A direct way to get started</h3><p>The primary call action stays visible from the hero through the final contact section.</p></article></div></div></section>
-    <section class="process"><div class="wrap process-grid"><div><div class="section-kicker">Getting started</div><h2>A simple path from project question to next step.</h2></div><div class="steps"><div class="step"><div class="step-number">01</div><div><h3>Choose the service you need</h3><p>Start with the services above or call to discuss a project that is not listed.</p></div></div><div class="step"><div class="step-number">02</div><div><h3>Confirm the project details</h3><p>Share the property location, scope, timing, and other details needed to confirm availability.</p></div></div><div class="step"><div class="step-number">03</div><div><h3>Determine the next step</h3><p>{business_name} can then confirm scheduling, an estimate, or any additional information needed.</p></div></div></div></div></section>
-    <section class="mid-cta"><div class="wrap"><div class="mid-cta-card"><div><strong>Have a project in mind?</strong><span>Call {business_name} to confirm service availability and discuss the next step.</span></div><a class="button" href="{call_href}">{call_label}</a></div></div></section>
+    <section id="services" class="services"><div class="wrap"><div class="section-head"><div><div class="section-kicker">Services</div><h2>{category} {unit}s in {city}</h2></div><p>Explore the core {unit}s available from {business_name}, then get in touch to confirm details, scheduling and availability.</p></div><div class="service-grid">{service_cards}</div></div></section>
+    <section id="about"><div class="wrap about-grid">{media}<div class="about-copy"><div class="section-kicker">Local service</div><h2>{business_name} serving {city} and nearby communities.</h2><p>{copy["audience"].capitalize()} looking for a {category_lower} need the essentials quickly: what's offered, the areas served, public reputation, and a clear way to get in touch. This page brings those details together in one straightforward experience.</p><div class="about-points"><div class="about-point"><strong>Local coverage</strong><span>{location} and nearby service areas are easy to find.</span></div><div class="about-point"><strong>Service clarity</strong><span>{len(services[:6])} core {unit}s are highlighted.</span></div><div class="about-point"><strong>Public reputation</strong><span>{_safe(reputation_text or 'Reputation details can be added when verified.')}</span></div><div class="about-point"><strong>Direct contact</strong><span>{'Phone contact is available throughout the page.' if phone else 'A contact path can be added when confirmed.'}</span></div></div></div></div></section>
+    <section class="why"><div class="wrap"><div class="section-kicker">What customers need to know</div><h2>The information {copy["audience"]} look for before choosing a local {category_lower}.</h2><div class="why-grid"><article class="why-card"><b>1</b><h3>{unit.capitalize()}s that match the need</h3><p>Core {unit}s are easy to scan, with a direct path to confirm details.</p></article><article class="why-card"><b>2</b><h3>Local coverage</h3><p>Confirmed service areas are visible throughout the page so customers can quickly understand local coverage.</p></article><article class="why-card"><b>3</b><h3>A direct way to get started</h3><p>The primary call action stays visible from the hero through the final contact section.</p></article></div></div></section>
+    <section class="process"><div class="wrap process-grid"><div><div class="section-kicker">Getting started</div><h2>A simple path from first question to next step.</h2></div><div class="steps"><div class="step"><div class="step-number">01</div><div><h3>{copy["start"]}</h3><p>Start with the {unit}s above, or call to ask about anything not listed.</p></div></div><div class="step"><div class="step-number">02</div><div><h3>Confirm the details</h3><p>{copy["details"]}</p></div></div><div class="step"><div class="step-number">03</div><div><h3>Determine the next step</h3><p>{business_name} can then confirm scheduling and any additional information needed.</p></div></div></div></div></section>
+    <section class="mid-cta"><div class="wrap"><div class="mid-cta-card"><div><strong>Ready to get started?</strong><span>Contact {business_name} to confirm availability and discuss the next step.</span></div><a class="button" href="{call_href}">{call_label}</a></div></div></section>
     {reputation_section}
     {photo_band}
-    <section id="areas" class="areas"><div class="wrap areas-grid"><div><div class="section-kicker">Service area</div><h2>Serving {city} and nearby communities.</h2><p>Service coverage currently includes the areas shown here. Call to confirm availability for your exact property.</p></div><ul>{area_chips}</ul></div></section>
-    <section id="faq" class="faq"><div class="wrap faq-grid"><div><div class="section-kicker">Frequently asked questions</div><h2>Quick answers before you call.</h2><p>Find the core service and coverage information customers commonly need before contacting a local service company.</p></div><div>{faq_markup}</div></div></section>
-    <section id="contact" class="contact"><div class="wrap contact-grid"><div><div class="section-kicker" style="color:#26313a">Contact</div><h2>Need {category_lower} service in {city}?</h2><p>Call {business_name} directly to discuss your project, confirm service availability, and determine the next step.</p></div><div class="contact-card"><span>Direct contact</span><strong>{phone or business_name}</strong><a class="button" href="{call_href}">{call_label}</a></div></div></section>
+    <section id="areas" class="areas"><div class="wrap areas-grid"><div><div class="section-kicker">Service area</div><h2>Serving {city} and nearby communities.</h2><p>Coverage currently includes the areas shown here. Call to confirm availability for your location.</p></div><ul>{area_chips}</ul></div></section>
+    <section id="faq" class="faq"><div class="wrap faq-grid"><div><div class="section-kicker">Frequently asked questions</div><h2>Quick answers before you call.</h2><p>Quick answers {copy["audience"]} commonly need before getting in touch.</p></div><div>{faq_markup}</div></div></section>
+    <section id="contact" class="contact"><div class="wrap contact-grid"><div><div class="section-kicker" style="color:#26313a">Contact</div><h2>Looking for a {category_lower} in {city}?</h2><p>Contact {business_name} directly to discuss your {engagement}, confirm availability, and determine the next step.</p></div><div class="contact-card"><span>Direct contact</span><strong>{phone or business_name}</strong><a class="button" href="{call_href}">{call_label}</a></div></div></section>
   </main>
   <footer><div class="wrap footer-grid"><strong>{business_name}</strong><span>{phone} · {location}</span><span>Concept website by LILOs Growth</span></div></footer>
   {f'<a class="mobile-call" href="{call_href}">{call_label}</a>' if phone else ''}

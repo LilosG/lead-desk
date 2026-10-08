@@ -2,8 +2,11 @@ from fastapi import APIRouter, HTTPException, Response
 
 from app.core.database import pool
 from app.repositories.audit_reports import AuditReportRepository
+from app.repositories.demo_sites import DemoSiteRepository
 from app.repositories.prospects import ProspectRepository
 from app.schemas.audit_reports import (
+    AuditReportBatchRequest,
+    AuditReportBatchResponse,
     AuditReportCreateRequest,
     AuditReportDetail,
     AuditReportOptionsResponse,
@@ -23,7 +26,20 @@ def get_service() -> AuditReportService:
     return AuditReportService(
         ProspectRepository(pool),
         AuditReportRepository(pool),
+        DemoSiteRepository(pool),
     )
+
+
+@router.post(
+    "/batch",
+    response_model=AuditReportBatchResponse,
+    status_code=201,
+)
+def create_audit_reports_batch(payload: AuditReportBatchRequest) -> dict:
+    """Create one default report per prospect, for working leads at volume."""
+    items = get_service().create_default_reports(payload.place_ids)
+    created = sum(1 for item in items if item["status"] == "created")
+    return {"items": items, "created": created, "skipped": len(items) - created}
 
 
 @router.get(

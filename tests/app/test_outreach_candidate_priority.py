@@ -52,7 +52,8 @@ class FakePool:
 
 def assert_candidate_eligibility_contract(query: str) -> None:
     assert "seg.established = true" not in query
-    assert "coalesce(w.review_count, 0) >= 10" in query
+    # No minimum-review gate: small businesses stay eligible for outreach.
+    assert "coalesce(w.review_count, 0) >= 10" not in query
     assert "coalesce(f.needs_manual_check, false) = false" in query
     assert "not exists ( select 1 from outreach_queue q where q.place_id = w.place_id )" in query
     assert "not exists ( select 1 from suppression s where lower(s.email) = lower(coalesce(w.emails_found[1], '')) )" in query

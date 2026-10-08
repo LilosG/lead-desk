@@ -36,6 +36,8 @@ def list_prospects(
     trading: bool | None = None,
     established: bool | None = None,
     category_opportunity: bool | None = None,
+    label: str | None = Query(default=None, max_length=40, pattern=r"^[a-z_]+$"),
+    market: str | None = Query(default=None, max_length=120),
 ) -> dict:
     return get_service().list_prospects(
         page=page,
@@ -48,6 +50,8 @@ def list_prospects(
         trading=trading,
         established=established,
         category_opportunity=category_opportunity,
+        label=label,
+        market=market,
     )
 
 

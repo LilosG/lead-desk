@@ -22,6 +22,8 @@ class ProspectRepository:
         trading: bool | None,
         established: bool | None,
         category_opportunity: bool | None,
+        label: str | None = None,
+        market: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         conditions: list[sql.Composable] = []
         params: dict[str, Any] = {}
@@ -103,6 +105,14 @@ class ProspectRepository:
             )
             params["category_opportunity"] = category_opportunity
 
+        if label:
+            conditions.append(sql.SQL("%(label)s = any(seg.labels)"))
+            params["label"] = label
+
+        if market:
+            conditions.append(sql.SQL("seg.market = %(market)s"))
+            params["market"] = market
+
         where_clause = (
             sql.SQL(" where ") + sql.SQL(" and ").join(conditions)
             if conditions
@@ -151,6 +161,8 @@ class ProspectRepository:
                     seg.category_opportunity,
                     seg.established,
                     seg.real_gap_count,
+                    seg.labels,
+                    seg.market,
                     coalesce(f.needs_manual_check, false) as needs_manual_check,
                     w.scored_at
                 """
@@ -214,6 +226,8 @@ class ProspectRepository:
                 seg.category_opportunity,
                 seg.established,
                 seg.real_gap_count,
+                seg.labels,
+                seg.market,
                 f.what_to_fix,
                 coalesce(f.major_issues, 0) as major_issues,
                 coalesce(f.needs_manual_check, false) as needs_manual_check
@@ -271,7 +285,13 @@ class ProspectRepository:
                 psi_lcp_ms,
                 psi_cls,
                 psi_mobile_friendly,
-                crawl_error
+                crawl_error,
+                offering_page_count,
+                offering_titles,
+                location_page_count,
+                sitemap_url_count,
+                has_online_booking,
+                booking_provider
             from website_enrichment
             where place_id = %s
         """
@@ -279,6 +299,78 @@ class ProspectRepository:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, (place_id,))
+                return cur.fetchone()
+
+    def market_peers(
+        self,
+        place_id: str,
+        *,
+        vertical: str | None,
+        market: str | None,
+        city: str | None,
+        limit: int = 3,
+    ) -> dict[str, Any] | None:
+        """Same-niche businesses in the same searched market, for comparison.
+
+        Uses the searched market when known, else the business's own city.
+        Returns the market median, sample size and the top businesses by
+        review count (excluding the prospect itself).
+        """
+        if not vertical or not (market or city):
+            return None
+
+        if market:
+            scope = "seg.market = %(market)s"
+        else:
+            scope = "w.city = %(city)s"
+
+        query = f"""
+            with peers as (
+                select
+                    w.place_id,
+                    w.name,
+                    w.rating,
+                    coalesce(w.review_count, 0) as review_count,
+                    w.website_url is not null as has_website
+                from v_lead_worklist w
+                join v_lead_segments seg
+                  on seg.place_id = w.place_id
+                where exists (
+                        select 1
+                        from business_vertical_memberships bvm
+                        where bvm.place_id = w.place_id
+                          and bvm.vertical = %(vertical)s
+                    )
+                  and {scope}
+            )
+            select
+                (select count(*) from peers) as sample_size,
+                (select percentile_cont(0.5) within group (order by review_count)
+                   from peers) as median_reviews,
+                coalesce(
+                    (
+                        select json_agg(t order by t.review_count desc, t.name)
+                        from (
+                            select name, rating, review_count, has_website
+                            from peers
+                            where place_id <> %(place_id)s
+                            order by review_count desc, name
+                            limit %(limit)s
+                        ) t
+                    ),
+                    '[]'::json
+                ) as leaders
+        """
+        params = {
+            "vertical": vertical,
+            "market": market,
+            "city": city,
+            "place_id": place_id,
+            "limit": limit,
+        }
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
                 return cur.fetchone()
 
     def get_findings(self, place_id: str) -> list[dict[str, Any]]:
@@ -514,8 +606,13 @@ class ProspectRepository:
                 array_agg(distinct w.vertical order by w.vertical) filter (
                     where w.vertical is not null and w.vertical <> ''
                 ) as verticals,
+                array_agg(distinct seg.market order by seg.market) filter (
+                    where seg.market is not null and seg.market <> ''
+                ) as markets,
                 count(*) as total_prospects
             from v_lead_worklist w
+            join v_lead_segments seg
+              on seg.place_id = w.place_id
         """
 
         with self.pool.connection() as conn:
@@ -526,6 +623,7 @@ class ProspectRepository:
         return {
             "cities": row["cities"] or [],
             "verticals": row["verticals"] or [],
+            "markets": row["markets"] or [],
             "tiers": ["A", "B", "C", "D"],
             "total_prospects": row["total_prospects"],
         }
