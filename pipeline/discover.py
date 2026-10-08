@@ -96,6 +96,7 @@ class PlacesClient:
         self.api_key = api_key
         self.ledger = ledger
         self.dry_run = dry_run
+        self.budget: int | None = None   # max billable search calls; None = no cap
         self.session = requests.Session()
 
     def _post(self, payload: dict) -> dict:
@@ -154,6 +155,8 @@ class PlacesClient:
         payload = dict(base_payload)
 
         for page in range(max_pages):
+            if self.budget is not None and self.ledger.search_calls >= self.budget:
+                return
             if self.dry_run:
                 self.ledger.search_calls += 1
                 return
@@ -468,8 +471,11 @@ def _search_area(
     rectangle: dict | None = None,
     depth: int = 0,
     progress=print,
+    budget: int | None = None,
 ) -> list[dict]:
     """Run one query; if Google's 60-result cap is hit, split and search again."""
+    if budget is not None and client.ledger.search_calls >= budget:
+        return []
     places = [p for p in client.text_search(query, point, rectangle=rectangle) if p.get("id")]
     cap = C.RESULTS_PER_PAGE * C.MAX_PAGES_PER_QUERY
     if (
@@ -493,7 +499,8 @@ def _search_area(
     seen = {p["id"] for p in places}
     out = list(places)
     for cell in cells:
-        for p in _search_area(client, query, rectangle=cell, depth=depth + 1, progress=progress):
+        for p in _search_area(client, query, rectangle=cell, depth=depth + 1,
+                              progress=progress, budget=budget):
             if p["id"] not in seen:
                 seen.add(p["id"])
                 out.append(p)
@@ -526,8 +533,16 @@ def sweep(
         raise ValueError("grid mode needs an explicit GEO_BBOX in config")
     verticals = V.ordered_verticals(verticals)
 
+    # Never spend more than the estimate the operator saw before starting.
+    n_targets = len(build_grid(C.GEO_BBOX, C.GRID_SPACING_KM)) if use_grid else len(cities)
+    budget = max_search_calls(verticals, n_targets)
+    client.budget = ledger.search_calls + budget
+
     for vertical in verticals:
         for query_term in V.vertical_queries(vertical):
+            if ledger.search_calls >= client.budget:
+                progress(f"  search budget reached ({budget} calls) — stopping discovery")
+                return found, ledger
             if use_grid:
                 targets = [
                     (f"{query_term}", pt, None)
@@ -541,7 +556,8 @@ def sweep(
 
             for query, point, target_city in targets:
                 try:
-                    raw = _search_area(client, query, point=point, progress=progress)
+                    raw = _search_area(client, query, point=point, progress=progress,
+                                       budget=client.budget)
                     records = []
                     for place in raw:
                         rec = normalize(place, vertical)
@@ -585,6 +601,12 @@ def sweep(
     return found, ledger
 
 
+def max_search_calls(verticals: list[str], n_targets: int) -> int:
+    """The 'max with pagination' figure the Sweeps page shows: hard spend cap."""
+    n_queries = sum(len(V.vertical_queries(v)) for v in verticals)
+    return n_queries * max(n_targets, 0) * C.MAX_PAGES_PER_QUERY
+
+
 def run_geo_label(cities: list[str] | None) -> str:
     """Human label for a run, built from the cities actually searched."""
     cleaned = [c.strip() for c in (cities or []) if c and c.strip()]
@@ -626,9 +648,7 @@ if __name__ == "__main__":
         print(f"Market: {geo_label}  grid points: {len(grid)}")
         print(f"Mode: {'grid' if args.grid else 'city'}  targets={targets}  "
               f"verticals={args.verticals}  query terms={n_queries}")
-        print(f"Search calls — worst case {worst}, typical ~{typical} "
-              f"(dense markets that hit Google's 60-result cap add up to "
-              f"{4 ** C.MAX_SPLIT_DEPTH}x more for that query)")
+        print(f"Search calls — hard cap {worst}, typical ~{typical}")
         for label, calls in (("worst", worst), ("typical", typical)):
             l = CostLedger(search_calls=calls)
             print(f"  {label:<8} {l.summary()}")
