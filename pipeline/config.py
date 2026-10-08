@@ -89,13 +89,21 @@ DEFAULT_GEO_LABEL = "Custom market"
 # neighborhood or suburb of the searched city (e.g. "La Jolla" for "San Diego")
 # is still in that market. Results within this radius of the searched market's
 # center, in the same state, are kept and attributed to that market.
-NEARBY_RADIUS_KM = 25.0
+NEARBY_RADIUS_KM = 10.0
 
 # Google caps one Text Search at 60 results (3 pages x 20). When a query comes
 # back full, the market is denser than one query can see, so the area the
 # results cover is split into smaller rectangles and searched again.
-SPLIT_SATURATED_QUERIES = True
-MAX_SPLIT_DEPTH = 2          # 1 split = 4 cells, 2 splits = up to 16 cells
+#
+# OFF by default: splitting multiplies search calls (up to 4x per level) far
+# beyond the estimate shown on the Sweeps page. The 2026-10-08 Scottsdale med
+# spa sweep made 136 calls against an on-screen max of 9 because of it.
+SPLIT_SATURATED_QUERIES = False
+MAX_SPLIT_DEPTH = 1          # if enabled: 1 split = 4 extra calls per capped query
+
+# Hard ceiling on billable search calls per sweep, whatever the settings. A
+# sweep can never spend more than queries x cities x MAX_PAGES_PER_QUERY, the
+# same "max with pagination" number the Sweeps page shows before you start.
 
 # A market needs at least this many businesses in a niche before its own
 # medians are trusted; below that, the niche-wide medians for the run are used.
