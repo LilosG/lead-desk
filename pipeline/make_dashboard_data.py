@@ -56,17 +56,8 @@ def main() -> int:
     cache = load_enrichment()
     deep = load_deep()
 
-    scored, baselines = S.score_all(businesses, cache, C.GEO_LABEL, deep)
+    scored, baselines = S.score_all(businesses, cache, None, deep)
     by_id = {b["place_id"]: b for b in businesses}
-    # Per-vertical medians. This used to be
-    # `list(baselines.values())[0].median_reviews` — an ARBITRARY vertical's
-    # median applied to every business, so on the 2026-08-27 tri-vertical sweep
-    # HVAC and roofing (local medians of 12) were judged against the plumber
-    # median of 38, and the "established" count silently depended on dict
-    # ordering. Same bug class as segment.py's hardcoded 'electrician'.
-    med_by_vertical = {k: v.median_reviews for k, v in baselines.items()}
-    med = (statistics.median(list(med_by_vertical.values()))
-           if med_by_vertical else 0)
 
     rows = []
     for s in scored:
@@ -78,7 +69,6 @@ def main() -> int:
 
         findings = [e for e in s.evidence if e.category != "reachability"]
         findings.sort(key=lambda x: (SEVERITY_ORDER.get(x.severity, 9), -x.points))
-        hits = [e for e in s.evidence if e.signal in NEGLECT_SIGNALS]
 
         rows.append({
             "id": s.place_id,
@@ -105,10 +95,10 @@ def main() -> int:
             # "Established" = demonstrably trading, at or above the local median on
             # reviews, and carrying at least two real gaps. This is the segment
             # most able to pay, and it's the dashboard's default view.
-            "est": (s.activity in LIVE
-                    and (b.get("review_count") or 0)
-                        >= med_by_vertical.get(b.get("vertical"), med)
-                    and len(hits) >= 2),
+            # Computed once in scoring.lead_labels against the lead's OWN
+            # niche and market median.
+            "est": "established" in s.labels,
+            "labels": list(s.labels),
             "f": [{"s": e.severity, "t": e.finding} for e in findings[:8]],
         })
 
@@ -116,7 +106,6 @@ def main() -> int:
     json.dump(rows, open("dashboard_data.json", "w"))
 
     print(f"rows          {len(rows)}")
-    print(f"median reviews {med:.0f}")
     print(f"emailable     {sum(1 for r in rows if r['e'])}")
     print(f"no website    {sum(1 for r in rows if not r['w'])}")
     print(f"confirmed live {sum(1 for r in rows if r['act'] in LIVE)}")

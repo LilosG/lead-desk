@@ -70,7 +70,7 @@ def test_v3_renders_complete_local_service_homepage_without_invented_credentials
     for section_id in ('id="services"', 'id="about"', 'id="areas"', 'id="faq"', 'id="contact"'):
         assert section_id in html
     assert "Getting started" in html
-    assert "Have a project in mind?" in html
+    assert "Ready to get started?" in html
     assert "What customers need to know" in html
     assert "Local reputation" in html
     assert "Frequently asked questions" in html
@@ -79,8 +79,9 @@ def test_v3_renders_complete_local_service_homepage_without_invented_credentials
     assert "Spa Installations and Upgrades" in html
     assert "Fallbrook" in html
     assert '"@type":"LocalBusiness"' in html
-    assert '"ratingValue":5.0' in html
-    assert '"reviewCount":13' in html
+    # Google reviews are not marked up as the business's own reviews.
+    assert "aggregateRating" not in html
+    assert "★★★★★" in html  # 5.0 rating renders five filled stars
 
     lowered = html.lower()
     for unsupported_claim in ("licensed", "insured", "bonded", "years of experience", "guaranteed", "24/7"):
@@ -134,3 +135,42 @@ def test_v3_keeps_indexing_disabled_and_escapes_content():
     assert "<\\/script><script>alert(1)<\\/script>" in html
     assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html
     assert "Panel &lt;Upgrades&gt;" in html
+
+
+
+class LowRatedMedSpaRepository(FakeProspectRepository):
+    def get_prospect(self, place_id):
+        row = super().get_prospect("volt-place")
+        row.update({
+            "place_id": place_id, "name": "Glow Aesthetics", "vertical": "med_spa",
+            "primary_type": "medical_spa", "rating": 3.6, "review_count": 41,
+            "market": "Scottsdale, AZ, USA", "city": "Scottsdale",
+        })
+        return row
+
+    def get_website_audit(self, place_id):
+        return {"offering_titles": ["Botox", "Dermal Fillers", "HydraFacial"]}
+
+
+def test_stars_match_the_real_rating_and_copy_fits_the_niche():
+    service = DemoSiteService(LowRatedMedSpaRepository(), FakeDemoRepository())
+    demo = service.create_demo(
+        "spa-place", template_key="trade-modern-v3", services=[], service_areas=[],
+        headline=None, subheadline=None,
+    )
+    html = demo["html_document"]
+    assert "★★★★☆" in html and "★★★★★" not in html
+    # Auto-filled from the prospect's own site navigation and market.
+    for item in ("Botox", "Dermal Fillers", "HydraFacial"):
+        assert item in html
+    lowered = html.lower()
+    assert "homeowner" not in lowered
+    assert "treatment" in lowered
+    assert "book a consultation" in lowered or "call (760)" in lowered
+
+
+def test_demo_options_prefill_services_and_areas():
+    service = DemoSiteService(LowRatedMedSpaRepository(), FakeDemoRepository())
+    defaults = service.options_for_prospect("spa-place")["defaults"]
+    assert defaults["services"] == ["Botox", "Dermal Fillers", "HydraFacial"]
+    assert defaults["service_areas"] == ["Scottsdale"]

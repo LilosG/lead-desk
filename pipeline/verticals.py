@@ -63,13 +63,39 @@ def vertical_priority(vertical: str) -> int:
     return CUSTOM_VERTICAL_PRIORITY
 
 
+GENERIC_PROFILE = "generic_local_business"
+
+
 def vertical_profile(vertical: str) -> str:
-    """Known presets retain service-business semantics; custom is generic-safe."""
-    key = normalize_vertical_key(vertical)
+    """Name of the niche profile for a vertical; custom niches are generic-safe."""
+    try:
+        key = normalize_vertical_key(vertical)
+    except ValueError:
+        return GENERIC_PROFILE
     spec = C.VERTICALS.get(key)
     if spec:
-        return str(spec.get("profile") or "service_business")
-    return "generic_local_business"
+        profile = str(spec.get("profile") or "home_service")
+        return profile if profile in C.NICHE_PROFILES else GENERIC_PROFILE
+    return GENERIC_PROFILE
+
+
+def niche_profile(vertical: str | None) -> dict:
+    """Profile dict (offering words, wording labels) for any vertical."""
+    return C.NICHE_PROFILES[vertical_profile(vertical or "")]
+
+
+def is_home_service(vertical: str | None) -> bool:
+    return vertical_profile(vertical or "") == "home_service"
+
+
+def case_study(vertical: str | None) -> str | None:
+    """Optional proof line for a niche. None means: say nothing."""
+    try:
+        key = normalize_vertical_key(vertical or "")
+    except ValueError:
+        return None
+    spec = C.VERTICALS.get(key) or {}
+    return spec.get("case_study") or None
 
 
 def ordered_verticals(verticals: list[str]) -> list[str]:

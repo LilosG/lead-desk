@@ -1,5 +1,14 @@
 # Lilos Growth — Lead Aggregator
 
+> **October 2026 update — open niche, open geo, labels instead of filters.**
+> Sweeps take any niche and any U.S. cities; nothing defaults to San Diego or
+> to trades. Leads are compared with the same niche in the same searched market
+> (`businesses.market`), and carry labels (`scores.labels`) instead of being
+> dropped: franchises, small review counts, blocked sites and unreachable
+> listings all stay in the list. The legacy `pipeline/outreach.py` and
+> `segment.py` were removed; outreach runs through the app, and there is no
+> minimum-review gate. Historical notes below describe the San Diego pilot.
+
 Finds home-service businesses with visible GBP/website gaps in a target geo,
 scores them by how badly they need Lilos Growth's services, attaches contact
 data, and generates verified outreach copy.

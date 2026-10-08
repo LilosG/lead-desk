@@ -18,8 +18,7 @@ class OutreachRepository:
           on seg.place_id = w.place_id
         left join v_lead_findings f
           on f.place_id = w.place_id
-        where coalesce(w.review_count, 0) >= 10
-          and coalesce(f.needs_manual_check, false) = false
+        where coalesce(f.needs_manual_check, false) = false
           and (
                 cardinality(coalesce(w.emails_found, '{}'::text[])) > 0
                 or w.phone is not null
@@ -42,6 +41,10 @@ class OutreachRepository:
     _CANDIDATE_ORDER_BY = """
         order by
             case when cardinality(coalesce(w.emails_found, '{}'::text[])) > 0 then 0 else 1 end,
+            -- Volume first, quality on top: nothing is excluded for a small
+            -- review count; established and well-reviewed leads simply sort
+            -- ahead of the rest.
+            case when seg.established then 0 else 1 end,
             case when coalesce(w.review_count, 0) >= 15 then 0 else 1 end,
             w.total_score desc,
             w.review_count desc nulls last,
@@ -63,6 +66,8 @@ class OutreachRepository:
                 w.review_count,
                 seg.confirmed_trading,
                 seg.established,
+                seg.labels,
+                seg.market,
                 false as needs_manual_check,
                 false as suppressed,
                 false as already_queued

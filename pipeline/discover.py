@@ -119,7 +119,11 @@ class PlacesClient:
         raise RuntimeError("Places API: exhausted retries after rate limiting")
 
     def text_search(
-        self, query: str, point: GridPoint | None = None, max_pages: int | None = None
+        self,
+        query: str,
+        point: GridPoint | None = None,
+        max_pages: int | None = None,
+        rectangle: dict | None = None,
     ) -> Iterator[dict]:
         """Yield raw place dicts for a query, following pagination up to the cap.
 
@@ -132,7 +136,15 @@ class PlacesClient:
         """
         max_pages = max_pages or C.MAX_PAGES_PER_QUERY
         base_payload: dict = {"textQuery": query, "pageSize": C.RESULTS_PER_PAGE}
-        if point:
+        if rectangle:
+            # Hard restriction, used when a dense market is split into cells.
+            base_payload["locationRestriction"] = {
+                "rectangle": {
+                    "low": {"latitude": rectangle["min_lat"], "longitude": rectangle["min_lng"]},
+                    "high": {"latitude": rectangle["max_lat"], "longitude": rectangle["max_lng"]},
+                }
+            }
+        elif point:
             base_payload["locationBias"] = {
                 "circle": {
                     "center": {"latitude": point.lat, "longitude": point.lng},
@@ -174,24 +186,18 @@ def is_chain(name: str) -> bool:
     return any(pat in low for pat in C.CHAIN_NAME_PATTERNS)
 
 
-def in_target_geo(rec: dict) -> bool:
-    """Reject results outside the configured grid market.
-
-    Grid search still uses the configured bounding box. City-scoped searches use
-    `in_requested_city` instead, which is what allows the sweep UI to target a
-    city outside the original San Diego pilot without widening the grid itself.
-    """
+def in_target_geo(rec: dict, bbox: dict | None = None) -> bool:
+    """Legacy grid mode only: keep results inside an explicit bounding box."""
+    bb = bbox or C.GEO_BBOX
+    if not bb:
+        return True
     lat, lng = rec.get("lat"), rec.get("lng")
     if lat is None or lng is None:
         return False
-    bb = C.GEO_BBOX
     pad = 0.15
     if not (bb["min_lat"] - pad <= lat <= bb["max_lat"] + pad):
         return False
     if not (bb["min_lng"] - pad <= lng <= bb["max_lng"] + pad):
-        return False
-    state = (rec.get("state") or "").upper()
-    if state and state not in ("CA", "CALIFORNIA"):
         return False
     return True
 
@@ -200,41 +206,95 @@ def _geo_token(value: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (value or "").casefold()).strip()
 
 
-def in_requested_city(rec: dict, target_city: str) -> bool:
-    """Validate Text Search results against an operator-selected U.S. city.
-
-    Places Text Search is semantic, not a strict geofence. A city prediction from
-    Autocomplete gives us a canonical `City, ST, USA` label; we require the
-    normalized business locality to match that city and, when present, its state.
-    """
+def _city_parts(target_city: str) -> tuple[str, str]:
+    """('city token', 'ST') from 'City, ST, USA' (state may be '')."""
     parts = [part.strip() for part in target_city.split(",") if part.strip()]
-    if not parts:
+    city = _geo_token(parts[0]) if parts else ""
+    state = parts[1].strip().upper() if len(parts) >= 2 else ""
+    return city, (state if len(state) == 2 else "")
+
+
+def _state_ok(rec: dict, wanted_state: str) -> bool:
+    actual = str(rec.get("state") or "").strip().upper()
+    return not wanted_state or not actual or actual == wanted_state
+
+
+def in_requested_city(rec: dict, target_city: str) -> bool:
+    """Exact locality match against an operator-selected U.S. city label."""
+    wanted_city, wanted_state = _city_parts(target_city)
+    if not wanted_city or _geo_token(rec.get("city")) != wanted_city:
         return False
+    return _state_ok(rec, wanted_state)
 
-    wanted_city = _geo_token(parts[0])
-    actual_city = _geo_token(rec.get("city"))
-    if not wanted_city or actual_city != wanted_city:
+
+def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = p2 - p1
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _median(values: list[float]) -> float:
+    vals = sorted(values)
+    n = len(vals)
+    mid = n // 2
+    return vals[mid] if n % 2 else (vals[mid - 1] + vals[mid]) / 2
+
+
+def market_center(records: list[dict], target_city: str) -> tuple[float, float] | None:
+    """Center of a searched market, from the results that match it exactly.
+
+    Falls back to every same-state result when nothing matches the locality
+    exactly (common when Google files a whole metro under neighborhood names).
+    """
+    _, wanted_state = _city_parts(target_city)
+    exact = [r for r in records if in_requested_city(r, target_city)
+             and r.get("lat") is not None and r.get("lng") is not None]
+    pool = exact or [r for r in records if _state_ok(r, wanted_state)
+                     and r.get("lat") is not None and r.get("lng") is not None]
+    if not pool:
+        return None
+    return _median([r["lat"] for r in pool]), _median([r["lng"] for r in pool])
+
+
+def in_market(rec: dict, target_city: str, center: tuple[float, float] | None,
+              radius_km: float | None = None) -> bool:
+    """Exact city match, or a same-state business near the market's center.
+
+    Strict locality matching dropped real businesses filed under a suburb or
+    neighborhood name; distance to the market center keeps them without
+    letting Text Search's semantic drift pull in other states.
+    """
+    if in_requested_city(rec, target_city):
+        return True
+    _, wanted_state = _city_parts(target_city)
+    if not _state_ok(rec, wanted_state) or not rec.get("state"):
         return False
-
-    if len(parts) >= 2:
-        wanted_state = parts[1].strip().upper()
-        actual_state = str(rec.get("state") or "").strip().upper()
-        if len(wanted_state) == 2 and actual_state and actual_state != wanted_state:
-            return False
-
-    return True
+    if center is None or rec.get("lat") is None or rec.get("lng") is None:
+        return False
+    radius = radius_km if radius_km is not None else C.NEARBY_RADIUS_KM
+    return haversine_km(rec["lat"], rec["lng"], center[0], center[1]) <= radius
 
 
-def _configured_city(city: str) -> bool:
-    key = city.strip().casefold()
-    return any(key == configured.casefold() for configured in C.TARGET_CITIES)
-
-
-def _city_query_label(city: str) -> str:
-    city = city.strip()
-    if _configured_city(city):
-        return f"{city}, CA"
-    return city
+def split_rectangle(records: list[dict]) -> list[dict]:
+    """Split the area covered by a saturated result set into 4 cells."""
+    lats = [r["lat"] for r in records if r.get("lat") is not None]
+    lngs = [r["lng"] for r in records if r.get("lng") is not None]
+    if len(lats) < 2:
+        return []
+    min_lat, max_lat, min_lng, max_lng = min(lats), max(lats), min(lngs), max(lngs)
+    pad_lat = max((max_lat - min_lat) * 0.1, 0.01)
+    pad_lng = max((max_lng - min_lng) * 0.1, 0.01)
+    min_lat, max_lat = min_lat - pad_lat, max_lat + pad_lat
+    min_lng, max_lng = min_lng - pad_lng, max_lng + pad_lng
+    mid_lat, mid_lng = (min_lat + max_lat) / 2, (min_lng + max_lng) / 2
+    return [
+        {"min_lat": a, "max_lat": b, "min_lng": c, "max_lng": d}
+        for a, b in ((min_lat, mid_lat), (mid_lat, max_lat))
+        for c, d in ((min_lng, mid_lng), (mid_lng, max_lng))
+    ]
 
 
 FOREIGN_TYPES = {
@@ -253,6 +313,10 @@ def wrong_vertical(rec: dict, vertical: str) -> bool:
     attorney, gym, or any other operator-requested category as "foreign".
     """
     if not V.is_preset(vertical):
+        return False
+    # The exclusion lists below were built for trades. Applying them to a dental,
+    # legal, real-estate or med-spa preset would drop legitimate businesses.
+    if not V.is_home_service(vertical):
         return False
 
     types = set(rec.get("types") or [])
@@ -361,6 +425,10 @@ def normalize(place: dict, vertical: str) -> dict:
         "photo_count": len(place.get("photos") or []),
         "last_review_days": act["last_review_days"],
         "recent_reviews_90d": act["recent_90d"],
+        "is_franchise": is_chain(name or ""),
+        # The searched market this business was found in ("City, ST, USA").
+        # Set by sweep(); local comparisons are made within this market.
+        "market": None,
         "raw_places_payload": place,
     }
 
@@ -392,6 +460,46 @@ def merge_vertical_memberships(existing: dict, candidate: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Sweep
 # ---------------------------------------------------------------------------
+def _search_area(
+    client: "PlacesClient",
+    query: str,
+    *,
+    point: GridPoint | None = None,
+    rectangle: dict | None = None,
+    depth: int = 0,
+    progress=print,
+) -> list[dict]:
+    """Run one query; if Google's 60-result cap is hit, split and search again."""
+    places = [p for p in client.text_search(query, point, rectangle=rectangle) if p.get("id")]
+    cap = C.RESULTS_PER_PAGE * C.MAX_PAGES_PER_QUERY
+    if (
+        not C.SPLIT_SATURATED_QUERIES
+        or client.dry_run
+        or len(places) < cap
+        or depth >= C.MAX_SPLIT_DEPTH
+    ):
+        return places
+
+    located = []
+    for p in places:
+        loc = p.get("location") or {}
+        if loc.get("latitude") is not None:
+            located.append({"lat": loc["latitude"], "lng": loc.get("longitude")})
+    cells = split_rectangle(located)
+    if not cells:
+        return places
+    progress(f"    {query}: hit the {cap}-result cap, splitting into {len(cells)} areas")
+
+    seen = {p["id"] for p in places}
+    out = list(places)
+    for cell in cells:
+        for p in _search_area(client, query, rectangle=cell, depth=depth + 1, progress=progress):
+            if p["id"] not in seen:
+                seen.add(p["id"])
+                out.append(p)
+    return out
+
+
 def sweep(
     verticals: list[str],
     cities: list[str] | None = None,
@@ -401,11 +509,21 @@ def sweep(
     progress=print,
     checkpoint=None,
 ) -> tuple[dict[str, dict], CostLedger]:
-    """Run discovery. Returns {place_id: normalized_business} and the cost ledger."""
+    """Run discovery. Returns {place_id: normalized_business} and the cost ledger.
+
+    Nothing is dropped for being small, new, quiet or a franchise: those become
+    labels at scoring time. Only permanently closed listings, results outside
+    the searched market, and (for trade presets) clear wrong-trade noise are
+    left out.
+    """
     ledger = ledger or CostLedger()
     client = PlacesClient(C.GOOGLE_API_KEY, ledger, dry_run=dry_run)
     found: dict[str, dict] = {}
-    cities = cities or C.TARGET_CITIES
+    cities = [c.strip() for c in (cities or []) if c and c.strip()]
+    if not use_grid and not cities:
+        raise ValueError("at least one city is required (e.g. 'Austin, TX, USA')")
+    if use_grid and not C.GEO_BBOX:
+        raise ValueError("grid mode needs an explicit GEO_BBOX in config")
     verticals = V.ordered_verticals(verticals)
 
     for vertical in verticals:
@@ -417,33 +535,43 @@ def sweep(
                 ]
             else:
                 targets = [
-                    (f"{query_term} in {_city_query_label(city)}", None, city)
+                    (f"{query_term} in {city}", None, city)
                     for city in cities
                 ]
 
             for query, point, target_city in targets:
                 try:
-                    n_new = 0
-                    for place in client.text_search(query, point):
-                        pid = place.get("id")
-                        if not pid:
-                            continue
+                    raw = _search_area(client, query, point=point, progress=progress)
+                    records = []
+                    for place in raw:
                         rec = normalize(place, vertical)
-
                         if rec["business_status"] in C.EXCLUDE_BUSINESS_STATUS:
                             continue
-                        if is_chain(rec["name"] or ""):
-                            continue
-                        if target_city is None or _configured_city(target_city):
+                        records.append(rec)
+
+                    center = (
+                        market_center(records, target_city)
+                        if target_city else None
+                    )
+
+                    n_new = 0
+                    for rec in records:
+                        pid = rec["place_id"]
+                        if target_city is None:
                             if not in_target_geo(rec):
                                 continue
-                        elif not in_requested_city(rec, target_city):
+                            rec["market"] = C.DEFAULT_GEO_LABEL
+                        elif not in_market(rec, target_city, center):
                             continue
+                        else:
+                            rec["market"] = target_city
                         if wrong_vertical(rec, vertical):
                             continue
 
                         if pid in found:
-                            found[pid] = merge_vertical_memberships(found[pid], rec)
+                            merged = merge_vertical_memberships(found[pid], rec)
+                            merged["market"] = found[pid].get("market") or rec["market"]
+                            found[pid] = merged
                         else:
                             found[pid] = rec
                             n_new += 1
@@ -455,6 +583,18 @@ def sweep(
                     progress(f"  !! {query}: {e}")
 
     return found, ledger
+
+
+def run_geo_label(cities: list[str] | None) -> str:
+    """Human label for a run, built from the cities actually searched."""
+    cleaned = [c.strip() for c in (cities or []) if c and c.strip()]
+    if not cleaned:
+        return C.DEFAULT_GEO_LABEL
+    short = [", ".join(part.strip() for part in c.split(",")[:2]) for c in cleaned]
+    label = " • ".join(short[:4])
+    if len(short) > 4:
+        label += f" +{len(short) - 4} more"
+    return label
 
 
 if __name__ == "__main__":
@@ -471,18 +611,24 @@ if __name__ == "__main__":
     args = ap.parse_args()
     args.verticals = V.ordered_verticals(args.verticals)
 
+    if not args.grid and not args.cities:
+        raise SystemExit("--cities is required, e.g. --cities 'Austin, TX, USA' 'Dallas, TX, USA'")
+    geo_label = run_geo_label(args.cities)
+
     if args.dry_run:
-        grid = build_grid(C.GEO_BBOX, C.GRID_SPACING_KM)
-        cities = args.cities or C.TARGET_CITIES
+        grid = build_grid(C.GEO_BBOX, C.GRID_SPACING_KM) if (args.grid and C.GEO_BBOX) else []
+        cities = args.cities or []
         n_queries = sum(len(V.vertical_queries(v)) for v in args.verticals)
         targets = len(grid) if args.grid else len(cities)
         worst = n_queries * targets * C.MAX_PAGES_PER_QUERY
         typical = int(worst * 0.45)
 
-        print(f"Grid points ({C.GRID_SPACING_KM}km over {C.GEO_LABEL}): {len(grid)}")
+        print(f"Market: {geo_label}  grid points: {len(grid)}")
         print(f"Mode: {'grid' if args.grid else 'city'}  targets={targets}  "
               f"verticals={args.verticals}  query terms={n_queries}")
-        print(f"Search calls — worst case {worst}, typical ~{typical}")
+        print(f"Search calls — worst case {worst}, typical ~{typical} "
+              f"(dense markets that hit Google's 60-result cap add up to "
+              f"{4 ** C.MAX_SPLIT_DEPTH}x more for that query)")
         for label, calls in (("worst", worst), ("typical", typical)):
             l = CostLedger(search_calls=calls)
             print(f"  {label:<8} {l.summary()}")
@@ -521,18 +667,18 @@ if __name__ == "__main__":
 
     grid_points = (
         len(build_grid(C.GEO_BBOX, C.GRID_SPACING_KM))
-        if args.grid else 0
+        if (args.grid and C.GEO_BBOX) else 0
     )
 
     run_id = store.start_run(
-        C.GEO_LABEL,
+        geo_label,
         sorted(args.verticals),
         grid_points,
         notes=f"model={C.MODEL_VERSION} staged",
     )
 
     try:
-        save_current_run(run_id, C.GEO_LABEL, list(args.verticals))
+        save_current_run(run_id, geo_label, list(args.verticals))
     except Exception:
         store.abandon_run(
             run_id,

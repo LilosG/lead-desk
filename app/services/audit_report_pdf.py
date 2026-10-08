@@ -351,6 +351,64 @@ def render_audit_report_pdf(report: dict) -> bytes:
     story.append(summary_box)
     story.append(Spacer(1, 7))
 
+    comparison = snapshot.get("market_comparison")
+    if comparison:
+        story.append(Paragraph("LOCAL COMPARISON", section_kicker))
+        story.append(
+            Paragraph(
+                _text(f"How {business.get('name') or 'the business'} compares in {comparison.get('market')}"),
+                section,
+            )
+        )
+        story.append(
+            Paragraph(
+                _text(
+                    f"Public Google data for {comparison.get('sample_size')} "
+                    f"{comparison.get('niche')} businesses found in the same search. "
+                    f"Median review count: {comparison.get('median_reviews')}."
+                ),
+                body_muted,
+            )
+        )
+        story.append(Spacer(1, 3))
+
+        def _row(item: dict, highlight: bool) -> list:
+            rating = item.get("rating")
+            return [
+                Paragraph(_text(item.get("name")) + (" (you)" if highlight else ""), scope_title),
+                Paragraph(_text(f"{float(rating):.1f}" if rating is not None else "—"), scope_value),
+                Paragraph(_text(f"{int(item.get('review_count') or 0):,}"), scope_value),
+                Paragraph("Yes" if item.get("has_website") else "No", scope_value),
+            ]
+
+        header = [
+            Paragraph("BUSINESS", label),
+            Paragraph("RATING", label),
+            Paragraph("REVIEWS", label),
+            Paragraph("WEBSITE", label),
+        ]
+        rows = [header, _row(comparison.get("business") or {}, True)]
+        rows += [_row(item, False) for item in comparison.get("leaders") or []]
+        comp_table = Table(rows, colWidths=[4.0 * inch, 1.0 * inch, 1.14 * inch, 1.14 * inch])
+        comp_table.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.45, LINE),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.3, LINE),
+                    ("BACKGROUND", (0, 0), (-1, 0), SURFACE_2),
+                    ("BACKGROUND", (0, 1), (-1, 1), SURFACE),
+                    ("LINEBEFORE", (0, 1), (0, 1), 3, GOLD),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]
+            )
+        )
+        story.append(KeepTogether(comp_table))
+        story.append(Spacer(1, 7))
+
     if findings:
         story.append(Paragraph("OPPORTUNITY SNAPSHOT", section_kicker))
         story.append(Paragraph("Where we found opportunities", section))
@@ -516,6 +574,30 @@ def render_audit_report_pdf(report: dict) -> bytes:
         )
         story.append(KeepTogether(card))
         story.append(Spacer(1, 3))
+
+    step = snapshot.get("next_step")
+    if step and step.get("text"):
+        story.append(Spacer(1, 4))
+        step_parts = [Paragraph("NEXT STEP", section_kicker), Paragraph(_text(step["text"]), body)]
+        if step.get("demo_url"):
+            url = _text(step["demo_url"])
+            step_parts.append(
+                Paragraph(f'Concept homepage: <link href="{url}" color="#355a7a">{url}</link>', body)
+            )
+        step_box = Table([[step_parts]], colWidths=[7.28 * inch])
+        step_box.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), SURFACE),
+                    ("LINEBEFORE", (0, 0), (0, -1), 3, GOLD),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        story.append(KeepTogether(step_box))
 
     story.append(Spacer(1, 2))
     story.append(

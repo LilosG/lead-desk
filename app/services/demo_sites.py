@@ -9,6 +9,7 @@ from app.repositories.demo_sites import DemoSiteRepository
 from app.repositories.prospects import ProspectRepository
 from app.services.demo_site_renderer import palette_for, render_demo_site, template_options
 from app.services.demo_site_renderer_v3 import V3_TEMPLATE_OPTION, render_demo_site_v3
+from pipeline import verticals as vertical_config
 
 
 class DemoSiteError(Exception):
@@ -44,7 +45,25 @@ def _slugify(value: str) -> str:
 
 
 def _display_type(value: str | None) -> str:
-    return (value or "home service professional").replace("_", " ").title()
+    return (value or "local business").replace("_", " ").title()
+
+
+def _market_city(market: str | None) -> str | None:
+    if not market:
+        return None
+    first = market.split(",")[0].strip()
+    return first or None
+
+
+def _auto_services(audit: dict[str, Any] | None) -> list[str]:
+    """Offering names read from the prospect's own site navigation."""
+    titles = (audit or {}).get("offering_titles") or []
+    return _normalize_list([str(t) for t in titles], max_items=6)
+
+
+def _auto_areas(prospect: dict[str, Any]) -> list[str]:
+    areas = [prospect.get("city"), _market_city(prospect.get("market"))]
+    return _normalize_list([a for a in areas if a], max_items=8)
 
 
 def _template_options() -> list[dict[str, str]]:
@@ -68,23 +87,35 @@ class DemoSiteService:
         primary_type = _display_type(prospect.get("primary_type"))
         city = prospect.get("city") or "your area"
         business_name = prospect.get("name") or "Business"
+        audit = self._website_audit(place_id)
         return {
             "place_id": place_id,
             "business_name": business_name,
             "templates": _template_options(),
             "defaults": {
-                "headline": f"Local {primary_type.lower()} service for {city}",
+                "headline": f"{primary_type} in {city}",
                 "subheadline": (
-                    f"Explore {business_name}'s core services, local service area, and a direct way "
-                    "to get in touch when you need help."
+                    f"See what {business_name} offers, where it serves, and the quickest way "
+                    "to get in touch."
                 ),
-                "services": [],
-                "service_areas": [prospect.get("city")] if prospect.get("city") else [],
+                # Pre-filled from the prospect's own site and market so a demo
+                # can be generated in one click; still editable before saving.
+                "services": _auto_services(audit),
+                "service_areas": _auto_areas(prospect),
                 "hero_image_url": None,
                 "work_image_url": None,
                 "secondary_image_url": None,
             },
         }
+
+    def _website_audit(self, place_id: str) -> dict[str, Any] | None:
+        lookup = getattr(self.prospect_repository, "get_website_audit", None)
+        if lookup is None:
+            return None
+        try:
+            return lookup(place_id)
+        except Exception:
+            return None
 
     def create_demo(
         self,
@@ -110,6 +141,10 @@ class DemoSiteService:
         city = prospect.get("city") or "your area"
         normalized_services = _normalize_list(services, max_items=6)
         normalized_areas = _normalize_list(service_areas, max_items=8)
+        if not normalized_services:
+            normalized_services = _auto_services(self._website_audit(place_id))
+        if not normalized_areas:
+            normalized_areas = _auto_areas(prospect)
 
         source_snapshot = {
             "place_id": place_id,
@@ -120,15 +155,17 @@ class DemoSiteService:
             "website_url": prospect.get("website_url"),
             "primary_type": prospect.get("primary_type"),
             "primary_type_display": primary_type_display,
+            "vertical": prospect.get("vertical"),
+            "niche_profile": vertical_config.vertical_profile(prospect.get("vertical") or ""),
             "rating": float(prospect["rating"]) if prospect.get("rating") is not None else None,
             "review_count": int(prospect["review_count"]) if prospect.get("review_count") is not None else None,
             "scored_at": prospect.get("scored_at").isoformat() if prospect.get("scored_at") else None,
         }
         content_snapshot = {
-            "headline": (headline or f"Local {primary_type_display.lower()} service for {city}").strip(),
+            "headline": (headline or f"{primary_type_display} in {city}").strip(),
             "subheadline": (
                 subheadline
-                or f"Explore {business_name}'s core services, local service area, and a direct way to get in touch when you need help."
+                or f"See what {business_name} offers, where it serves, and the quickest way to get in touch."
             ).strip(),
             "services": normalized_services,
             "service_areas": normalized_areas,

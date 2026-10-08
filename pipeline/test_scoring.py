@@ -95,7 +95,7 @@ cases = [
      site("nogbp"),
      "GBP neglected, site fine"),
 
-    # Unreachable: no phone, no email, no form — must be gated out of tier A
+    # Unreachable: no phone, no email, no form — stays in the list, ranked low
     (biz("unreach", "Ghost Electric", phone=None, website_url=None,
          review_count=0, has_hours=False, photo_count=0, rating=None),
      None,
@@ -147,7 +147,7 @@ scored_deep, _ = S.score_all(all_biz, enrichment, "San Diego County", deep_fixtu
 sd = {x.place_id: x for x in scored_deep}
 s_nodeep = {x.place_id: x for x in scored}
 
-base = baselines["electrician"]
+base = S.baseline_for(baselines, "electrician", "San Diego County")
 print(f"BASELINE  n={base.sample_size}  median_reviews={base.median_reviews:.0f}  "
       f"p25={base.p25_reviews:.0f}  median_rating={base.median_rating:.1f}  "
       f"with_website={base.pct_with_website:.0f}%\n")
@@ -162,7 +162,7 @@ for i, s in enumerate(scored, 1):
         continue
     b = by_id[s.place_id]
     print(f"{i:<5}{s.tier:<6}{s.total_score:<7}{s.gbp_gap_score:<5}"
-          f"{s.website_gap_score:<6}{s.reachability_score:<7}{s.activity:<11}"
+          f"{str(s.website_gap_score):<6}{s.reachability_score:<7}{s.activity:<11}"
           f"{b['name'][:22]:<24}{labels.get(s.place_id,'')}")
 
 avg_scores = [s.total_score for s in scored if s.place_id.startswith("avg")]
@@ -186,16 +186,19 @@ checks = [
      pos["dream"] < pos["strong"]),
     ("well-optimized incumbent is NOT tier A",
      sc["strong"].tier != "A"),
-    ("unreachable lead is gated to tier D",
-     sc["unreach"].tier == "D"),
+    ("unreachable lead is KEPT, labelled no_contact, and ranks below the dream lead",
+     "unreach" in sc and "no_contact" in sc["unreach"].labels
+     and pos["dream"] < pos["unreach"]),
     ("wix/no-schema/slow site outranks the healthy incumbent",
      pos["wix"] < pos["strong"]),
     ("down site scores higher than healthy site",
      sc["down"].total_score > sc["strong"].total_score),
     ("neglected GBP with good site still surfaces",
      sc["nogbp"].total_score > sc["strong"].total_score),
-    ("dream lead is tier A",
-     sc["dream"].tier == "A"),
+    ("dream lead is a top-3 lead and tier A or B",
+     pos["dream"] <= 2 + 20 and sc["dream"].tier in ("A", "B")
+     and sum(1 for x in scored if not x.place_id.startswith("avg")
+             and x.total_score > sc["dream"].total_score) <= 2),
     ("live business outranks an identical DORMANT one",
      pos["dream"] < pos["dormant"]),
     ("dormant listing is discounted below tier A",
@@ -212,7 +215,73 @@ checks = [
      any(e.signal == "no_review_replies" for e in sd["miscat"].evidence)),
     ("un-enriched leads are UNCHANGED when others are enriched",
      sd["strong"].total_score == s_nodeep["strong"].total_score),
+    ("no-website lead is labelled no_website and phone_only",
+     {"no_website", "phone_only"} <= set(sc["dream"].labels)),
+    ("established label: trading + at/above median reviews + 2 real gaps",
+     "established" in S.score_lead(
+         biz("est", "Est Electric", review_count=90, last_review_days=20),
+         site("est", has_localbusiness_schema=False, has_city_pages=False),
+         base).labels
+     and "established" not in sc["strong"].labels
+     and "established" not in sc["wix"].labels),
+    ("NAP mismatch is labelled verify_first",
+     "verify_first" in sc["nap"].labels),
 ]
+
+# --- open niche / open geo regressions ----------------------------------------
+# Bot-blocked site: ranks on the profile alone, not halved by a 0 website axis.
+blocked_b = biz("blocked", "Shielded Electric", review_count=3, has_hours=False, photo_count=0)
+blocked_open_b = biz("blocked_open", "Open Electric", review_count=3, has_hours=False, photo_count=0)
+blocked_site = SiteFindings(place_id="blocked", crawl_error="blocked_403", http_status=403)
+pop2 = population + [blocked_b, blocked_open_b]
+enr2 = dict(enrichment)
+enr2["blocked"] = blocked_site
+enr2["blocked_open"] = site("blocked_open")
+sc2 = {x.place_id: x for x in S.score_all(pop2, enr2, "San Diego County")[0]}
+checks.append(("bot-blocked site is NOT halved (website axis left out, not zeroed)",
+               sc2["blocked"].website_gap_score is None
+               and sc2["blocked"].total_score >= sc2["blocked_open"].total_score))
+checks.append(("bot-blocked site is labelled verify_first",
+               "verify_first" in sc2["blocked"].labels))
+
+# Franchise: kept and labelled, priority discounted.
+fr = biz("fr", "Mister Sparky of Carlsbad", website_url=None, is_franchise=True)
+indep = biz("indep", "Sparky Independent", website_url=None)
+sc3 = {x.place_id: x for x in S.score_all(population + [fr, indep], enrichment, "San Diego County")[0]}
+checks.append(("franchise is kept, labelled, and ranked below an identical independent",
+               "franchise" in sc3["fr"].labels and sc3["fr"].total_score < sc3["indep"].total_score))
+
+# Per-market baselines: a business is compared against its OWN market.
+big = [biz(f"nyc{i}", f"NYC Electric {i}", review_count=300 + i, market="New York, NY, USA")
+       for i in range(10)]
+small = [biz(f"tow{i}", f"Town Electric {i}", review_count=5 + i, market="Ely, NV, USA")
+         for i in range(10)]
+probe = biz("probe", "Probe Electric", review_count=40, market="Ely, NV, USA")
+mixed = big + small + [probe]
+enr4 = {b["place_id"]: site(b["place_id"]) for b in mixed}
+sc4, bl4 = S.score_all(mixed, enr4)
+p4 = {x.place_id: x for x in sc4}
+checks.append(("40 reviews is NOT 'below median' in a small market just because NYC is in the run",
+               not any(e.signal.startswith("reviews_") for e in p4["probe"].evidence)))
+checks.append(("review findings name the lead's own market",
+               all("Ely, NV" in e.finding for e in p4["tow0"].evidence
+                   if e.signal.startswith("reviews_") or e.signal == "no_reviews")))
+
+# Niche wording: a med spa is told about treatment pages, not "service" pages.
+spa = biz("spa", "Glow Med Spa", vertical="med_spa", primary_type="spa", types=["spa"])
+spa_pop = [biz(f"spa{i}", f"Spa {i}", vertical="med_spa") for i in range(10)] + [spa]
+enr5 = {b["place_id"]: site(b["place_id"]) for b in spa_pop}
+enr5["spa"] = site("spa", has_service_pages=False, has_city_pages=False)
+p5 = {x.place_id: x for x in S.score_all(spa_pop, enr5, "Scottsdale, AZ, USA")[0]}
+offer = [e for e in p5["spa"].evidence if e.signal == "no_service_pages"]
+checks.append(("med spa finding talks about treatment pages",
+               bool(offer) and "treatment pages" in offer[0].finding))
+checks.append(("online booking counts as a contact path (no 'no contact form' claim)",
+               not any(e.signal == "no_contact_form" for e in S.score_lead(
+                   spa, site("spa", has_contact_form=False, contact_page_url=None,
+                             has_online_booking=True, booking_provider="Vagaro"),
+                   S.baseline_for(S.compute_baselines(spa_pop), "med_spa", None)).evidence)))
+
 ok = True
 for label, passed in checks:
     print(f"  {'PASS' if passed else 'FAIL'}  {label}")

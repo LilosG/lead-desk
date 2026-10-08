@@ -16,6 +16,20 @@ jobs:
   backend-unit-and-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lead_desk_test
+          POSTGRES_PASSWORD: lead_desk_test
+          POSTGRES_DB: lead_desk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lead_desk_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://lead_desk_test:lead_desk_test@127.0.0.1:5432/lead_desk_test
       AUTH_USERNAME: test-admin
@@ -35,28 +49,13 @@ jobs:
       - name: Compile all Python
         run: python -m compileall -q app pipeline sql tests
 
-      - name: Run integration unit tests
-        run: |
-          pytest -q \
-            tests/app/test_integrations.py \
-            tests/app/test_outreach_integrations.py \
-            tests/app/test_outreach_slot_repair.py \
-            tests/app/test_outreach_grounding.py \
-            tests/app/test_outreach_similarity.py \
-            tests/app/test_outreach_constrained.py \
-            tests/app/test_openrouter_structured.py \
-            tests/app/test_outreach_blocked_generation.py \
-            tests/app/test_outreach_recent_drafts_query.py \
-            tests/app/test_outreach_gmail_review.py \
-            tests/app/test_audit_reports.py \
-            tests/app/test_demo_sites.py \
-            tests/app/test_demo_sites_v3.py \
-            tests/app/test_demo_media.py \
-            tests/app/test_sweep_request_validation.py \
-            tests/app/test_sweep_national_city_scope.py \
-            tests/app/test_dynamic_sweep_cities.py \
-            tests/app/test_run_market_scope.py \
-            tests/app/test_market_inventory_contract.py
+      - name: Build test database (schema, migrations, production views)
+        run: scripts/build_test_db.sh
+
+      # The whole suite runs now. Hand-picking files let excluded tests rot
+      # against code that had moved on.
+      - name: Run backend tests
+        run: pytest -q tests
 
       - name: Run deterministic pipeline regressions
         run: |
@@ -64,6 +63,8 @@ jobs:
           python pipeline/test_vertical_filter.py
           python pipeline/test_paging_contract.py
           python pipeline/test_run_lifecycle.py
+          python pipeline/test_market_scope.py
+          python pipeline/test_crawl_niche.py
 
   frontend:
     runs-on: ubuntu-latest

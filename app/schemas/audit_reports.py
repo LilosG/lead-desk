@@ -36,3 +36,20 @@ class AuditReportSummary(BaseModel):
 
 class AuditReportDetail(AuditReportSummary):
     snapshot: dict
+
+
+class AuditReportBatchRequest(BaseModel):
+    place_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class AuditReportBatchItem(BaseModel):
+    place_id: str
+    status: Literal["created", "skipped"]
+    report_id: str | None = None
+    detail: str | None = None
+
+
+class AuditReportBatchResponse(BaseModel):
+    items: list[AuditReportBatchItem]
+    created: int
+    skipped: int

@@ -237,3 +237,38 @@ def test_generated_audit_supplies_useful_grounding_without_live_claim():
     assert "location coverage" in visible_claim
     assert "structured business data" in visible_claim
     assert "Local Visibility Audit" in verification_note
+
+
+
+def test_audit_grounding_covers_profile_and_speed_findings_for_volume():
+    repo = Repo(findings=[{"signal": "template_builder"}])
+    verifier = CapturingNoClaimVerifier()
+    service = OutreachService(
+        repo,
+        generator=ClaimGenerator(),
+        verifier=verifier,
+        generation_model="qwen/qwen3-30b-a3b-instruct-2507",
+    )
+    context = repo.draft_context(repo.item["id"])
+    context["audit_snapshot"] = {
+        "business": {"rating": 4.6, "review_count": 12},
+        "findings": [
+            {"signal": "reviews_below_median"},
+            {"signal": "psi_mobile_poor"},
+            {"signal": "no_service_pages", "title": "Treatment pages coverage"},
+        ],
+    }
+
+    visible_claim, claim_signal, _, _ = service._resolve_draft_grounding(
+        context, business_name="Glow Med Spa",
+    )
+
+    assert verifier.context is None
+    assert claim_signal == "audit_report"
+    assert "treatment pages" in visible_claim
+    assert "review volume compared with nearby competitors" in visible_claim
+    assert "mobile page speed" in visible_claim
+    # Mixed profile + website findings name both surfaces (and avoid the
+    # blocklisted phrase "online presence").
+    assert "the Google profile and website could support" in visible_claim
+    assert "online presence" not in visible_claim

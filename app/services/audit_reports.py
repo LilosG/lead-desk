@@ -5,6 +5,104 @@ from typing import Any
 from app.repositories.audit_reports import AuditReportRepository
 from app.repositories.prospects import ProspectRepository
 from app.services.audit_report_policy import observed_summary, report_policy_for
+from pipeline import verticals as vertical_config
+
+MAX_BATCH = 50
+_DISPOSITION_ORDER = {"recommended": 0, "review_required": 1, "optional": 2}
+
+
+class _SafeDict(dict):
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
+def _niche_context(prospect: dict[str, Any], finding: dict[str, Any] | None = None) -> dict[str, str]:
+    profile = vertical_config.niche_profile(prospect.get("vertical"))
+    observed = (finding or {}).get("observed") or {}
+    offering_label = (
+        observed.get("label") if isinstance(observed, dict) and finding
+        and finding.get("signal") == "no_service_pages" and observed.get("label")
+        else profile["offering_label"]
+    )
+    location_label = (
+        observed.get("label") if isinstance(observed, dict) and finding
+        and finding.get("signal") == "no_city_pages" and observed.get("label")
+        else profile["location_label"]
+    )
+    return {
+        "offering_label": offering_label,
+        "Offering_label": offering_label[:1].upper() + offering_label[1:],
+        "offering_singular": profile["offering_singular"],
+        "location_label": location_label,
+    }
+
+
+def _render(text: str, ctx: dict[str, str]) -> str:
+    return text.format_map(_SafeDict(ctx)) if "{" in text else text
+
+
+def _title_length_found(observed: Any) -> str | None:
+    length = observed.get("title_length") if isinstance(observed, dict) else observed
+    try:
+        length = int(length)
+    except (TypeError, ValueError):
+        return None
+    if length < 20:
+        return (
+            f"The homepage title is only {length} characters, shorter than the range "
+            "typically used to describe a business and its main offer."
+        )
+    return (
+        f"The homepage title is {length} characters, longer than the range that "
+        "usually displays in full in search results."
+    )
+
+
+def market_comparison(
+    prospect: dict[str, Any],
+    peers: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Client-safe local comparison: public Google numbers only."""
+    if not peers or int(peers.get("sample_size") or 0) < 3:
+        return None
+    leaders = [
+        {
+            "name": row.get("name"),
+            "rating": row.get("rating"),
+            "review_count": int(row.get("review_count") or 0),
+            "has_website": bool(row.get("has_website")),
+        }
+        for row in (peers.get("leaders") or [])
+        if row.get("name")
+    ]
+    market = prospect.get("market")
+    where = (
+        ", ".join(part.strip() for part in market.split(",")[:2])
+        if market else (prospect.get("city") or "the area")
+    )
+    return {
+        "market": where,
+        "niche": vertical_config.vertical_label(prospect.get("vertical") or "local business"),
+        "sample_size": int(peers.get("sample_size") or 0),
+        "median_reviews": round(float(peers.get("median_reviews") or 0)),
+        "business": {
+            "name": prospect.get("name"),
+            "rating": prospect.get("rating"),
+            "review_count": int(prospect.get("review_count") or 0),
+            "has_website": bool(prospect.get("website_url")),
+        },
+        "leaders": leaders,
+    }
+
+
+def next_step(demo_url: str | None) -> dict[str, Any]:
+    text = (
+        "If you'd like help with any of these, reply to the email this report came "
+        "with and we'll walk through the priority items together."
+    )
+    if demo_url:
+        text += " We also put together a concept homepage to show what an updated site could look like."
+    return {"text": text, "demo_url": demo_url}
 
 
 class AuditReportError(Exception):
@@ -96,7 +194,18 @@ def _audit_coverage(prospect: dict[str, Any], audit: dict[str, Any]) -> list[dic
         )
 
     contact_form = audit.get("has_contact_form")
-    if contact_form is not None:
+    booking = audit.get("has_online_booking")
+    if booking:
+        provider = audit.get("booking_provider")
+        items.append(
+            _coverage_item(
+                label="Contact path",
+                value=f"Online booking detected ({provider})" if provider else "Online booking detected",
+                status="confirmed",
+                category="Conversion",
+            )
+        )
+    elif contact_form is not None:
         items.append(
             _coverage_item(
                 label="Contact path",
@@ -111,7 +220,11 @@ def _audit_coverage(prospect: dict[str, Any], audit: dict[str, Any]) -> list[dic
         items.append(
             _coverage_item(
                 label="Service content",
-                value="Service pages detected" if service_pages else "Service pages not detected",
+                value=(
+                    f"{_niche_context(prospect)['Offering_label']} detected"
+                    if service_pages
+                    else f"{_niche_context(prospect)['Offering_label']} not detected"
+                ),
                 status="confirmed" if service_pages else "attention",
                 category="Website",
             )
@@ -122,7 +235,11 @@ def _audit_coverage(prospect: dict[str, Any], audit: dict[str, Any]) -> list[dic
         items.append(
             _coverage_item(
                 label="Local landing pages",
-                value="City/local pages detected" if city_pages else "City/local pages not detected",
+                value=(
+                    f"{_niche_context(prospect)['location_label'].capitalize()} detected"
+                    if city_pages
+                    else f"{_niche_context(prospect)['location_label'].capitalize()} not detected"
+                ),
                 status="confirmed" if city_pages else "attention",
                 category="Local search",
             )
@@ -176,10 +293,20 @@ def _evidence_for_signal(
 
     if signal == "no_localbusiness_schema":
         return "Homepage scan: recognized LocalBusiness structured data was not detected."
+    ctx = _niche_context(prospect, source_finding)
     if signal == "no_service_pages":
-        return "Website crawl: dedicated service pages were not detected."
+        observed = source_finding.get("observed") or {}
+        sitemap = observed.get("sitemap_urls") if isinstance(observed, dict) else None
+        note = f" ({int(sitemap)} pages in the sitemap reviewed)" if sitemap else ""
+        return f"Website crawl: dedicated {ctx['offering_label']} were not detected{note}."
     if signal == "no_city_pages":
-        return "Website crawl: dedicated city or service-area landing pages were not detected."
+        return f"Website crawl: dedicated {ctx['location_label']} were not detected."
+    if signal == "no_website":
+        return "Google Business Profile: no website field when checked."
+    if signal == "no_hours":
+        return "Google Business Profile: no regular hours listed when checked."
+    if signal == "no_photos":
+        return "Google Business Profile: no photos returned when checked."
     if signal == "no_gbp_link":
         return "Website crawl: no direct Google Business Profile link was detected."
     if signal == "no_ssl":
@@ -247,9 +374,37 @@ class AuditReportService:
         self,
         prospect_repository: ProspectRepository,
         report_repository: AuditReportRepository,
+        demo_repository: Any | None = None,
     ):
         self.prospect_repository = prospect_repository
         self.report_repository = report_repository
+        self.demo_repository = demo_repository
+
+    def _published_demo_url(self, place_id: str) -> str | None:
+        if self.demo_repository is None:
+            return None
+        try:
+            demos = self.demo_repository.list_for_prospect(place_id)
+        except Exception:
+            return None
+        for demo in demos or []:
+            if demo.get("status") == "published" and demo.get("public_url"):
+                return demo["public_url"]
+        return None
+
+    def _peers(self, prospect: dict[str, Any]) -> dict[str, Any] | None:
+        lookup = getattr(self.prospect_repository, "market_peers", None)
+        if lookup is None:
+            return None
+        try:
+            return lookup(
+                prospect["place_id"],
+                vertical=prospect.get("vertical"),
+                market=prospect.get("market"),
+                city=prospect.get("city"),
+            )
+        except Exception:
+            return None
 
     def options_for_prospect(self, place_id: str) -> dict[str, Any]:
         prospect = self.prospect_repository.get_prospect(place_id)
@@ -264,17 +419,21 @@ class AuditReportService:
             policy = report_policy_for(signal)
             if policy is None:
                 continue
+            ctx = _niche_context(prospect, finding)
             options.append(
                 {
                     "signal": policy.signal,
-                    "title": policy.title,
+                    "title": _render(policy.title, ctx),
                     "category": policy.category,
                     "disposition": policy.disposition,
                     "default_selected": policy.default_selected,
-                    "evidence": observed_summary(policy.signal, finding.get("observed")),
+                    "evidence": _evidence_for_signal(
+                        policy.signal, finding, prospect, {}
+                    ),
                 }
             )
 
+        options.sort(key=lambda o: _DISPOSITION_ORDER.get(o["disposition"], 9))
         return {
             "place_id": place_id,
             "business_name": prospect.get("name") or "Prospect",
@@ -306,15 +465,19 @@ class AuditReportService:
                 raise AuditReportError(f"finding is not reportable: {signal}")
 
             normalized_signals.append(signal)
+            ctx = _niche_context(prospect, source_finding)
+            what_we_found = _render(policy.what_we_found, ctx)
+            if signal == "title_length":
+                what_we_found = _title_length_found(source_finding.get("observed")) or what_we_found
             report_findings.append(
                 {
                     "signal": policy.signal,
-                    "title": policy.title,
+                    "title": _render(policy.title, ctx),
                     "category": policy.category,
                     "disposition": policy.disposition,
-                    "what_we_found": policy.what_we_found,
-                    "why_it_matters": policy.why_it_matters,
-                    "recommendation": policy.recommendation,
+                    "what_we_found": what_we_found,
+                    "why_it_matters": _render(policy.why_it_matters, ctx),
+                    "recommendation": _render(policy.recommendation, ctx),
                     "evidence": _evidence_for_signal(
                         policy.signal,
                         source_finding,
@@ -327,6 +490,10 @@ class AuditReportService:
         if not report_findings:
             raise AuditReportError("select at least one reportable finding")
 
+        report_findings.sort(
+            key=lambda item: _DISPOSITION_ORDER.get(item["disposition"], 9)
+        )
+
         source_checked_at = website_audit.get("checked_at") or prospect.get("scored_at")
         business_name = prospect.get("name") or "Business"
         location = ", ".join(
@@ -337,7 +504,7 @@ class AuditReportService:
         snapshot = _json_safe(
             {
                 "report_kind": "local_visibility_audit",
-                "report_version": 3,
+                "report_version": 4,
                 "business": {
                     "name": business_name,
                     "location": location or None,
@@ -362,6 +529,8 @@ class AuditReportService:
                     if item.get("status") == "confirmed"
                 ],
                 "findings": report_findings,
+                "market_comparison": market_comparison(prospect, self._peers(prospect)),
+                "next_step": next_step(self._published_demo_url(place_id)),
                 "methodology_note": (
                     "Point-in-time review of public business information and website signals as of the evidence date shown. "
                     "Findings should be rechecked before implementation."
@@ -377,6 +546,29 @@ class AuditReportService:
             snapshot=snapshot,
             source_checked_at=source_checked_at,
         )
+
+    def create_default_reports(self, place_ids: list[str]) -> list[dict[str, Any]]:
+        """One report per prospect using its default-selected findings.
+
+        For volume: skips (rather than fails) prospects with nothing
+        reportable, and reports why.
+        """
+        results: list[dict[str, Any]] = []
+        for place_id in list(dict.fromkeys(place_ids))[:MAX_BATCH]:
+            try:
+                options = self.options_for_prospect(place_id)["options"]
+                selected = [o["signal"] for o in options if o["default_selected"]][:12]
+                if not selected:
+                    results.append({"place_id": place_id, "status": "skipped",
+                                    "detail": "no default findings to report"})
+                    continue
+                report = self.create_report(place_id, selected_signals=selected)
+                results.append({"place_id": place_id, "status": "created",
+                                "report_id": report["id"]})
+            except AuditReportError as exc:
+                results.append({"place_id": place_id, "status": "skipped",
+                                "detail": str(exc)})
+        return results
 
     def get_report(self, report_id: str) -> dict[str, Any] | None:
         return self.report_repository.get_report(report_id)

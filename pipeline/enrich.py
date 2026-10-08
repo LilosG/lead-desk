@@ -89,8 +89,68 @@ CMS_SIGNATURES = [
 # platforms cap out fast on local SEO. Easiest displacement in the list.
 TEMPLATE_BUILDERS = {"wix", "squarespace", "godaddy", "weebly", "duda"}
 
-SERVICE_PAGE_HINTS = ["service", "repair", "install", "replacement", "maintenance"]
-CITY_PAGE_HINTS = [c.lower().replace(" ", "-") for c in C.TARGET_CITIES]
+import verticals as V
+
+# Online booking / scheduling platforms. A booking widget is a real conversion
+# path, so a site that has one must never be told it has "no way to contact".
+BOOKING_PROVIDERS = {
+    "calendly.com": "Calendly", "acuityscheduling.com": "Acuity",
+    "squareup.com/appointments": "Square Appointments", "square.site/book": "Square Appointments",
+    "vagaro.com": "Vagaro", "joinblvd.com": "Boulevard", "blvd.co": "Boulevard",
+    "mindbodyonline.com": "Mindbody", "mindbody.io": "Mindbody",
+    "zocdoc.com": "Zocdoc", "localmed.com": "LocalMed", "nexhealth.com": "NexHealth",
+    "schedulicity.com": "Schedulicity", "glossgenius.com": "GlossGenius",
+    "fresha.com": "Fresha", "booksy.com": "Booksy", "janeapp.com": "Jane",
+    "housecallpro.com": "Housecall Pro", "getjobber.com": "Jobber",
+    "servicetitan.com": "ServiceTitan", "opentable.com": "OpenTable",
+    "resy.com": "Resy", "tock.com": "Tock", "setmore.com": "Setmore",
+    "simplybook.me": "SimplyBook", "youcanbook.me": "YouCanBook.me",
+    "tidycal.com": "TidyCal", "zenoti.com": "Zenoti", "aestheticrecord.com": "Aesthetic Record",
+    "patientpop.com": "PatientPop", "weave.com/schedule": "Weave",
+    "showingtime.com": "ShowingTime",
+}
+
+# Pages that exist on nearly every site and say nothing about offerings.
+GENERIC_PATH_WORDS = (
+    "blog", "post", "news", "tag", "category", "author", "privacy", "terms",
+    "about", "contact", "career", "job", "faq", "review", "testimonial",
+    "gallery", "login", "cart", "account", "feed", "wp-", "sitemap", "page/",
+)
+
+SITEMAP_MAX_URLS = 2000
+
+
+def _slug(value: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
+
+
+def _offering_words(business: dict) -> list[str]:
+    return list(V.niche_profile(business.get("vertical"))["offering_words"])
+
+
+def _location_tokens(business: dict) -> list[str]:
+    tokens = set(C.LOCATION_PAGE_WORDS)
+    for raw in (business.get("city"), (business.get("market") or "").split(",")[0]):
+        slug = _slug(raw)
+        if len(slug) >= 3:
+            tokens.add(slug)
+    return sorted(tokens)
+
+
+def _path_matches(path: str, words: list[str]) -> bool:
+    return any(w in path for w in words)
+
+
+def _anchor_title(text: str) -> str | None:
+    """A short, human link label usable as an offering name in a mockup."""
+    t = " ".join((text or "").split())
+    if not t or len(t) > 40 or len(t.split()) > 6:
+        return None
+    low = t.lower()
+    if low in {"services", "our services", "all services", "learn more", "read more",
+               "view all", "home", "menu", "more"}:
+        return None
+    return t
 
 
 @dataclass
@@ -116,9 +176,15 @@ class SiteFindings:
     nap_phone_on_site: str | None = None
     nap_address_on_site: str | None = None
     nap_matches_gbp: bool | None = None
-    has_service_pages: bool = False
-    has_city_pages: bool = False
+    has_service_pages: bool = False       # "offering pages" in niche terms
+    has_city_pages: bool = False          # "location pages" in niche terms
     has_gbp_link: bool = False
+    offering_page_count: int = 0
+    offering_titles: list = field(default_factory=list)
+    location_page_count: int = 0
+    sitemap_url_count: int | None = None
+    has_online_booking: bool = False
+    booking_provider: str | None = None
 
     has_contact_form: bool = False
     contact_page_url: str | None = None
@@ -249,6 +315,41 @@ def _fetch(session, url: str, _retry: bool = True) -> requests.Response | None:
     return r
 
 
+# schema.org LocalBusiness and its subtypes, lower-cased. Any of these counts as
+# business markup. The old list only knew trades, so a dentist marked up as
+# "Dentist" was told it had no business markup at all.
+LOCAL_BUSINESS_TYPES = {t.lower() for t in """
+LocalBusiness
+AnimalShelter ArchiveOrganization AutomotiveBusiness AutoBodyShop AutoDealer
+AutoPartsStore AutoRental AutoRepair AutoWash GasStation MotorcycleDealer
+MotorcycleRepair ChildCare Dentist DryCleaningOrLaundry EmergencyService
+FireStation Hospital PoliceStation EmploymentAgency EntertainmentBusiness
+AdultEntertainment AmusementPark ArtGallery Casino ComedyClub MovieTheater
+NightClub FinancialService AccountingService AutomatedTeller BankOrCreditUnion
+InsuranceAgency FoodEstablishment Bakery BarOrPub Brewery CafeOrCoffeeShop
+Distillery FastFoodRestaurant IceCreamShop Restaurant Winery GovernmentOffice
+PostOffice HealthAndBeautyBusiness BeautySalon DaySpa HairSalon HealthClub
+NailSalon TattooParlor HomeAndConstructionBusiness Electrician GeneralContractor
+HVACBusiness HousePainter Locksmith MovingCompany Plumber RoofingContractor
+InternetCafe LegalService Attorney Notary Library LodgingBusiness
+BedAndBreakfast Campground Hostel Hotel Motel Resort VacationRental
+MedicalBusiness CommunityHealth Dermatology DietNutrition Geriatric
+Gynecologic MedicalClinic CovidTestingFacility Midwifery Nursing Obstetric
+Oncologic Optician Optometric Otolaryngologic Pediatric Pharmacy Physician
+IndividualPhysician PhysiciansOffice Physiotherapy PlasticSurgery Podiatric
+PrimaryCare Psychiatric PublicHealth RadioStation RealEstateAgent RecyclingCenter
+SelfStorage ShoppingCenter SportsActivityLocation BowlingAlley ExerciseGym
+GolfCourse PublicSwimmingPool SkiResort SportsClub StadiumOrArena TennisComplex
+Store BikeStore BookStore ClothingStore ComputerStore ConvenienceStore
+DepartmentStore ElectronicsStore Florist FurnitureStore GardenStore GroceryStore
+HardwareStore HobbyShop HomeGoodsStore JewelryStore LiquorStore MensClothingStore
+MobilePhoneStore MovieRentalStore MusicStore OfficeEquipmentStore OutletStore
+PawnShop PetStore ShoeStore SportingGoodsStore TireShop ToyStore WholesaleStore
+TelevisionStation TouristInformationCenter TravelAgency ProfessionalService
+MedicalOrganization Contractor HomeAndConstructionBusiness
+""".split()}
+
+
 def _extract_schema(soup: BeautifulSoup) -> tuple[bool, list]:
     types: list[str] = []
     for tag in soup.find_all("script", type="application/ld+json"):
@@ -267,12 +368,7 @@ def _extract_schema(soup: BeautifulSoup) -> tuple[bool, list]:
                     types.extend(t if isinstance(t, list) else [t])
     # LocalBusiness has many subtypes (Electrician, Plumber, HVACBusiness...) and
     # any of them counts as correctly marked up.
-    local_markers = {
-        "localbusiness", "electrician", "plumber", "hvacbusiness", "roofingcontractor",
-        "homeandconstructionbusiness", "generalcontractor", "professionalservice",
-        "restaurant", "store", "contractor",
-    }
-    has_local = any(str(t).lower() in local_markers for t in types)
+    has_local = any(str(t).lower().rsplit("/", 1)[-1] in LOCAL_BUSINESS_TYPES for t in types)
     return has_local, sorted(set(str(t) for t in types))
 
 
@@ -317,6 +413,39 @@ def _clean_emails(raw: set, site_host: str = "") -> list:
     priority = ("info@", "contact@", "office@", "sales@", "hello@", "service@", "admin@")
     out = sorted(set(out), key=lambda e: (not e.startswith(priority), e))
     return out[:5]
+
+
+def _sitemap_paths(session, base: str, robots_cache: dict) -> list[str] | None:
+    """Paths listed in /sitemap.xml (following one index level). None if absent."""
+    def _locs(xml: str) -> list[str]:
+        return re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", xml or "", re.I)
+
+    url = urlparse.urljoin(base, "/sitemap.xml")
+    if not _robots_ok(base, url, robots_cache):
+        return None
+    r = _fetch(session, url, _retry=False)
+    if r is None or r.status_code >= 400 or "<loc>" not in (r.text or "").lower():
+        r = _fetch(session, urlparse.urljoin(base, "/sitemap_index.xml"), _retry=False)
+        if r is None or r.status_code >= 400 or "<loc>" not in (r.text or "").lower():
+            return None
+    locs = _locs(r.text)
+    if "<sitemapindex" in (r.text or "").lower():
+        children = [u for u in locs if not re.search(r"(post|blog|tag|category|author|product)", u, re.I)]
+        locs = []
+        for child in children[:3]:
+            time.sleep(C.CRAWL_DELAY_S)
+            rc = _fetch(session, child, _retry=False)
+            if rc is not None and rc.status_code < 400:
+                locs.extend(_locs(rc.text))
+            if len(locs) >= SITEMAP_MAX_URLS:
+                break
+    host = urlparse.urlparse(base).netloc.replace("www.", "")
+    paths = []
+    for u in locs[:SITEMAP_MAX_URLS]:
+        parsed = urlparse.urlparse(u)
+        if parsed.netloc.replace("www.", "") == host:
+            paths.append(parsed.path.lower())
+    return paths
 
 
 def crawl_site(business: dict, session: requests.Session | None = None) -> SiteFindings:
@@ -396,7 +525,18 @@ def crawl_site(business: dict, session: requests.Session | None = None) -> SiteF
             if "google.com/maps" in low or "g.page" in low or "goo.gl/maps" in low:
                 f.has_gbp_link = True
 
+    # --- booking platforms (links, iframes, scripts) ---
+    for host, provider in BOOKING_PROVIDERS.items():
+        if host in low_html:
+            f.has_online_booking = True
+            f.booking_provider = provider
+            break
+
     # --- follow a small set of internal pages ---
+    offering_words = _offering_words(business)
+    location_tokens = _location_tokens(business)
+    offering_paths: set[str] = set()
+    location_paths: set[str] = set()
     internal: list[str] = []
     seen = {resp.url.rstrip("/")}
     for a in soup.find_all("a", href=True):
@@ -407,10 +547,17 @@ def crawl_site(business: dict, session: requests.Session | None = None) -> SiteF
         if urlparse.urlparse(full).netloc != parsed.netloc:
             continue
         path = urlparse.urlparse(full).path.lower()
-        if any(h in path for h in SERVICE_PAGE_HINTS):
-            f.has_service_pages = True
-        if any(h in path for h in CITY_PAGE_HINTS):
-            f.has_city_pages = True
+        anchor = a.get_text(" ", strip=True)
+        anchor_slug = _slug(anchor)
+        if path not in ("", "/") and (
+            _path_matches(path, offering_words) or _path_matches(anchor_slug, offering_words)
+        ):
+            offering_paths.add(path.rstrip("/"))
+            title = _anchor_title(anchor)
+            if title and title not in f.offering_titles and len(f.offering_titles) < 8:
+                f.offering_titles.append(title)
+        if path not in ("", "/") and _path_matches(path, location_tokens):
+            location_paths.add(path.rstrip("/"))
         if full.rstrip("/") in seen:
             continue
         if any(h in path for h in C.CONTACT_PAGE_HINTS):
@@ -440,6 +587,32 @@ def crawl_site(business: dict, session: requests.Session | None = None) -> SiteF
             if got:
                 f.has_localbusiness_schema = True
                 f.schema_types = sorted(set(f.schema_types + types))
+
+    # --- sitemap: catches offering/location pages the homepage never links ---
+    sitemap_paths = _sitemap_paths(session, base, robots_cache)
+    if sitemap_paths is not None:
+        f.sitemap_url_count = len(sitemap_paths)
+        content_pages = 0
+        for path in sitemap_paths:
+            if path in ("", "/"):
+                continue
+            if _path_matches(path, offering_words):
+                offering_paths.add(path.rstrip("/"))
+            if _path_matches(path, location_tokens):
+                location_paths.add(path.rstrip("/"))
+            if not any(g in path for g in GENERIC_PATH_WORDS):
+                content_pages += 1
+        # A site with many substantive pages almost certainly covers its
+        # offerings even when the slugs don't use our vocabulary. Stay quiet.
+        if not offering_paths and content_pages >= 6:
+            f.offering_page_count = content_pages
+            f.has_service_pages = True
+
+    if offering_paths:
+        f.offering_page_count = max(f.offering_page_count, len(offering_paths))
+        f.has_service_pages = True
+    f.location_page_count = len(location_paths)
+    f.has_city_pages = bool(location_paths)
 
     if not f.has_contact_form:
         # Detect ANY real form, then exclude search boxes — the previous

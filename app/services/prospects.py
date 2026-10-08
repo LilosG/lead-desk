@@ -3,6 +3,7 @@ from typing import Any
 
 from app.repositories.prospects import ProspectRepository
 from pipeline import config as market_config
+from pipeline.scoring_labels import LABEL_NAMES
 
 
 class WorkflowVersionConflict(Exception):
@@ -26,6 +27,8 @@ class ProspectService:
         trading: bool | None,
         established: bool | None,
         category_opportunity: bool | None,
+        label: str | None = None,
+        market: str | None = None,
     ) -> dict:
         rows, total = self.repository.list_prospects(
             page=page,
@@ -38,6 +41,8 @@ class ProspectService:
             trading=trading,
             established=established,
             category_opportunity=category_opportunity,
+            label=label,
+            market=market,
         )
 
         return {
@@ -53,22 +58,22 @@ class ProspectService:
     def filter_meta(self) -> dict:
         meta = self.repository.filter_meta()
 
-        configured_cities = list(market_config.TARGET_CITIES)
-        observed_cities = [
-            city for city in meta["cities"] if city not in configured_cities
-        ]
-
+        # Only what has actually been swept. Presets are listed first so the
+        # filter order is stable, but no city list is assumed.
         configured_verticals = list(market_config.VERTICALS)
         observed_verticals = [
             vertical
             for vertical in meta["verticals"]
             if vertical not in configured_verticals
         ]
+        seen = set(meta["verticals"])
 
         return {
             **meta,
-            "cities": configured_cities + sorted(observed_cities),
-            "verticals": configured_verticals + sorted(observed_verticals),
+            "cities": sorted(meta["cities"]),
+            "verticals": [v for v in configured_verticals if v in seen]
+            + sorted(observed_verticals),
+            "labels": dict(LABEL_NAMES),
         }
 
     @staticmethod

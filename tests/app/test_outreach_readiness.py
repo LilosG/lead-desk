@@ -51,8 +51,8 @@ def test_readiness_explains_each_blocker():
 
     assert result["eligible"] is False
 
+    # A small review count is never a blocker: volume first, quality sorts.
     assert result["reasons"] == [
-        "Business has fewer than 10 Google reviews.",
         "Manual verification is required before outreach.",
         "The prospect email address is suppressed.",
         "Prospect is already in the outreach queue.",

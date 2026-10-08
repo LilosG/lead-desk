@@ -39,6 +39,7 @@ class SweepService:
                     "priority": spec["priority"],
                     "query_count": len(spec["queries"]),
                     "has_case_study": bool(spec.get("case_study")),
+                    "profile": vertical_config.vertical_profile(key),
                 }
             )
 

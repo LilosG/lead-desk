@@ -8,7 +8,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
 >
   <div class="space-y-5">
     <section class="rounded-lg border border-[var(--line)] bg-white p-4">
-      <div class="grid gap-3 lg:grid-cols-[minmax(240px,1.6fr)_repeat(4,minmax(140px,0.7fr))]">
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.4fr)_repeat(6,minmax(120px,0.7fr))]">
         <div>
           <label for="search" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
             Search
@@ -19,6 +19,18 @@ import AppLayout from '../../layouts/AppLayout.astro';
             placeholder="Business, city, phone, address…"
             class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[var(--accent)]"
           />
+        </div>
+
+        <div>
+          <label for="market" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
+            Market
+          </label>
+          <select
+            id="market"
+            class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">All markets</option>
+          </select>
         </div>
 
         <div>
@@ -35,13 +47,13 @@ import AppLayout from '../../layouts/AppLayout.astro';
 
         <div>
           <label for="vertical" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
-            Vertical
+            Niche
           </label>
           <select
             id="vertical"
             class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
           >
-            <option value="">All verticals</option>
+            <option value="">All niches</option>
           </select>
         </div>
 
@@ -75,6 +87,18 @@ import AppLayout from '../../layouts/AppLayout.astro';
             <option value="none">No contact</option>
           </select>
         </div>
+
+        <div>
+          <label for="label" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
+            Label
+          </label>
+          <select
+            id="label"
+            class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">Any label</option>
+          </select>
+        </div>
       </div>
 
       <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-4">
@@ -82,7 +106,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
           id="filter-established"
           type="button"
           data-toggle-key="established"
-          class="rounded-full border border-[var(--dark)] bg-[var(--dark)] px-3 py-1.5 text-xs font-medium text-white"
+          class="rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-medium"
         >
           Established
         </button>
@@ -93,7 +117,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
           data-toggle-key="trading"
           class="rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-medium"
         >
-          Confirmed trading
+          Recently active
         </button>
 
         <button
@@ -126,6 +150,16 @@ import AppLayout from '../../layouts/AppLayout.astro';
           </div>
         </div>
 
+        <div class="flex flex-wrap items-center justify-end gap-2">
+        <span id="batch-status" class="text-xs text-[var(--muted)]"></span>
+        <button
+          id="batch-audit"
+          type="button"
+          disabled
+          class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Create audit reports (0)
+        </button>
         <select
           id="page-size"
           class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-xs"
@@ -134,6 +168,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
           <option value="50">50 / page</option>
           <option value="100">100 / page</option>
         </select>
+        </div>
       </div>
 
       <div id="prospect-error" class="hidden border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"></div>
@@ -142,13 +177,16 @@ import AppLayout from '../../layouts/AppLayout.astro';
         <table class="min-w-full border-collapse">
           <thead class="bg-[var(--surface-muted)]">
             <tr class="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+              <th class="w-8 px-4 py-3">
+                <input id="select-page" type="checkbox" aria-label="Select all on this page" />
+              </th>
               <th class="px-4 py-3">Business</th>
               <th class="px-4 py-3">Score</th>
               <th class="px-4 py-3">Tier</th>
               <th class="px-4 py-3">Reviews</th>
               <th class="px-4 py-3">Contact</th>
               <th class="px-4 py-3">Website</th>
-              <th class="px-4 py-3">Signals</th>
+              <th class="px-4 py-3">Labels</th>
               <th class="px-4 py-3"></th>
             </tr>
           </thead>
@@ -207,6 +245,8 @@ import AppLayout from '../../layouts/AppLayout.astro';
       category_opportunity: boolean;
       established: boolean;
       real_gap_count: number;
+      labels: string[];
+      market: string | null;
       needs_manual_check: boolean;
     };
 
@@ -223,6 +263,8 @@ import AppLayout from '../../layouts/AppLayout.astro';
     type MetaResponse = {
       cities: string[];
       verticals: string[];
+      markets: string[];
+      labels: Record<string, string>;
       tiers: string[];
       total_prospects: number;
     };
@@ -235,6 +277,13 @@ import AppLayout from '../../layouts/AppLayout.astro';
     const verticalSelect = $('#vertical') as HTMLSelectElement;
     const tierSelect = $('#tier') as HTMLSelectElement;
     const contactSelect = $('#contact') as HTMLSelectElement;
+    const marketSelect = $('#market') as HTMLSelectElement;
+    const labelSelect = $('#label') as HTMLSelectElement;
+    const batchButton = $('#batch-audit') as HTMLButtonElement;
+    const batchStatus = $('#batch-status') as HTMLSpanElement;
+    const selectPage = $('#select-page') as HTMLInputElement;
+    const selected = new Set<string>();
+    let labelNames: Record<string, string> = {};
     const pageSizeSelect = $('#page-size') as HTMLSelectElement;
 
     const rows = $('#prospect-rows') as HTMLTableSectionElement;
@@ -253,8 +302,11 @@ import AppLayout from '../../layouts/AppLayout.astro';
       vertical: '',
       tier: '',
       contact: '',
+      market: '',
+      label: '',
       trading: false,
-      established: true,
+      // Volume first: show every lead by default; labels and filters narrow it.
+      established: false,
       categoryOpportunity: false,
     };
 
@@ -282,13 +334,12 @@ import AppLayout from '../../layouts/AppLayout.astro';
       state.vertical = params.get('vertical') || '';
       state.tier = params.get('tier') || '';
       state.contact = params.get('contact') || '';
+      state.market = params.get('market') || '';
+      state.label = params.get('label') || '';
 
       state.trading = params.get('trading') === 'true';
 
-      state.established =
-        params.has('established')
-          ? params.get('established') === 'true'
-          : true;
+      state.established = params.get('established') === 'true';
 
       state.categoryOpportunity =
         params.get('category_opportunity') === 'true';
@@ -300,6 +351,8 @@ import AppLayout from '../../layouts/AppLayout.astro';
       verticalSelect.value = state.vertical;
       tierSelect.value = state.tier;
       contactSelect.value = state.contact;
+      marketSelect.value = state.market;
+      labelSelect.value = state.label;
       pageSizeSelect.value = String(state.pageSize);
 
       updateToggleStyles();
@@ -333,6 +386,8 @@ import AppLayout from '../../layouts/AppLayout.astro';
       if (state.vertical) params.set('vertical', state.vertical);
       if (state.tier) params.set('tier', state.tier);
       if (state.contact) params.set('contact', state.contact);
+      if (state.market) params.set('market', state.market);
+      if (state.label) params.set('label', state.label);
       if (state.trading) params.set('trading', 'true');
       if (state.established) params.set('established', 'true');
       if (state.categoryOpportunity) {
@@ -357,14 +412,23 @@ import AppLayout from '../../layouts/AppLayout.astro';
       );
     }
 
-    function signalBadges(item: Prospect) {
-      const badges: string[] = [];
+    const LABEL_STYLES: Record<string, string> = {
+      established: 'bg-[var(--accent-soft)]',
+      no_website: 'bg-sky-50 text-sky-800',
+      verify_first: 'bg-red-50 text-red-700',
+      site_down: 'bg-red-50 text-red-700',
+      franchise: 'bg-neutral-100 text-neutral-600',
+      no_contact: 'bg-neutral-100 text-neutral-600',
+      email_found: 'bg-emerald-50 text-emerald-800',
+      phone_only: 'bg-amber-50 text-amber-800',
+    };
 
-      if (item.established) {
-        badges.push(
-          '<span class="rounded-full bg-[var(--accent-soft)] px-2 py-1 text-[11px] font-medium">Established</span>',
-        );
-      }
+    function signalBadges(item: Prospect) {
+      const badges = (item.labels || []).map((key) => {
+        const style = LABEL_STYLES[key] || 'bg-[var(--surface-muted)]';
+        const name = labelNames[key] || key.replaceAll('_', ' ');
+        return `<span class="rounded-full ${style} px-2 py-1 text-[11px] font-medium">${escapeHtml(name)}</span>`;
+      });
 
       if (item.category_opportunity) {
         badges.push(
@@ -372,13 +436,18 @@ import AppLayout from '../../layouts/AppLayout.astro';
         );
       }
 
-      if (item.needs_manual_check) {
+      if (item.needs_manual_check && !(item.labels || []).includes('verify_first')) {
         badges.push(
           '<span class="rounded-full bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700">Check</span>',
         );
       }
 
       return badges.join(' ');
+    }
+
+    function updateBatchButton() {
+      batchButton.textContent = `Create audit reports (${selected.size})`;
+      batchButton.disabled = selected.size === 0;
     }
 
     function renderRows(items: Prospect[]) {
@@ -406,9 +475,17 @@ import AppLayout from '../../layouts/AppLayout.astro';
           return `
             <tr class="align-top hover:bg-[var(--surface-muted)]/50">
               <td class="px-4 py-4">
+                <input
+                  type="checkbox"
+                  data-select-id="${escapeHtml(item.place_id)}"
+                  ${selected.has(item.place_id) ? 'checked' : ''}
+                  aria-label="Select ${escapeHtml(item.name)}"
+                />
+              </td>
+              <td class="px-4 py-4">
                 <div class="font-medium">${escapeHtml(item.name) || 'Unnamed business'}</div>
                 <div class="mt-1 text-xs text-[var(--muted)]">
-                  ${escapeHtml(item.city)}${item.vertical ? ` · ${escapeHtml(item.vertical)}` : ''}
+                  ${escapeHtml(item.city)}${item.vertical ? ` · ${escapeHtml(item.vertical.replaceAll('_', ' '))}` : ''}
                 </div>
                 ${
                   item.headline_gap
@@ -443,7 +520,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
               </td>
 
               <td class="px-4 py-4">
-                <div class="flex max-w-[220px] flex-wrap gap-1.5">
+                <div class="flex max-w-[260px] flex-wrap gap-1.5">
                   ${signalBadges(item)}
                 </div>
               </td>
@@ -460,6 +537,16 @@ import AppLayout from '../../layouts/AppLayout.astro';
           `;
         })
         .join('');
+
+      rows.querySelectorAll<HTMLInputElement>('[data-select-id]').forEach((box) => {
+        box.addEventListener('change', () => {
+          const id = box.dataset.selectId || '';
+          if (box.checked) selected.add(id);
+          else selected.delete(id);
+          updateBatchButton();
+        });
+      });
+      selectPage.checked = items.length > 0 && items.every((i) => selected.has(i.place_id));
     }
 
     async function loadMeta() {
@@ -481,7 +568,22 @@ import AppLayout from '../../layouts/AppLayout.astro';
       meta.verticals.forEach((vertical) => {
         verticalSelect.insertAdjacentHTML(
           'beforeend',
-          `<option value="${escapeHtml(vertical)}">${escapeHtml(vertical)}</option>`,
+          `<option value="${escapeHtml(vertical)}">${escapeHtml(vertical.replaceAll('_', ' '))}</option>`,
+        );
+      });
+
+      (meta.markets || []).forEach((market) => {
+        marketSelect.insertAdjacentHTML(
+          'beforeend',
+          `<option value="${escapeHtml(market)}">${escapeHtml(market.replace(/, USA$/, ''))}</option>`,
+        );
+      });
+
+      labelNames = meta.labels || {};
+      Object.entries(labelNames).forEach(([key, name]) => {
+        labelSelect.insertAdjacentHTML(
+          'beforeend',
+          `<option value="${escapeHtml(key)}">${escapeHtml(name)}</option>`,
         );
       });
 
@@ -535,6 +637,8 @@ import AppLayout from '../../layouts/AppLayout.astro';
       state.vertical = verticalSelect.value;
       state.tier = tierSelect.value;
       state.contact = contactSelect.value;
+      state.market = marketSelect.value;
+      state.label = labelSelect.value;
       state.pageSize = Number(pageSizeSelect.value);
 
       loadProspects();
@@ -550,7 +654,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       }, 300);
     });
 
-    [citySelect, verticalSelect, tierSelect, contactSelect, pageSizeSelect]
+    [citySelect, verticalSelect, tierSelect, contactSelect, marketSelect, labelSelect, pageSizeSelect]
       .forEach((element) => {
         element.addEventListener('change', refreshFromControls);
       });
@@ -586,6 +690,8 @@ import AppLayout from '../../layouts/AppLayout.astro';
       state.vertical = '';
       state.tier = '';
       state.contact = '';
+      state.market = '';
+      state.label = '';
       state.trading = false;
       state.established = false;
       state.categoryOpportunity = false;
@@ -603,6 +709,42 @@ import AppLayout from '../../layouts/AppLayout.astro';
     nextButton.addEventListener('click', () => {
       state.page += 1;
       loadProspects();
+    });
+
+    selectPage.addEventListener('change', () => {
+      rows.querySelectorAll<HTMLInputElement>('[data-select-id]').forEach((box) => {
+        box.checked = selectPage.checked;
+        const id = box.dataset.selectId || '';
+        if (selectPage.checked) selected.add(id);
+        else selected.delete(id);
+      });
+      updateBatchButton();
+    });
+
+    batchButton.addEventListener('click', async () => {
+      const ids = Array.from(selected).slice(0, 50);
+      if (!ids.length) return;
+      batchButton.disabled = true;
+      batchStatus.textContent = `Creating ${ids.length} report${ids.length === 1 ? '' : 's'}…`;
+      try {
+        const response = await fetch('/api/audit-reports/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ place_ids: ids }),
+        });
+        if (!response.ok) throw new Error(`Batch API returned ${response.status}`);
+        const data = await response.json();
+        batchStatus.textContent =
+          `${data.created} report${data.created === 1 ? '' : 's'} created` +
+          (data.skipped ? `, ${data.skipped} skipped (nothing reportable)` : '');
+        ids.forEach((id) => selected.delete(id));
+        await loadProspects();
+      } catch (error) {
+        batchStatus.textContent =
+          error instanceof Error ? error.message : 'Batch failed';
+      } finally {
+        updateBatchButton();
+      }
     });
 
     readUrlState();

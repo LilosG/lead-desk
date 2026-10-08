@@ -221,7 +221,7 @@ def cmd_psi(businesses, cache, batch: int) -> None:
     sites. A business with no website and no reviews doesn't need a Lighthouse
     score to be obviously worth calling.
     """
-    scored, _ = S.score_all(businesses, cache, C.GEO_LABEL)
+    scored, _ = S.score_all(businesses, cache)
     by_id = {b["place_id"]: b for b in businesses}
     order = [s.place_id for s in scored]
 
@@ -316,7 +316,7 @@ def cmd_psi(businesses, cache, batch: int) -> None:
 
 
 def cmd_finalize(businesses, cache, args) -> None:
-    scored, baselines = S.score_all(businesses, cache, C.GEO_LABEL)
+    scored, baselines = S.score_all(businesses, cache)
     summarize(scored, businesses, baselines)
     export_csv(businesses, cache, scored, args.out)
     print(f"\nCSV -> {args.out}")

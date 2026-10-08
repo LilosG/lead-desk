@@ -268,9 +268,7 @@ def main() -> int:
         raw = json.load(open("enrichment_cache.json"))
         cache_e = {k: SiteFindings(**{a: b for a, b in v.items() if a in valid})
                    for k, v in raw.items()}
-        scored, baselines = S.score_all(businesses, cache_e, C.GEO_LABEL)
-        med = list(baselines.values())[0].median_reviews
-        live = {"active", "steady"}
+        scored, _ = S.score_all(businesses, cache_e)
         picked = []
         for s in scored:
             b = by_id.get(s.place_id)
@@ -278,7 +276,9 @@ def main() -> int:
                 continue
             if args.segment == "top":
                 picked.append(b)
-            elif s.activity in live and (b.get("review_count") or 0) >= med:
+            elif "established" in s.labels or (
+                "trading" in s.labels and "strong_reviews" in s.labels
+            ):
                 picked.append(b)
             if len(picked) >= args.limit:
                 break
