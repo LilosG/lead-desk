@@ -97,3 +97,10 @@ def test_niche_plurals_read_naturally():
     assert _plural_niche("personal injury attorney") == "personal injury attorneys"
     assert _plural_niche("auto repair") == "auto repair shops"
     assert _plural_niche("tree service") == "tree service businesses"
+
+
+def test_postal_address_is_optional_and_configurable():
+    from app.services.outreach import _footer
+    assert "Columbia" not in _footer(None)
+    assert "no thanks" in _footer(None)
+    assert "PO Box 123, San Diego, CA 92101" in _footer("PO Box 123,  San Diego, CA 92101")

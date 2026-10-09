@@ -22,7 +22,7 @@ If a run reports expired credentials, call FetchSkillScripts and retry. That hap
 
 ## Outreach rules
 - Draft-first, always. Create Gmail drafts and tell Mike to review; never send cold email without explicit instruction for that specific batch.
-- Sender is mike@lilosgrowth.com. Footer must carry the physical address (1440 Columbia St, San Diego, CA 92101) and a working opt-out. CAN-SPAM is not optional.
+- Sender is mike@lilosgrowth.com. Footer carries a working opt-out. A postal address is added only when OUTREACH_POSTAL_ADDRESS is set (use a PO box or virtual mailbox, not a home address).
 - Check the `suppression` table before every batch and honor it permanently.
 - Keep the first email link-free — links are a major spam trigger in cold mail.
 - Cap around 20-30 sends/day from the primary domain. If Mike wants to scale past that, tell him to set up a separate sending domain first rather than burning lilosgrowth.com.
