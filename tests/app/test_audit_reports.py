@@ -113,7 +113,8 @@ def test_options_only_expose_allowlisted_client_safe_findings():
     result = service.options_for_prospect("place-1")
 
     signals = [item["signal"] for item in result["options"]]
-    assert signals == ["no_localbusiness_schema", "no_service_pages", "no_city_pages", "nap_mismatch"]
+    # Ordered by impact (medium before low), then by how safe it is to include.
+    assert signals == ["no_service_pages", "nap_mismatch", "no_localbusiness_schema", "no_city_pages"]
 
     schema = result["options"][0]
     assert schema["disposition"] == "recommended"
@@ -124,7 +125,7 @@ def test_options_only_expose_allowlisted_client_safe_findings():
     nap = by_signal["nap_mismatch"]
     assert nap["disposition"] == "review_required"
     assert nap["default_selected"] is False
-    assert "Website phone" in nap["evidence"]
+    assert "Website: (619) 555-0101" in nap["evidence"]
 
     assert by_signal["no_service_pages"]["disposition"] == "recommended"
     assert by_signal["no_service_pages"]["default_selected"] is True
@@ -147,10 +148,12 @@ def test_snapshot_excludes_internal_scores_and_raw_findings():
     assert "total_score" not in serialized
     assert "tier" not in serialized
     assert "internal raw finding" not in serialized
-    assert snapshot["report_version"] == 4
+    assert snapshot["report_version"] == 5
     assert snapshot["business"]["review_count"] == 87
     assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
-    assert "Homepage scan" in snapshot["findings"][0]["evidence"]
+    # No evidence line that only repeats "what we found".
+    assert snapshot["findings"][0]["evidence"] is None
+    assert snapshot["findings"][0]["impact"] == "low"
     assert repo.created["selected_signals"] == ["no_localbusiness_schema"]
 
 
@@ -174,7 +177,8 @@ def test_snapshot_includes_broad_client_safe_audit_coverage():
     assert coverage["Business Profile connection"]["status"] == "attention"
     assert coverage["Business contact consistency"]["status"] == "review"
     assert coverage["Primary business category"]["value"] == "Electrician"
-    assert "public profile and core website signals" in snapshot["executive_summary"]
+    assert "We checked" in snapshot["executive_summary"]
+    assert "4.9-star rating from 87 Google reviews" in snapshot["executive_summary"]
     assert "opportunity" in snapshot["executive_summary"].lower()
     assert "hidden scores" not in snapshot["executive_summary"].lower()
     assert "internal scoring" not in snapshot["methodology_note"].lower()
@@ -208,7 +212,7 @@ def test_review_required_finding_must_be_explicitly_selected():
 
     finding = report["snapshot"]["findings"][0]
     assert finding["disposition"] == "review_required"
-    assert "Website phone" in finding["evidence"]
+    assert "Website: (619) 555-0101" in finding["evidence"]
 
 
 def test_unreportable_signal_is_rejected():
@@ -284,10 +288,12 @@ def test_service_and_local_page_gaps_are_client_safe_report_opportunities():
         for item in report["snapshot"]["findings"]
     }
 
-    assert "service pages were not detected" in findings["no_service_pages"]["what_we_found"].lower()
+    assert "dedicated service pages" in findings["no_service_pages"]["what_we_found"].lower()
     assert "service-area" in findings["no_city_pages"]["what_we_found"].lower()
-    assert "website crawl" in findings["no_service_pages"]["evidence"].lower()
-    assert "website crawl" in findings["no_city_pages"]["evidence"].lower()
+    # No sitemap data in this fixture, so no evidence line that would only
+    # repeat "what we found".
+    assert findings["no_service_pages"]["evidence"] is None
+    assert findings["no_city_pages"]["evidence"] is None
 
 
 
@@ -338,10 +344,11 @@ def test_review_and_speed_findings_are_reportable_with_evidence():
     options = {o["signal"]: o for o in service.options_for_prospect("place-1")["options"]}
 
     assert options["reviews_below_median"]["default_selected"] is True
-    assert "87 reviews vs. a median of 140" in options["reviews_below_median"]["evidence"]
+    assert "87 Google reviews; comparable electrician businesses" in options["reviews_below_median"]["evidence"]
+    assert "median of 140" in options["reviews_below_median"]["evidence"]
     assert "San Diego, CA" in options["reviews_below_median"]["evidence"]
-    assert options["psi_mobile_poor"]["evidence"].startswith("Google PageSpeed Insights, mobile: 41/100")
-    assert "6.2s" in options["psi_mobile_poor"]["evidence"]
+    assert options["psi_mobile_poor"]["evidence"].startswith("Google mobile speed score: 41/100")
+    assert "6.2 seconds" in options["psi_mobile_poor"]["evidence"]
     # Options are ordered priority first.
     dispositions = [o["disposition"] for o in service.options_for_prospect("place-1")["options"]]
     assert dispositions.index("recommended") < dispositions.index("optional")
@@ -381,7 +388,7 @@ def test_niche_wording_follows_the_prospect():
     service = AuditReportService(repo, FakeReportRepository())
     report = service.create_report("place-1", selected_signals=["no_service_pages"])
     finding = report["snapshot"]["findings"][0]
-    assert finding["title"] == "Treatment pages coverage"
+    assert finding["title"] == "No individual treatment pages"
     assert "treatment pages" in finding["what_we_found"]
     assert "service" not in finding["what_we_found"]
 

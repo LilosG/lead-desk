@@ -7,19 +7,23 @@ from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRoute
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
 from app.repositories.outreach import OutreachOperationLocked, OutreachRepository
 from app.repositories.outreach_evidence import OutreachEvidenceRepository
+from app.services.outreach_audit_copy import audit_email_paragraph, clean_business_name
 from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v9"
+PROMPT_VERSION = "outreach-v10"
 MAX_DRAFT_ATTEMPTS = 3
+# Matches the signature Mike uses when he edits drafts in Gmail, plus the two
+# things CAN-SPAM requires on every commercial email: a physical address and a
+# working way to opt out. Drafts edited in Gmail must keep both.
 CAN_SPAM_FOOTER = (
-    "Mike\n"
-    "LILOs Growth\n"
-    "1440 Columbia St\n"
-    "San Diego, CA 92101\n\n"
-    "If you'd rather I not reach out again, just reply and I'll make sure I don't."
+    "Mike Prickett\n"
+    "Lilos Growth\n"
+    "lilosgrowth.com\n"
+    "1440 Columbia St, San Diego, CA 92101\n\n"
+    "If you'd rather not hear from me, just reply \"no thanks\" and I won't reach out again."
 )
 
 
@@ -194,116 +198,39 @@ class OutreachService:
         snapshot = context.get("audit_snapshot")
         if not isinstance(snapshot, dict):
             return None
-
-        findings = [
-            item
-            for item in (snapshot.get("findings") or [])
-            if isinstance(item, dict) and item.get("signal")
-        ]
-        if not findings:
+        rendered = audit_email_paragraph(snapshot, business_name)
+        if rendered is None:
             return None
-
-        # Every finding the audit report can contain maps to a short, plain
-        # phrase, so any lead with a generated report can be drafted — not just
-        # the few website signals the live verifier re-checks.
-        priority = {
-            "no_website": 0,
-            "no_service_pages": 1,
-            "no_city_pages": 2,
-            "reviews_bottom_quartile": 3,
-            "reviews_below_median": 3,
-            "no_reviews": 3,
-            "psi_mobile_critical": 4,
-            "psi_mobile_poor": 4,
-            "no_localbusiness_schema": 5,
-            "no_review_replies": 6,
-            "no_services_listed": 7,
-            "no_business_description": 8,
-            "no_hours": 9,
-            "no_photos": 10,
-            "no_gbp_link": 11,
-            "no_ssl": 12,
-            "no_title": 13,
-        }
-        labels = {
-            "no_website": "a website for the Google listing",
-            "no_service_pages": "service pages",
-            "no_city_pages": "location coverage",
-            "reviews_bottom_quartile": "review volume compared with nearby competitors",
-            "reviews_below_median": "review volume compared with nearby competitors",
-            "no_reviews": "Google reviews",
-            "psi_mobile_critical": "mobile page speed",
-            "psi_mobile_poor": "mobile page speed",
-            "no_localbusiness_schema": "structured business data",
-            "no_review_replies": "replies to reviews",
-            "no_services_listed": "the services listed on the Google profile",
-            "no_business_description": "the Google profile description",
-            "no_hours": "the hours on the Google profile",
-            "no_photos": "profile photos",
-            "no_gbp_link": "the website-to-Google profile connection",
-            "no_ssl": "HTTPS",
-            "no_title": "the homepage search title",
-        }
-        website_signals = {
-            "no_service_pages", "no_city_pages", "psi_mobile_critical",
-            "psi_mobile_poor", "no_localbusiness_schema", "no_gbp_link",
-            "no_ssl", "no_title",
-        }
-
-        ordered = sorted(
-            findings,
-            key=lambda item: priority.get(str(item.get("signal")), 99),
-        )
-        focus: list[str] = []
-        focus_signals: list[str] = []
-        for item in ordered:
-            signal = str(item.get("signal"))
-            label = labels.get(signal)
-            if signal == "no_service_pages" and item.get("title"):
-                # Niche wording from the report itself, e.g. "treatment pages".
-                label = str(item["title"]).removesuffix(" coverage").strip().lower() or label
-            if label and label not in focus:
-                focus.append(label)
-                focus_signals.append(signal)
-            if len(focus) == 3:
-                break
-        if not focus:
-            return None
-
-        if len(focus) == 1:
-            focus_text = focus[0]
-        elif len(focus) == 2:
-            focus_text = f"{focus[0]} and {focus[1]}"
-        else:
-            focus_text = f"{focus[0]}, {focus[1]}, and {focus[2]}"
-
-        business = snapshot.get("business")
-        business = business if isinstance(business, dict) else {}
-        rating = business.get("rating")
-        review_count = business.get("review_count")
-
-        # ("online presence" is on the copy blocklist, so name the surfaces.)
-        website_only = all(sig in website_signals for sig in focus_signals)
-        surface = "the website" if website_only else "the Google profile and website"
-        if rating is not None and review_count is not None:
-            paragraph = (
-                f"Google shows {business_name} at {float(rating):.1f} stars across "
-                f"{int(review_count):,} reviews, but the audit found several areas where "
-                f"{surface} could support local search more effectively, particularly around "
-                f"{focus_text}."
-            )
-        else:
-            possessive = "website" if website_only else "Google profile and website"
-            paragraph = (
-                f"The audit found several areas where {business_name}'s {possessive} could support "
-                f"local search more effectively, particularly around {focus_text}."
-            )
+        paragraph, subject = rendered
+        # Subject follows the lead finding; both draft paths read it back.
+        context["_audit_subject"] = subject
 
         note = "Grounded in the latest generated Local Visibility Audit"
         if context.get("audit_source_checked_at"):
             note += f" using evidence dated {context['audit_source_checked_at']}"
         note += "."
         return paragraph, "audit_report", "not_required", note
+
+    def audit_attachments(self, item: dict | None) -> list[tuple[str, bytes]] | None:
+        """The audit PDF for drafts that say it is attached; None otherwise.
+
+        The email copy says the audit is attached, so the draft must really
+        carry it. Gmail replaces the whole message on update, so every draft
+        write for an audit-grounded item passes this again.
+        """
+        if not item or item.get("claim_signal") != "audit_report" or not item.get("place_id"):
+            return None
+        lookup = getattr(self.repository, "latest_audit_report", None)
+        if lookup is None:
+            return None
+        report = lookup(item["place_id"])
+        if not report or not isinstance(report.get("snapshot"), dict):
+            return None
+        from app.services.audit_report_pdf import render_audit_report_pdf
+
+        name = clean_business_name(report.get("name"))
+        safe = "".join(ch for ch in name if ch.isalnum() or ch in " &-").strip() or "Audit"
+        return [(f"{safe} - Local Visibility Audit.pdf", render_audit_report_pdf(report))]
 
     def _resolve_draft_grounding(
         self,
@@ -387,7 +314,7 @@ class OutreachService:
         if self.repository.is_suppressed(context["to_address"]):
             raise OutreachBlocked("email address is suppressed")
 
-        business_name = context.get("name") or "your business"
+        business_name = clean_business_name(context.get("name"))
         visible_claim, claim_signal, verification_status, verification_note = (
             self._resolve_draft_grounding(
                 context,
@@ -453,7 +380,7 @@ class OutreachService:
             updated, conflict = self.repository.record_generated_draft(
                 item_id,
                 expected_version=expected_version,
-                subject=copy.subject,
+                subject=context.get("_audit_subject") or copy.subject,
                 body=body,
                 claim_signal=claim_signal,
                 verification_status=verification_status,
@@ -546,6 +473,7 @@ class OutreachService:
                 subject=current["subject"],
                 body=current["body"],
                 message_id_header=operation["message_id_header"],
+                attachments=self.audit_attachments(current),
             )
         except GmailDraftError as exc:
             self.repository.record_gmail_operation_error(

@@ -415,6 +415,13 @@ def _clean_emails(raw: set, site_host: str = "") -> list:
     return out[:5]
 
 
+def _root_url(url: str) -> str | None:
+    parsed = urlparse.urlparse(url or "")
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}/"
+
+
 def _sitemap_paths(session, base: str, robots_cache: dict) -> list[str] | None:
     """Paths listed in /sitemap.xml (following one index level). None if absent."""
     def _locs(xml: str) -> list[str]:
@@ -475,8 +482,19 @@ def crawl_site(business: dict, session: requests.Session | None = None) -> SiteF
         # is a finding we can put in front of a prospect.
         if getattr(resp, "lilos_blocked", False) or resp.status_code in BOT_BLOCK_STATUSES:
             f.crawl_error = f"blocked_{resp.status_code}"
-        else:
-            f.crawl_error = f"http_{resp.status_code}"
+            return f
+        # The Google profile often links a deep URL (a /locations page, a
+        # tracking query, a stray "//"). If THAT fails but the homepage loads,
+        # the site isn't down: the profile's link is broken. Different finding,
+        # and saying "your site is down" would be false.
+        root = _root_url(url)
+        if root and root.rstrip("/") != url.rstrip("/"):
+            r_root = _fetch(session, root)
+            if r_root is not None and r_root.status_code < 400:
+                f.crawl_error = f"profile_link_{resp.status_code}"
+                f.redirects_to = r_root.url
+                return f
+        f.crawl_error = f"http_{resp.status_code}"
         return f
 
     parsed = urlparse.urlparse(resp.url)

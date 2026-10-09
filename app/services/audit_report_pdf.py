@@ -64,6 +64,9 @@ def _pill_colors(status: str) -> tuple[colors.Color, colors.Color]:
         "recommended": (AMBER_BG, AMBER_FG),
         "optional": (BLUE_BG, BLUE_FG),
         "review_required": (RED_BG, RED_FG),
+        "high": (RED_BG, RED_FG),
+        "medium": (AMBER_BG, AMBER_FG),
+        "low": (GREEN_BG, GREEN_FG),
     }.get(status, (SURFACE_2, MUTED))
 
 
@@ -76,6 +79,9 @@ def _status_text(status: str) -> str:
         "recommended": "Priority",
         "optional": "Supporting",
         "review_required": "Verify first",
+        "high": "High impact",
+        "medium": "Medium impact",
+        "low": "Quick win",
     }.get(status, "Reviewed")
 
 
@@ -284,7 +290,7 @@ def render_audit_report_pdf(report: dict) -> bytes:
 
     hero = Table(
         [[[
-            Paragraph("LILOS GROWTH / LOCAL SEARCH REVIEW", eyebrow),
+            Paragraph("LILOS GROWTH / LOCAL VISIBILITY REVIEW", eyebrow),
             Paragraph("Local Visibility Audit", title),
             Paragraph(_text(business.get("name")), business_name),
             Paragraph(_text("  |  ".join(hero_meta_parts)), hero_meta),
@@ -310,8 +316,12 @@ def render_audit_report_pdf(report: dict) -> bytes:
         metrics.append((f"{float(business['rating']):.1f}", "Google rating"))
     if business.get("review_count") is not None:
         metrics.append((f"{int(business['review_count']):,}", "Google reviews"))
-    metrics.append((str(len(findings)), "Opportunities identified"))
-    metrics.append((str(len(audit_scope)), "Checks reviewed"))
+    metrics.append((str(len(findings)), "Items to improve"))
+    high = sum(1 for f in findings if f.get("impact") == "high")
+    if high:
+        metrics.append((str(high), "High impact"))
+    else:
+        metrics.append((str(sum(1 for f in findings if f.get("impact") == "medium")), "Medium impact"))
     cells = [[Paragraph(_text(v), metric_value), Paragraph(_text(k), metric_label)] for v, k in metrics[:4]]
     metric_table = Table([[cell for cell in cells]], colWidths=[1.82 * inch] * 4)
     metric_table.setStyle(
@@ -330,8 +340,8 @@ def render_audit_report_pdf(report: dict) -> bytes:
     story.append(metric_table)
     story.append(Spacer(1, 7))
 
-    story.append(Paragraph("EXECUTIVE READOUT", section_kicker))
-    story.append(Paragraph("What stood out", section))
+    story.append(Paragraph("SUMMARY", section_kicker))
+    story.append(Paragraph("What we found", section))
     summary_text = snapshot.get("executive_summary") or (
         f"We reviewed the available public business and website evidence and selected {len(findings)} items for follow-up."
     )
@@ -363,9 +373,10 @@ def render_audit_report_pdf(report: dict) -> bytes:
         story.append(
             Paragraph(
                 _text(
-                    f"Public Google data for {comparison.get('sample_size')} "
-                    f"{comparison.get('niche')} businesses found in the same search. "
-                    f"Median review count: {comparison.get('median_reviews')}."
+                    f"Public Google data for {comparison.get('sample_size')} comparable "
+                    f"{comparison.get('niche')} businesses in {comparison.get('market')}. "
+                    f"Typical (median) review count: {comparison.get('median_reviews')}. "
+                    f"The three with the most reviews are shown for reference."
                 ),
                 body_muted,
             )
@@ -410,11 +421,11 @@ def render_audit_report_pdf(report: dict) -> bytes:
         story.append(Spacer(1, 7))
 
     if findings:
-        story.append(Paragraph("OPPORTUNITY SNAPSHOT", section_kicker))
-        story.append(Paragraph("Where we found opportunities", section))
+        story.append(Paragraph("PRIORITIES", section_kicker))
+        story.append(Paragraph("What to fix, in order", section))
         story.append(
             Paragraph(
-                "These items come directly from the same point-in-time audit evidence and are expanded on page 2.",
+                "Ordered by likely impact. Each item is explained in detail on the following page.",
                 body_muted,
             )
         )
@@ -422,7 +433,7 @@ def render_audit_report_pdf(report: dict) -> bytes:
 
         opportunity_rows = []
         for finding in findings:
-            disposition = finding.get("disposition") or "optional"
+            disposition = finding.get("impact") or finding.get("disposition") or "optional"
             opportunity_rows.append(
                 [
                     Paragraph(_text(finding.get("title")), scope_title),
@@ -499,17 +510,17 @@ def render_audit_report_pdf(report: dict) -> bytes:
 
     story.append(PageBreak())
     story.append(Paragraph("OPPORTUNITIES", section_kicker))
-    story.append(Paragraph("What the findings mean", section))
+    story.append(Paragraph("Details and how to fix each one", section))
     story.append(
         Paragraph(
-            "Each item below is tied to an observed condition from the same audit snapshot.",
+            "Each item is based on what we observed on the Google profile and website on the date shown.",
             body_muted,
         )
     )
     story.append(Spacer(1, 5))
 
     for index, finding in enumerate(findings, start=1):
-        disposition = finding.get("disposition") or "optional"
+        disposition = finding.get("impact") or finding.get("disposition") or "optional"
         heading = Table(
             [[[
                 Paragraph(f"FINDING {index:02d}", finding_number),
@@ -531,14 +542,14 @@ def render_audit_report_pdf(report: dict) -> bytes:
         )
 
         detail_rows = [
-            [Paragraph("WHAT WE OBSERVED", finding_label), Paragraph(_text(finding.get("what_we_found")), finding_body)],
+            [Paragraph("WHAT WE FOUND", finding_label), Paragraph(_text(finding.get("what_we_found")), finding_body)],
         ]
         if finding.get("evidence"):
             detail_rows.append([Paragraph("EVIDENCE", finding_label), Paragraph(_text(finding.get("evidence")), evidence_text)])
         detail_rows.extend(
             [
                 [Paragraph("WHY IT MATTERS", finding_label), Paragraph(_text(finding.get("why_it_matters")), finding_body)],
-                [Paragraph("RECOMMENDED ACTION", finding_label), Paragraph(_text(finding.get("recommendation")), finding_body)],
+                [Paragraph("HOW TO FIX IT", finding_label), Paragraph(_text(finding.get("recommendation")), finding_body)],
             ]
         )
         detail_table = Table(detail_rows, colWidths=[1.12 * inch, 5.81 * inch])
@@ -599,13 +610,7 @@ def render_audit_report_pdf(report: dict) -> bytes:
         )
         story.append(KeepTogether(step_box))
 
-    story.append(Spacer(1, 2))
-    story.append(
-        Paragraph(
-            "Findings should be verified and prioritized before implementation, particularly if the underlying website or profile has changed since the evidence date.",
-            body_muted,
-        )
-    )
+    story.append(Spacer(1, 4))
     story.append(Spacer(1, 3))
 
     methodology = _text(snapshot.get("methodology_note"))

@@ -310,68 +310,82 @@ class ProspectRepository:
         city: str | None,
         limit: int = 3,
     ) -> dict[str, Any] | None:
-        """Same-niche businesses in the same searched market, for comparison.
+        """Comparable businesses for the local comparison in an audit report.
 
-        Uses the searched market when known, else the business's own city.
-        Returns the market median, sample size and the top businesses by
-        review count (excluding the prospect itself).
+        Comparable means: same niche, same city, not a franchise, and (when
+        there are enough of them) the same Google category, so a med spa isn't
+        compared with a resort spa or an IV clinic with 7,000 reviews.
         """
         if not vertical or not (market or city):
             return None
 
-        if market:
-            scope = "seg.market = %(market)s"
-        else:
-            scope = "w.city = %(city)s"
-
-        query = f"""
-            with peers as (
-                select
-                    w.place_id,
-                    w.name,
-                    w.rating,
-                    coalesce(w.review_count, 0) as review_count,
-                    w.website_url is not null as has_website
-                from v_lead_worklist w
-                join v_lead_segments seg
-                  on seg.place_id = w.place_id
-                where exists (
-                        select 1
-                        from business_vertical_memberships bvm
-                        where bvm.place_id = w.place_id
-                          and bvm.vertical = %(vertical)s
-                    )
-                  and {scope}
-            )
+        query = """
             select
-                (select count(*) from peers) as sample_size,
-                (select percentile_cont(0.5) within group (order by review_count)
-                   from peers) as median_reviews,
-                coalesce(
-                    (
-                        select json_agg(t order by t.review_count desc, t.name)
-                        from (
-                            select name, rating, review_count, has_website
-                            from peers
-                            where place_id <> %(place_id)s
-                            order by review_count desc, name
-                            limit %(limit)s
-                        ) t
-                    ),
-                    '[]'::json
-                ) as leaders
+                b.place_id,
+                b.name,
+                b.city,
+                b.primary_type,
+                b.rating,
+                coalesce(b.review_count, 0) as review_count,
+                b.website_url is not null as has_website,
+                coalesce(b.is_franchise, false) as is_franchise
+            from businesses b
+            join v_lead_segments seg
+              on seg.place_id = b.place_id
+            where exists (
+                    select 1
+                    from business_vertical_memberships bvm
+                    where bvm.place_id = b.place_id
+                      and bvm.vertical = %(vertical)s
+                )
+              and (
+                    (%(market)s::text is not null and seg.market = %(market)s)
+                    or (%(city)s::text is not null and lower(b.city) = lower(%(city)s))
+                  )
+            limit 3000
         """
-        params = {
-            "vertical": vertical,
-            "market": market,
-            "city": city,
-            "place_id": place_id,
-            "limit": limit,
-        }
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, params)
-                return cur.fetchone()
+                cur.execute(query, {"vertical": vertical, "market": market, "city": city})
+                rows = cur.fetchall()
+
+        target = next((r for r in rows if r["place_id"] == place_id), None)
+        peers = [r for r in rows if not r["is_franchise"]]
+
+        def narrow(candidates, key, value, minimum):
+            if not value:
+                return candidates
+            subset = [r for r in candidates if (r.get(key) or "").lower() == str(value).lower()]
+            return subset if len(subset) >= minimum else candidates
+
+        peers = narrow(peers, "city", city, 8)
+        primary_type = target.get("primary_type") if target else None
+        peers = narrow(peers, "primary_type", primary_type, 5)
+
+        reviews = sorted(int(r["review_count"]) for r in peers)
+        if not reviews:
+            return None
+        mid = len(reviews) // 2
+        median = reviews[mid] if len(reviews) % 2 else (reviews[mid - 1] + reviews[mid]) / 2
+        leaders = sorted(
+            (r for r in peers if r["place_id"] != place_id),
+            key=lambda r: (-int(r["review_count"]), r["name"] or ""),
+        )[:limit]
+        cities = {(r.get("city") or "").strip() for r in peers if r.get("city")}
+        return {
+            "sample_size": len(peers),
+            "median_reviews": median,
+            "scope_city": next(iter(cities)) if len(cities) == 1 else None,
+            "leaders": [
+                {
+                    "name": r["name"],
+                    "rating": r["rating"],
+                    "review_count": int(r["review_count"]),
+                    "has_website": bool(r["has_website"]),
+                }
+                for r in leaders
+            ],
+        }
 
     def get_findings(self, place_id: str) -> list[dict[str, Any]]:
         query = """

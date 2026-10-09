@@ -245,9 +245,9 @@ def test_generation_uses_one_coherent_note_and_verified_claim_slot():
     assert CLAIM_TOKEN not in repo.generated["body"]
     assert "Happy to send over" not in repo.generated["body"]
     assert "1440 Columbia St" in repo.generated["body"]
-    assert "If you'd rather I not reach out again" in repo.generated["body"]
+    assert "If you'd rather not hear from me" in repo.generated["body"]
     assert repo.generated["generation_model"] == "test/model"
-    assert repo.generated["prompt_version"] == "outreach-v9"
+    assert repo.generated["prompt_version"] == "outreach-v10"
 
 
 def test_generation_adds_public_google_evidence_but_not_internal_scores():
