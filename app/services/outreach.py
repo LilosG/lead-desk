@@ -15,16 +15,24 @@ from app.services.outreach_verification import OutreachClaimVerifier
 
 PROMPT_VERSION = "outreach-v11"
 MAX_DRAFT_ATTEMPTS = 3
-# Matches the signature Mike uses when he edits drafts in Gmail, plus the two
-# things CAN-SPAM requires on every commercial email: a physical address and a
-# working way to opt out. Drafts edited in Gmail must keep both.
-CAN_SPAM_FOOTER = (
-    "Mike Prickett\n"
-    "Lilos Growth\n"
-    "lilosgrowth.com\n"
-    "1440 Columbia St, San Diego, CA 92101\n\n"
-    "If you'd rather not hear from me, just reply \"no thanks\" and I won't reach out again."
-)
+# Signature plus a working opt-out. The postal line is optional and comes from
+# OUTREACH_POSTAL_ADDRESS (e.g. a PO box or virtual mailbox); CAN-SPAM expects
+# a valid postal address on commercial email, so set one before sending at volume.
+def _footer(postal_address: str | None = None) -> str:
+    lines = ["Mike Prickett", "Lilos Growth", "lilosgrowth.com"]
+    if postal_address and postal_address.strip():
+        lines.append(" ".join(postal_address.split()))
+    return "\n".join(lines) + (
+        "\n\nIf you'd rather not hear from me, just reply \"no thanks\" and I won't reach out again."
+    )
+
+
+def _configured_postal_address() -> str | None:
+    import os
+    return os.environ.get("OUTREACH_POSTAL_ADDRESS") or None
+
+
+CAN_SPAM_FOOTER = _footer(_configured_postal_address())
 
 
 class OutreachConflict(RuntimeError):

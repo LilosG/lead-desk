@@ -94,7 +94,8 @@ class FakeGmail:
         self.create_calls += 1
         assert kwargs["to_address"] == "owner@example.com"
         assert kwargs["subject"] == "Reviewed subject"
-        assert "1440 Columbia St" in kwargs["body"]
+        assert "1440 Columbia St" not in kwargs["body"]
+        assert "no thanks" in kwargs["body"]
         assert kwargs["message_id_header"].startswith("<")
         assert kwargs["message_id_header"].endswith("@lead-desk.lilosgrowth.com>")
         return GmailDraftResult(draft_id="draft-123", message_id="message-123")
@@ -244,7 +245,8 @@ def test_generation_uses_one_coherent_note_and_verified_claim_slot():
     assert "LocalBusiness schema markup" not in repo.generated["body"]
     assert CLAIM_TOKEN not in repo.generated["body"]
     assert "Happy to send over" not in repo.generated["body"]
-    assert "1440 Columbia St" in repo.generated["body"]
+    assert "1440 Columbia St" not in repo.generated["body"]
+    assert "no thanks" in repo.generated["body"]
     assert "If you'd rather not hear from me" in repo.generated["body"]
     assert repo.generated["generation_model"] == "test/model"
     assert repo.generated["prompt_version"] == "outreach-v11"
@@ -489,7 +491,7 @@ def test_gmail_creation_requires_human_ready_state_and_never_sends():
     repo.item.update({
         "status": "draft_ready",
         "subject": "Reviewed subject",
-        "body": "Reviewed body\n\n1440 Columbia St",
+        "body": "Reviewed body\n\nIf you'd rather not hear from me, just reply \"no thanks\"",
         "verification_status": "verified",
     })
     gmail = FakeGmail()
@@ -512,7 +514,7 @@ def test_uncertain_gmail_result_reconciles_without_duplicate_creation():
     repo.item.update({
         "status": "draft_ready",
         "subject": "Reviewed subject",
-        "body": "Reviewed body\n\n1440 Columbia St",
+        "body": "Reviewed body\n\nIf you'd rather not hear from me, just reply \"no thanks\"",
         "verification_status": "verified",
     })
     gmail = UncertainThenRecoveringGmail()
