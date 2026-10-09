@@ -14,7 +14,7 @@ def _body(prefix: str = "Hi,", suffix: str = "") -> str:
 
 
 def test_prompt_version_is_current():
-    assert PROMPT_VERSION == "outreach-v10"
+    assert PROMPT_VERSION == "outreach-v11"
 
 
 def test_validator_accepts_short_claim_slot_copy():
