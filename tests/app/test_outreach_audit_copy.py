@@ -65,14 +65,35 @@ def test_audit_grounded_drafts_attach_the_report_and_others_do_not():
     assert service.audit_attachments({"claim_signal": "no_ssl", "place_id": "p1"}) is None
 
 
-def test_email_mentions_the_local_benchmark():
+def test_email_leads_with_the_local_benchmark():
     snapshot = {
-        "market_comparison": {"market": "Scottsdale, AZ", "niche": "med spa", "median_reviews": 64},
-        "benchmarks": {"sample_size": 29, "behind": 6, "rows": [{}] * 8},
+        "business": {"rating": 5.0, "review_count": 11},
+        "market_comparison": {"market": "Scottsdale, AZ", "niche": "med spa", "median_reviews": 64,
+                              "leaders": [{"review_count": 412}]},
+        "benchmarks": {"sample_size": 29, "behind": 6, "rows": [
+            {"metric": "Mobile speed score", "typical": "50/100", "verdict": "behind"},
+            {"metric": "Online booking", "typical": "59% offer it", "verdict": "behind"},
+        ]},
+        "page_gaps": {"sample_size": 29, "gaps": [{"label": "Botox & Dysport", "count": 22}]},
         "findings": [
             {"signal": "psi_mobile_critical", "data": {"psi_performance": 23, "lcp_ms": 13800}},
-            {"signal": "no_photos"},
+            {"signal": "reviews_bottom_quartile", "data": {"reviews": 11, "median": 64}},
         ],
     }
-    paragraph, _ = audit_email_paragraph(snapshot, "Desert Bloom Aesthetics LLC")
-    assert "I also compared you with 29 other med spa businesses in Scottsdale; you're behind on 6 of the 8" in paragraph
+    paragraph, subject = audit_email_paragraph(snapshot, "Desert Bloom Aesthetics LLC")
+    assert subject == "How Desert Bloom Aesthetics compares in Scottsdale"
+    assert paragraph.startswith("I compared Desert Bloom Aesthetics with 29 other med spas in Scottsdale")
+    assert "scored 23/100 on Google's speed test and took about 14 seconds" in paragraph
+    assert "The typical one there scores 50/100." in paragraph
+    assert "22 of them also have their own Botox & Dysport page; your site doesn't." in paragraph
+    assert "5.0-star rating is strong" in paragraph
+    assert len(paragraph.split()) < 90
+
+
+def test_niche_plurals_read_naturally():
+    from app.services.outreach_audit_copy import _plural_niche
+    assert _plural_niche("med spa") == "med spas"
+    assert _plural_niche("real estate agent") == "real estate agents"
+    assert _plural_niche("personal injury attorney") == "personal injury attorneys"
+    assert _plural_niche("auto repair") == "auto repair shops"
+    assert _plural_niche("tree service") == "tree service businesses"

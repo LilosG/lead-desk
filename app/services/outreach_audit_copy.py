@@ -221,12 +221,149 @@ def _lead_sentence(signal: str, item: dict[str, Any], name: str,
     return None
 
 
+# Plural for "N other ___ in City". Unknown niches fall back to "<label> businesses".
+_PLURALS = {
+    "auto repair": "auto repair shops", "hvac": "HVAC companies", "roofing": "roofing companies",
+    "landscaping": "landscaping companies", "real estate": "real estate agents",
+    "pest control": "pest control companies", "party rental": "party rental companies",
+}
+_COUNT_NOUNS = ("spa", "dentist", "agent", "attorney", "lawyer", "electrician", "plumber",
+                "chiropractor", "contractor", "clinic", "practice", "roofer", "painter",
+                "cleaner", "orthodontist", "therapist", "realtor", "studio", "salon", "shop")
+
+
+def _plural_niche(niche: str | None) -> str:
+    label = (niche or "").strip()
+    if not label or label == "comparable":
+        return "businesses like yours"
+    if label.lower() in _PLURALS:
+        return _PLURALS[label.lower()]
+    if label.lower().endswith(_COUNT_NOUNS):
+        return label + "s"
+    return f"{label} businesses"
+
+
+def _bench_row(snapshot: dict[str, Any], metric: str) -> dict[str, Any] | None:
+    for row in (snapshot.get("benchmarks") or {}).get("rows") or []:
+        if row.get("metric") == metric:
+            return row
+    return None
+
+
+def _bench_gap_sentence(signal: str, item: dict[str, Any], name: str,
+                        snapshot: dict[str, Any]) -> str | None:
+    """'The biggest gap ...' sentence for the lead finding, with the local typical."""
+    data = item.get("data") if isinstance(item.get("data"), dict) else {}
+    business = snapshot.get("business") if isinstance(snapshot.get("business"), dict) else {}
+    comparison = snapshot.get("market_comparison") or {}
+    if signal in {"psi_mobile_critical", "psi_mobile_poor"} and _num(data.get("psi_performance")):
+        sentence = (f"The biggest gap is mobile speed: your homepage scored "
+                    f"{_num(data['psi_performance'])}/100 on Google's speed test")
+        try:
+            if data.get("lcp_ms") and float(data["lcp_ms"]) >= 3000:
+                sentence += f" and took about {float(data['lcp_ms']) / 1000:.0f} seconds to show up on a phone"
+        except (TypeError, ValueError):
+            pass
+        row = _bench_row(snapshot, "Mobile speed score")
+        if row and row.get("typical"):
+            sentence += f". The typical one there scores {row['typical']}"
+        return sentence + "."
+    if signal in {"reviews_bottom_quartile", "reviews_below_median"}:
+        reviews = _num(data.get("reviews", business.get("review_count")))
+        median = _num(data.get("median", comparison.get("median_reviews")))
+        if reviews and median:
+            leaders = comparison.get("leaders") or []
+            top = _num(leaders[0].get("review_count")) if leaders else None
+            tail = f", and the most-reviewed has {top}" if top else ""
+            return (f"The biggest gap is reviews: you have {reviews} on Google, the typical "
+                    f"one has about {median}{tail}.")
+    if signal == "no_reviews":
+        return "The biggest gap is reviews: your Google listing doesn't have any yet."
+    if signal == "no_website":
+        return ("The biggest gap: your Google listing doesn't have a website on it, so people "
+                "who find you on Maps have nowhere to look before deciding whether to call.")
+    if signal == "broken_profile_link":
+        return ("The biggest gap: the website link on your Google listing opens an error page, "
+                "so anyone who taps \"Website\" on Maps hits a dead end. Your homepage itself loads fine.")
+    if signal == "site_down":
+        return "The biggest gap: when I opened your website from Google, it showed an error page."
+    if signal == "no_ssl":
+        return ("The biggest gap: your site loads without HTTPS, so browsers show visitors a "
+                "\"Not secure\" warning first.")
+    phrase = _email_phrase(item)
+    return f"The clearest gap is {phrase}." if phrase else None
+
+
+def _support_sentence(lead_signal: str, snapshot: dict[str, Any]) -> str | None:
+    """One more concrete, local fact that isn't the lead."""
+    gaps = (snapshot.get("page_gaps") or {}).get("gaps") or []
+    if gaps and lead_signal not in {"no_service_pages"}:
+        top = gaps[0]
+        return f"{top['count']} of them also have their own {top['label']} page; your site doesn't."
+    booking = _bench_row(snapshot, "Online booking")
+    if booking and booking.get("verdict") == "behind":
+        return f"{booking['typical'].replace(' offer it', '')} of them also take bookings online; your site doesn't."
+    recent = _bench_row(snapshot, "Newest Google review")
+    if (recent and recent.get("verdict") == "behind"
+            and lead_signal not in {"reviews_bottom_quartile", "reviews_below_median", "no_reviews"}):
+        return (f"Your newest Google review is from {recent['you']}; "
+                f"for the typical one it's {recent['typical']}.")
+    return None
+
+
+def _benchmark_email(snapshot: dict[str, Any], name: str,
+                     ordered: list[dict[str, Any]]) -> tuple[str, str] | None:
+    bench = snapshot.get("benchmarks") or {}
+    comparison = snapshot.get("market_comparison") or {}
+    city = _short_market(comparison.get("market"))
+    n = bench.get("sample_size")
+    if not (bench.get("rows") and city and n and n >= 5):
+        return None
+    gap = lead_signal = None
+    for item in ordered:
+        gap = _bench_gap_sentence(item["signal"], item, name, snapshot)
+        if gap:
+            lead_signal = item["signal"]
+            break
+    if not gap:
+        return None
+    parts = [f"I compared {name} with {n} other {_plural_niche(comparison.get('niche'))} in {city}.", gap]
+    support = _support_sentence(lead_signal, snapshot)
+    if support:
+        parts.append(support)
+    business = snapshot.get("business") if isinstance(snapshot.get("business"), dict) else {}
+    try:
+        rating, count = float(business.get("rating")), int(business.get("review_count") or 0)
+        if rating >= 4.7 and count >= 10:
+            parts.append(f"Your {rating:.1f}-star rating is strong, so this is about being found, "
+                         "not your reputation.")
+    except (TypeError, ValueError):
+        pass
+    paragraph = parts[0] + " " + parts[1]
+    if len(parts) > 2:
+        paragraph += "\n\n" + " ".join(parts[2:])
+    return paragraph, f"How {name} compares in {city}"
+
+
 def audit_email_paragraph(snapshot: dict[str, Any], business_name: str) -> tuple[str, str] | None:
-    """(claim paragraph, subject) from an audit snapshot, or None if nothing usable."""
+    """(claim paragraph, subject) from an audit snapshot, or None if nothing usable.
+
+    When the audit has a local benchmark, the email leads with it ("I compared
+    you with 29 other med spas in Scottsdale. The biggest gap is ...") plus one
+    more local fact. Otherwise it leads with the single strongest finding.
+    """
     findings = [f for f in (snapshot.get("findings") or []) if isinstance(f, dict) and f.get("signal")]
     if not findings:
         return None
     name = clean_business_name(business_name)
+    ordered_for_bench = sorted(
+        findings,
+        key=lambda f: LEAD_PRIORITY.index(f["signal"]) if f["signal"] in LEAD_PRIORITY else 99,
+    )
+    benchmarked = _benchmark_email(snapshot, name, ordered_for_bench)
+    if benchmarked:
+        paragraph, subject = benchmarked
+        return paragraph, subject[:70]
 
     ordered = sorted(
         findings,
@@ -264,13 +401,4 @@ def audit_email_paragraph(snapshot: dict[str, Any], business_name: str) -> tuple
     elif others:
         opening += f"\n\nThere's one other thing worth fixing too: {others[0]}."
 
-    bench = snapshot.get("benchmarks") or {}
-    comparison = snapshot.get("market_comparison") or {}
-    city = _short_market(comparison.get("market"))
-    if bench.get("rows") and bench.get("behind") and city:
-        opening += (
-            f" I also compared you with {bench['sample_size']} other "
-            f"{_niche_noun(comparison.get('niche'))} businesses in {city}; you're behind on "
-            f"{bench['behind']} of the {len(bench['rows'])} things I measured."
-        )
     return opening, subject[:60]

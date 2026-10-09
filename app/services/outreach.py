@@ -13,7 +13,7 @@ from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v10"
+PROMPT_VERSION = "outreach-v11"
 MAX_DRAFT_ATTEMPTS = 3
 # Matches the signature Mike uses when he edits drafts in Gmail, plus the two
 # things CAN-SPAM requires on every commercial email: a physical address and a
