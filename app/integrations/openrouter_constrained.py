@@ -26,83 +26,44 @@ class StyleChoice:
 _GREETINGS = (
     "Hi,",
     "Hello,",
-    "",
+    "Hi there,",
 )
 
+# Fallback subjects only. When an audit report grounds the email, the subject
+# follows the lead finding (see app/services/outreach_audit_copy.py).
 _SUBJECTS = (
-    "{business} — local search audit",
-    "Local search audit — {business}",
-    "{business} website audit",
-    "{business} search audit",
+    "{business} website",
+    "{business} on Google",
+    "{business} local search",
     "{business} audit",
+    "{business} Google listing",
 )
 
 _FALLBACK_SUBJECTS = (
+    "Your website",
+    "Your Google listing",
+    "Local search",
     "Local search audit",
-    "Website audit",
-    "Search audit",
-    "Website review",
-    "Local search review",
+    "Your Google listing",
 )
 
+# The claim paragraph (from the audit) opens the email with the specific
+# finding, so the frame only adds the attachment line and the close. The PDF
+# is attached to the Gmail draft automatically (OutreachService.audit_attachments).
 _FRAMES = (
-    (
-        "I reviewed the website and Google profile for {business} and put together a short audit.\n\n"
-        "{claim}\n\n"
-        "I attached the audit so you can see exactly what I found.\n\n"
-        "{closing}"
-    ),
-    (
-        "I put together a short local search audit for {business} after reviewing the website and Google profile.\n\n"
-        "{claim}\n\n"
-        "The audit is attached with the findings and recommendations.\n\n"
-        "{closing}"
-    ),
-    (
-        "I reviewed {business} across the website and Google profile and summarized the findings in a short audit.\n\n"
-        "{claim}\n\n"
-        "I attached it so you can review the findings directly.\n\n"
-        "{closing}"
-    ),
-    (
-        "After reviewing the website and Google profile for {business}, I put together a short local search audit.\n\n"
-        "{claim}\n\n"
-        "I attached the audit with the findings and recommended next steps.\n\n"
-        "{closing}"
-    ),
-    (
-        "I took a direct look at the website and Google profile for {business} and put the findings into a short audit.\n\n"
-        "{claim}\n\n"
-        "The audit is attached so you can see the issues and recommendations in context.\n\n"
-        "{closing}"
-    ),
-    (
-        "I completed a short local search review for {business} using the website and Google profile.\n\n"
-        "{claim}\n\n"
-        "I attached the audit so the findings are easy to review in one place.\n\n"
-        "{closing}"
-    ),
-    (
-        "I reviewed the public website and Google profile for {business} and put together a concise audit from that review.\n\n"
-        "{claim}\n\n"
-        "The audit is attached with the specific findings and recommendations.\n\n"
-        "{closing}"
-    ),
-    (
-        "I put together a short audit for {business} based on the website and Google profile.\n\n"
-        "{claim}\n\n"
-        "I attached the audit so you can review exactly what was found.\n\n"
-        "{closing}"
-    ),
+    "{claim}\n\nI've attached a short audit with the details and what to fix first.\n\n{closing}",
+    "{claim}\n\nThe attached audit covers each item and how to fix it, most important first.\n\n{closing}",
+    "{claim}\n\nEverything is in the attached audit, ordered by what will make the biggest difference.\n\n{closing}",
+    "{claim}\n\nThe details, and how to fix each one, are in the short audit attached.\n\n{closing}",
 )
 
 _CLOSINGS = (
-    "If any of it is useful and you want help fixing it, feel free to reply.",
-    "If the audit is useful and you want help implementing any of it, feel free to reply.",
-    "If you want help with any of the items in the audit, feel free to reply.",
-    "If any of the findings are worth addressing and you want help with them, feel free to reply.",
-    "If you decide you want help implementing any of the recommendations, feel free to reply.",
-    "If the findings are useful and you want a hand fixing any of them, feel free to reply.",
+    "If you want help with any of it, just reply.",
+    "If you'd like a hand with any of it, feel free to reply.",
+    "If any of it is useful and you want help, just reply here.",
+    "Happy to walk through it if that's useful; just reply.",
+    "If you want help putting any of it in place, reply and we can talk it through.",
+    "Feel free to reply with any questions.",
 )
 
 

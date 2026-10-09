@@ -60,6 +60,7 @@ WEBSITE_MAX_POINTS = 93
 # bigger opportunities than any accumulation of on-page nitpicks.
 NO_WEBSITE_AXIS_SCORE = 100
 SITE_DOWN_AXIS_SCORE = 85
+BROKEN_LINK_AXIS_SCORE = 75
 
 
 def _normalize(points: int, axis_max: int) -> int:
@@ -322,6 +323,15 @@ def score_website(b: dict, w, base: Baseline) -> tuple[int | None, list]:
             # Score on profile signals alone rather than guessing about the
             # website. None (not 0) so the lead isn't halved for being blocked.
             return None, ev
+
+        if (w.crawl_error or "").startswith("profile_link_"):
+            ev.append(Evidence("website", "broken_profile_link", "critical", BROKEN_LINK_AXIS_SCORE,
+                f"The website link on {name}'s Google profile leads to an error page "
+                f"(status {w.http_status}), although the homepage itself loads. "
+                f"Everyone who taps 'Website' on Google lands on a dead page.",
+                {"http_status": w.http_status, "linked_url": b.get("website_url"),
+                 "working_url": w.redirects_to}))
+            return BROKEN_LINK_AXIS_SCORE, ev
 
         ev.append(Evidence("website", "site_down", "critical", SITE_DOWN_AXIS_SCORE,
             f"Their website does not load (status {w.http_status or 'unreachable'}). "
@@ -640,7 +650,7 @@ def lead_labels(b: dict, w, base: Baseline | None, evidence: list,
         labels.append("strong_reviews")
     if "no_website" in signals:
         labels.append("no_website")
-    if "site_down" in signals:
+    if signals & {"site_down", "broken_profile_link"}:
         labels.append("site_down")
     if signals & {"crawl_blocked", "site_down", "nap_mismatch"}:
         labels.append("verify_first")

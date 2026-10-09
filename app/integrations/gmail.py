@@ -47,6 +47,7 @@ class GmailDraftClient:
         subject: str,
         body: str,
         message_id_header: str | None = None,
+        attachments: list[tuple[str, bytes]] | None = None,
     ) -> str:
         message = EmailMessage()
         message["To"] = to_address
@@ -55,6 +56,10 @@ class GmailDraftClient:
         if message_id_header:
             message["Message-ID"] = message_id_header
         message.set_content(body)
+        for filename, data in attachments or []:
+            message.add_attachment(
+                data, maintype="application", subtype="pdf", filename=filename,
+            )
         return base64.urlsafe_b64encode(message.as_bytes()).decode("ascii").rstrip("=")
 
     def create_draft(
@@ -64,6 +69,7 @@ class GmailDraftClient:
         subject: str,
         body: str,
         message_id_header: str,
+        attachments: list[tuple[str, bytes]] | None = None,
     ) -> GmailDraftResult:
         access_token = self._access_token()
         self._assert_sender_account(access_token)
@@ -72,6 +78,7 @@ class GmailDraftClient:
             subject=subject,
             body=body,
             message_id_header=message_id_header,
+            attachments=attachments,
         )
 
         try:
@@ -117,10 +124,12 @@ class GmailDraftClient:
         to_address: str,
         subject: str,
         body: str,
+        attachments: list[tuple[str, bytes]] | None = None,
     ) -> GmailDraftResult | None:
         """Replace an existing Gmail draft in place.
 
         Returns None when Gmail reports the recorded draft no longer exists.
+        Attachments must be passed again: Gmail replaces the whole message.
         """
         access_token = self._access_token()
         self._assert_sender_account(access_token)
@@ -128,6 +137,7 @@ class GmailDraftClient:
             to_address=to_address,
             subject=subject,
             body=body,
+            attachments=attachments,
         )
 
         try:

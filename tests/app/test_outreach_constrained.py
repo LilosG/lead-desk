@@ -80,7 +80,7 @@ def test_same_model_tuple_is_decorrelated_per_business(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":5}'
+                    "content": '{"subject":3,"greeting":1,"frame":3,"closing":5}'
                 }
             }]
         })
@@ -111,7 +111,7 @@ def test_mastercraft_and_sal_do_not_share_same_structure(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":3,"greeting":1,"frame":7,"closing":5}'
+                    "content": '{"subject":3,"greeting":1,"frame":3,"closing":5}'
                 }
             }]
         })
@@ -240,7 +240,7 @@ def test_long_business_name_falls_back_only_when_subject_is_unreasonably_long():
         "A Very Long Local Electrical Services Company Name Incorporated With Additional Words",
         0,
     )
-    assert subject == "Local search audit"
+    assert subject == "Your website"
 
 
 def test_claim_free_copy_is_blocked_instead_of_generating_hollow_outreach(monkeypatch):

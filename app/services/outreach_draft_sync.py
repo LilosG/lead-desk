@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.integrations.gmail import GmailDraftError
+from app.services.outreach_audit_copy import clean_business_name
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterError
 from app.repositories.outreach_gmail import OutreachGmailRepository
 from app.services.outreach import (
@@ -80,6 +81,7 @@ class OutreachDraftSyncService:
                     to_address=to_address,
                     subject=subject,
                     body=body,
+                    attachments=self.outreach.audit_attachments(current),
                 )
             except GmailDraftError as exc:
                 raise OutreachIntegrationUnavailable(str(exc)) from exc
@@ -160,7 +162,7 @@ class OutreachDraftSyncService:
         if self.repository.is_suppressed(context["to_address"]):
             raise OutreachBlocked("email address is suppressed")
 
-        business_name = context.get("name") or "your business"
+        business_name = clean_business_name(context.get("name"))
         visible_claim, claim_signal, verification_status, verification_note = (
             self.outreach._resolve_draft_grounding(
                 context,
@@ -228,8 +230,11 @@ class OutreachDraftSyncService:
             remote = self.outreach.gmail.update_draft(
                 gmail_draft_id,
                 to_address=context["to_address"],
-                subject=copy.subject,
+                subject=context.get("_audit_subject") or copy.subject,
                 body=body,
+                attachments=self.outreach.audit_attachments(
+                    {"claim_signal": claim_signal, "place_id": context.get("place_id")}
+                ),
             )
         except GmailDraftError as exc:
             raise OutreachIntegrationUnavailable(str(exc)) from exc
@@ -249,7 +254,7 @@ class OutreachDraftSyncService:
             updated, conflict = self.repository.record_generated_draft(
                 item_id,
                 expected_version=int(cleared["version"]),
-                subject=copy.subject,
+                subject=context.get("_audit_subject") or copy.subject,
                 body=body,
                 claim_signal=claim_signal,
                 verification_status=verification_status,
@@ -267,7 +272,7 @@ class OutreachDraftSyncService:
             item_id,
             expected_version=expected_version,
             expected_gmail_draft_id=gmail_draft_id,
-            subject=copy.subject,
+            subject=context.get("_audit_subject") or copy.subject,
             body=body,
             claim_signal=claim_signal,
             verification_status=verification_status,
@@ -302,6 +307,7 @@ class OutreachDraftSyncService:
                 to_address=to_address,
                 subject=subject,
                 body=body,
+                attachments=self.outreach.audit_attachments(item),
             )
         except GmailDraftError:
             # The original request already failed; preserve the primary error.

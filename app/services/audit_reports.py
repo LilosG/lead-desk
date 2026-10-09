@@ -4,11 +4,36 @@ from typing import Any
 
 from app.repositories.audit_reports import AuditReportRepository
 from app.repositories.prospects import ProspectRepository
-from app.services.audit_report_policy import observed_summary, report_policy_for
+from app.services.audit_report_policy import (
+    IMPACT_LABELS,
+    IMPACT_ORDER,
+    observed_summary,
+    report_policy_for,
+)
 from pipeline import verticals as vertical_config
 
 MAX_BATCH = 50
 _DISPOSITION_ORDER = {"recommended": 0, "review_required": 1, "optional": 2}
+
+# Public, client-safe numbers a finding may carry (used by outreach copy).
+_DATA_KEYS = {
+    "reviews", "median", "market", "niche", "sample_size", "psi_performance",
+    "lcp_ms", "http_status", "linked_url", "photo_count", "sampled", "replied",
+    "word_count", "title_length",
+}
+
+
+def _finding_data(observed: Any) -> dict[str, Any]:
+    if not isinstance(observed, dict):
+        return {}
+    return {key: value for key, value in observed.items() if key in _DATA_KEYS and value is not None}
+
+
+def _finding_order(item: dict[str, Any]) -> tuple[int, int]:
+    return (
+        IMPACT_ORDER.get(item.get("impact") or "medium", 1),
+        _DISPOSITION_ORDER.get(item.get("disposition") or "optional", 9),
+    )
 
 
 class _SafeDict(dict):
@@ -75,11 +100,15 @@ def market_comparison(
         for row in (peers.get("leaders") or [])
         if row.get("name")
     ]
+    state = prospect.get("state")
+    scope_city = peers.get("scope_city")
     market = prospect.get("market")
-    where = (
-        ", ".join(part.strip() for part in market.split(",")[:2])
-        if market else (prospect.get("city") or "the area")
-    )
+    if scope_city:
+        where = ", ".join(part for part in [scope_city, state] if part)
+    elif market:
+        where = ", ".join(part.strip() for part in market.split(",")[:2])
+    else:
+        where = prospect.get("city") or "the area"
     return {
         "market": where,
         "niche": vertical_config.vertical_label(prospect.get("vertical") or "local business"),
@@ -97,11 +126,11 @@ def market_comparison(
 
 def next_step(demo_url: str | None) -> dict[str, Any]:
     text = (
-        "If you'd like help with any of these, reply to the email this report came "
-        "with and we'll walk through the priority items together."
+        "Start with the high-impact items; most can be fixed within a few weeks. If you'd "
+        "like help, reply to our email and we'll walk through them with you."
     )
     if demo_url:
-        text += " We also put together a concept homepage to show what an updated site could look like."
+        text += " We also built a concept homepage to show what an updated site could look like."
     return {"text": text, "demo_url": demo_url}
 
 
@@ -291,31 +320,22 @@ def _evidence_for_signal(
     if observed:
         return observed
 
-    if signal == "no_localbusiness_schema":
-        return "Homepage scan: recognized LocalBusiness structured data was not detected."
-    ctx = _niche_context(prospect, source_finding)
     if signal == "no_service_pages":
         observed = source_finding.get("observed") or {}
         sitemap = observed.get("sitemap_urls") if isinstance(observed, dict) else None
-        note = f" ({int(sitemap)} pages in the sitemap reviewed)" if sitemap else ""
-        return f"Website crawl: dedicated {ctx['offering_label']} were not detected{note}."
-    if signal == "no_city_pages":
-        return f"Website crawl: dedicated {ctx['location_label']} were not detected."
-    if signal == "no_website":
-        return "Google Business Profile: no website field when checked."
-    if signal == "no_hours":
-        return "Google Business Profile: no regular hours listed when checked."
-    if signal == "no_photos":
-        return "Google Business Profile: no photos returned when checked."
-    if signal == "no_gbp_link":
-        return "Website crawl: no direct Google Business Profile link was detected."
+        return f"We checked the homepage links and {int(sitemap)} pages listed in the site map." if sitemap else None
     if signal == "no_ssl":
         resolved = audit.get("resolved_url") or prospect.get("website_url")
-        return f"Resolved website checked: {resolved}" if resolved else "HTTPS was not confirmed during the website check."
-    if signal == "no_title":
-        return "Homepage HTML check: a usable title element was not detected."
-
+        return f"Address the site loaded at: {resolved}" if resolved else None
     return None
+
+
+def _join(items: list[str]) -> str:
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
 
 
 def _executive_summary(
@@ -323,50 +343,58 @@ def _executive_summary(
     prospect: dict[str, Any],
     findings: list[dict[str, Any]],
     coverage: list[dict[str, str]],
+    comparison: dict[str, Any] | None = None,
 ) -> str:
     rating = prospect.get("rating")
     review_count = prospect.get("review_count")
+    parts: list[str] = []
 
-    footprint = ""
     if rating is not None and review_count is not None:
         footprint = (
-            f"Google currently shows {business_name} at {float(rating):.1f} stars across "
-            f"{int(review_count):,} reviews. "
+            f"{business_name} has a {float(rating):.1f}-star rating from "
+            f"{int(review_count):,} Google review{'s' if int(review_count) != 1 else ''}"
         )
+        if comparison and comparison.get("median_reviews"):
+            median = int(comparison["median_reviews"])
+            ahead = int(review_count) >= median
+            footprint += (
+                f", {'ahead of' if ahead else 'compared with'} a median of {median:,} for "
+                f"comparable {comparison['niche']} businesses in {comparison['market']}"
+            )
+        parts.append(footprint + ".")
     elif review_count is not None:
-        footprint = (
-            f"Google currently shows {int(review_count):,} reviews for {business_name}. "
-        )
+        parts.append(f"Google shows {int(review_count):,} reviews for {business_name}.")
 
     checked = len(coverage)
-    finding_count = len(findings)
-
-    labels = [
-        str(item.get("title")).strip()
-        for item in findings
-        if item.get("title")
-    ]
-
-    if labels:
-        if len(labels) == 1:
-            focus = labels[0]
-        elif len(labels) == 2:
-            focus = f"{labels[0]} and {labels[1]}"
-        else:
-            focus = f"{', '.join(labels[:-1])}, and {labels[-1]}"
-
-        opportunity_text = (
-            f"The review identified {finding_count} "
-            f"{'opportunity' if finding_count == 1 else 'opportunities'} worth reviewing: "
-            f"{focus}."
+    if checked:
+        parts.append(
+            f"We checked {checked} part{'s' if checked != 1 else ''} of the Google profile "
+            "and website."
         )
-    else:
-        opportunity_text = "No client-facing opportunities were selected for this report."
 
-    return (
-        f"{footprint}We reviewed the business's public profile and core website signals "
-        f"across {checked} checks. {opportunity_text}"
-    )
+    phrases: list[str] = []
+    for item in sorted(findings, key=_finding_order):
+        phrase = (item.get("phrase") or item.get("title") or "").strip()
+        if phrase and phrase not in phrases:
+            phrases.append(phrase)
+        if len(phrases) == 3:
+            break
+    if phrases:
+        high = sum(1 for item in findings if item.get("impact") == "high")
+        lead = (
+            f"The biggest opportunities are {_join(phrases)}."
+            if len(phrases) > 1 else f"The biggest opportunity is {phrases[0]}."
+        )
+        if high:
+            lead += (
+                f" {high} of the {len(findings)} items below are high impact"
+                if high != len(findings) else " Each item below is high impact"
+            ) + " and worth fixing first."
+        parts.append(lead)
+    else:
+        parts.append("We didn't find anything that needs attention right now.")
+
+    return " ".join(parts)
 
 
 class AuditReportService:
@@ -426,6 +454,7 @@ class AuditReportService:
                     "title": _render(policy.title, ctx),
                     "category": policy.category,
                     "disposition": policy.disposition,
+                    "impact": policy.impact,
                     "default_selected": policy.default_selected,
                     "evidence": _evidence_for_signal(
                         policy.signal, finding, prospect, {}
@@ -433,7 +462,7 @@ class AuditReportService:
                 }
             )
 
-        options.sort(key=lambda o: _DISPOSITION_ORDER.get(o["disposition"], 9))
+        options.sort(key=_finding_order)
         return {
             "place_id": place_id,
             "business_name": prospect.get("name") or "Prospect",
@@ -475,6 +504,10 @@ class AuditReportService:
                     "title": _render(policy.title, ctx),
                     "category": policy.category,
                     "disposition": policy.disposition,
+                    "impact": policy.impact,
+                    "impact_label": IMPACT_LABELS[policy.impact],
+                    "phrase": _render(policy.phrase, ctx),
+                    "data": _finding_data(source_finding.get("observed")),
                     "what_we_found": what_we_found,
                     "why_it_matters": _render(policy.why_it_matters, ctx),
                     "recommendation": _render(policy.recommendation, ctx),
@@ -490,9 +523,7 @@ class AuditReportService:
         if not report_findings:
             raise AuditReportError("select at least one reportable finding")
 
-        report_findings.sort(
-            key=lambda item: _DISPOSITION_ORDER.get(item["disposition"], 9)
-        )
+        report_findings.sort(key=_finding_order)
 
         source_checked_at = website_audit.get("checked_at") or prospect.get("scored_at")
         business_name = prospect.get("name") or "Business"
@@ -500,11 +531,12 @@ class AuditReportService:
             part for part in [prospect.get("city"), prospect.get("state")] if part
         )
         coverage = _audit_coverage(prospect, website_audit)
+        comparison = market_comparison(prospect, self._peers(prospect))
 
         snapshot = _json_safe(
             {
                 "report_kind": "local_visibility_audit",
-                "report_version": 4,
+                "report_version": 5,
                 "business": {
                     "name": business_name,
                     "location": location or None,
@@ -522,6 +554,7 @@ class AuditReportService:
                     prospect,
                     report_findings,
                     coverage,
+                    comparison,
                 ),
                 "audit_scope": coverage,
                 "strengths": [
@@ -529,7 +562,7 @@ class AuditReportService:
                     if item.get("status") == "confirmed"
                 ],
                 "findings": report_findings,
-                "market_comparison": market_comparison(prospect, self._peers(prospect)),
+                "market_comparison": comparison,
                 "next_step": next_step(self._published_demo_url(place_id)),
                 "methodology_note": (
                     "Point-in-time review of public business information and website signals as of the evidence date shown. "

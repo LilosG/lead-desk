@@ -69,6 +69,11 @@ server = HTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 base = f"http://127.0.0.1:{server.server_port}"
 
+broken = E.crawl_site({
+    "place_id": "broken-link", "website_url": base + "/old-location-page/?utm_source=google",
+    "vertical": "med_spa", "city": "Scottsdale", "phone": "(480) 555-0100",
+})
+
 business = {
     "place_id": "crawl-test",
     "website_url": base + "/",
@@ -87,7 +92,15 @@ checks = [
     ("location page found from the business's own city", f.has_city_pages),
     ("online booking detected", f.has_online_booking and f.booking_provider == "Vagaro"),
     ("phone on site matches the profile", f.nap_matches_gbp is True),
+    ("dead profile link with a working homepage is NOT 'site down'",
+     (broken.crawl_error or "").startswith("profile_link_404")),
 ]
+
+import scoring as S  # noqa: E402
+base_line = S.Baseline("med_spa", "Scottsdale, AZ", 10, 50, 20, 80, 4.8, 90)
+_, ev = S.score_website({"name": "Glow", "website_url": base + "/old/"}, broken, base_line)
+checks.append(("broken profile link scores as its own finding",
+               [e.signal for e in ev] == ["broken_profile_link"]))
 
 ok = True
 for label, passed in checks:

@@ -360,6 +360,20 @@ class OutreachRepository:
                     cur.execute(select_query, (place_id, channel))
                     return cur.fetchone()
 
+    def latest_audit_report(self, place_id: str) -> dict[str, Any] | None:
+        query = """
+            select par.id::text as id, par.title, par.snapshot, b.name
+            from prospect_audit_reports par
+            join businesses b on b.place_id = par.place_id
+            where par.place_id = %s and par.status = 'generated'
+            order by par.created_at desc
+            limit 1
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (place_id,))
+                return cur.fetchone()
+
     def get_item(self, item_id: str) -> dict[str, Any] | None:
         query = """
             select id::text as id, place_id, channel, status, to_address,
