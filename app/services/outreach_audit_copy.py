@@ -10,8 +10,9 @@ What this fixes, from the real drafts reviewed on 2026-10-08:
     Plumbers in Vista") went into subjects and bodies verbatim.
 
 Rules: lead with ONE concrete, verifiable finding in plain English, with its
-number when there is one; mention at most two more by name; no links, no
-attachment claims (the report is offered, then sent on reply).
+number when there is one; name the business once, then talk to the owner
+("your listing"); say how many other items the attached audit covers and name
+at most two. No links. The attachment line comes from the frame.
 """
 from __future__ import annotations
 
@@ -33,25 +34,34 @@ _LEGAL_SUFFIX = re.compile(
 )
 
 
-# How each finding reads in a sentence to an owner ("I also noted ...").
+# How each finding reads in a sentence to the owner ("including ...").
 EMAIL_PHRASES = {
-    "no_website": "having no website on the listing",
-    "broken_profile_link": "the broken website link on Google",
-    "site_down": "the website not loading",
-    "psi_mobile_critical": "how slowly the site loads on phones",
-    "psi_mobile_poor": "how slowly the site loads on phones",
-    "no_ssl": "the \"Not secure\" warning on the site",
-    "no_reviews": "getting the first Google reviews in",
-    "reviews_bottom_quartile": "the number of Google reviews",
-    "reviews_below_median": "the number of Google reviews",
-    "no_review_replies": "replying to reviews",
-    "no_hours": "the business hours on Google",
-    "no_photos": "photos on the Google listing",
-    "no_services_listed": "the services list on Google",
-    "no_business_description": "the description on the Google listing",
-    "no_title": "the headline Google shows for the homepage",
-    "no_localbusiness_schema": "some behind-the-scenes setup Google uses to read the site",
-    "no_gbp_link": "a reviews link on the website",
+    "no_website": "getting a website onto your Google listing",
+    "broken_profile_link": "the broken website link on your Google listing",
+    "site_down": "your website not loading",
+    "psi_mobile_critical": "how slowly your site loads on phones",
+    "psi_mobile_poor": "how slowly your site loads on phones",
+    "no_ssl": "the \"Not secure\" warning on your site",
+    "no_reviews": "getting your first Google reviews in",
+    "reviews_bottom_quartile": "your number of Google reviews",
+    "reviews_below_median": "your number of Google reviews",
+    "no_review_replies": "replying to your reviews",
+    "few_review_replies": "replying to your reviews",
+    "no_hours": "your business hours on Google",
+    "no_photos": "photos on your Google listing",
+    "few_photos": "photos on your Google listing",
+    "no_services_listed": "the services list on your Google listing",
+    "no_business_description": "the description on your Google listing",
+    "category_generic": "your main category on Google",
+    "no_title": "your homepage's search title",
+    "title_length": "your homepage's search title",
+    "no_meta_description": "the description Google shows under your homepage",
+    "no_h1": "your homepage's main heading",
+    "thin_content": "how little text is on your homepage",
+    "no_contact_form": "an online way to contact or book you",
+    "no_localbusiness_schema": "some behind-the-scenes setup Google uses to read your site",
+    "no_gbp_link": "a reviews link on your website",
+    "nap_mismatch": "the phone number on your site vs. Google",
     "no_service_pages": "dedicated service pages",
     "no_city_pages": "pages for the areas you serve",
 }
@@ -63,7 +73,8 @@ _PREFER_REPORT_PHRASE = {"no_service_pages", "no_city_pages"}
 def _email_phrase(item: dict[str, Any]) -> str:
     signal = item.get("signal")
     if signal in _PREFER_REPORT_PHRASE and (item.get("phrase") or "").strip():
-        return item["phrase"].strip()
+        phrase = item["phrase"].strip()
+        return phrase if phrase.startswith(("dedicated", "a ", "your")) else f"dedicated {phrase}"
     if signal in EMAIL_PHRASES:
         return EMAIL_PHRASES[signal]
     return (item.get("phrase") or "").strip()
@@ -119,42 +130,46 @@ def _num(value: Any) -> str | None:
 
 def _lead_sentence(signal: str, item: dict[str, Any], name: str,
                    snapshot: dict[str, Any]) -> tuple[str, str] | None:
-    """(opening paragraph, subject) for the lead finding, or None."""
+    """(opening paragraph, subject) for the lead finding, or None.
+
+    Written to the owner ("your listing"), naming the business once at most.
+    """
     data = item.get("data") if isinstance(item.get("data"), dict) else {}
     business = snapshot.get("business") if isinstance(snapshot.get("business"), dict) else {}
     comparison = snapshot.get("market_comparison") or {}
-    phrase = item.get("phrase") or ""
 
     if signal == "broken_profile_link":
         return (
-            f"The website link on {possessive(name)} Google listing opens an error page "
-            "right now, so anyone who taps \"Website\" from Google Maps hits a dead end. "
-            "The homepage itself loads fine; it's just the link on the listing.",
+            f"The website link on {possessive(name)} Google listing opens an error page right "
+            "now, so anyone who taps \"Website\" from Google Maps hits a dead end. The homepage "
+            "itself loads fine; it's just the link on the listing.",
             f"{name} website link on Google",
         )
     if signal == "no_website":
         return (
-            f"{possessive(name)} Google listing doesn't have a website on it, so people who "
-            "find you on Google Maps have nowhere to look before deciding whether to call.",
+            f"{possessive(name)} Google listing doesn't have a website on it, so people who find "
+            "you on Google Maps have nowhere to look before deciding whether to call.",
             f"{name} on Google Maps",
         )
     if signal in {"psi_mobile_critical", "psi_mobile_poor"}:
         score = _num(data.get("psi_performance"))
         lcp = data.get("lcp_ms")
         if score:
-            secs = (
-                f"; the main content took about {float(lcp) / 1000:.0f} seconds to appear on a phone"
-                if lcp else ""
-            )
+            wait = ""
+            try:
+                if lcp and float(lcp) >= 3000:
+                    wait = (f" On a phone, the main content took about {float(lcp) / 1000:.0f} "
+                            "seconds to show up, and most people searching locally won't wait that long.")
+            except (TypeError, ValueError):
+                wait = ""
             return (
                 f"I ran {possessive(name)} homepage through Google's mobile speed test and it "
-                f"scored {score} out of 100{secs}. Most people looking for a local business "
-                "are on their phone, and a lot of them won't wait that long.",
+                f"scored {score} out of 100.{wait or ' Most people searching locally are on their phone, so that costs calls.'}",
                 f"{name} website on phones",
             )
         return (
             f"{possessive(name)} homepage scored poorly on Google's mobile speed test, and most "
-            "people looking for a local business are on their phone.",
+            "people searching locally are on their phone.",
             f"{name} website on phones",
         )
     if signal in {"reviews_bottom_quartile", "reviews_below_median", "no_reviews"}:
@@ -186,7 +201,7 @@ def _lead_sentence(signal: str, item: dict[str, Any], name: str,
             )
     if signal == "site_down":
         return (
-            f"When I opened {possessive(name)} website from its Google listing, it showed an "
+            f"When I opened {possessive(name)} website from the Google listing, it showed an "
             "error page instead of the site.",
             f"{name} website",
         )
@@ -240,8 +255,12 @@ def audit_email_paragraph(snapshot: dict[str, Any], business_name: str) -> tuple
         if len(others) == 2:
             break
 
-    if len(others) == 2:
-        opening += f"\n\nThere are a couple of other things worth fixing too, including {others[0]} and {others[1]}."
-    elif len(others) == 1:
+    remaining = len({f["signal"] for f in findings}) - 1
+    if lead_signal in review_signals:
+        remaining -= sum(1 for f in findings if f["signal"] in review_signals and f["signal"] != lead_signal)
+    if others and remaining >= 2:
+        named = f"{others[0]} and {others[1]}" if len(others) == 2 else others[0]
+        opening += f"\n\nI found {remaining} other things worth fixing too, including {named}."
+    elif others:
         opening += f"\n\nThere's one other thing worth fixing too: {others[0]}."
     return opening, subject[:60]
