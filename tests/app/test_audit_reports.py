@@ -148,7 +148,7 @@ def test_snapshot_excludes_internal_scores_and_raw_findings():
     assert "total_score" not in serialized
     assert "tier" not in serialized
     assert "internal raw finding" not in serialized
-    assert snapshot["report_version"] == 6
+    assert snapshot["report_version"] == 7
     assert snapshot["business"]["review_count"] == 87
     assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
     # No evidence line that only repeats "what we found".
@@ -440,3 +440,89 @@ def test_pdf_still_renders_older_saved_snapshots():
         },
     }
     assert render_audit_report_pdf(legacy).startswith(b"%PDF")
+
+
+# --- v7: competitive benchmark, content gaps, search snippet -------------------
+
+def _spa_peer(i, reviews, *, psi=None, booking=False, pages=3, titles=None, days=10, schema=True):
+    return {
+        "place_id": f"peer-{i}", "name": f"Spa {i}", "city": "Scottsdale", "rating": 4.8,
+        "review_count": reviews, "has_website": True, "is_reachable": True,
+        "last_review_days": days, "has_hours": True, "psi_performance": psi,
+        "has_online_booking": booking, "offering_page_count": pages,
+        "offering_titles": titles or [], "location_page_count": 0,
+        "has_localbusiness_schema": schema,
+    }
+
+
+class BenchmarkRepository(FakeProspectRepository):
+    def __init__(self):
+        super().__init__()
+        self.prospect.update({
+            "name": "Glow Aesthetics LLC", "vertical": "med_spa", "city": "Scottsdale",
+            "state": "AZ", "market": "Scottsdale, AZ, USA", "rating": 5.0, "review_count": 6,
+            "last_review_days": 140, "has_hours": True, "phone": "(480) 555-0100",
+            "website_url": "https://glow.example/",
+        })
+        self.audit.update({
+            "is_reachable": True, "title": "Home", "meta_description": None,
+            "psi_performance": 22, "has_online_booking": False, "offering_page_count": 0,
+            "offering_titles": [], "has_localbusiness_schema": False,
+            "resolved_url": "https://www.glow.example/",
+        })
+
+    def market_peers(self, place_id, *, vertical, market, city, limit=3):
+        titles = [["Botox & Dysport", "Dermal Fillers", "HydraFacial"],
+                  ["Botox", "Lip Filler", "Laser Hair Removal"],
+                  ["Botox & Dysport", "Microneedling"],
+                  ["Dermal Fillers", "Botox & Dysport", "Laser Hair Removal"],
+                  ["HydraFacial", "Botox & Dysport"],
+                  ["Weight Loss", "Botox & Dysport", "Dermal Fillers"]]
+        peers = [_spa_peer(i, r, psi=p, booking=b, titles=t)
+                 for i, (r, p, b, t) in enumerate(zip(
+                     [66, 120, 40, 300, 80, 55], [55, 61, 48, 70, 52, 66],
+                     [True, True, False, True, True, False], titles))]
+        return {"sample_size": 7, "median_reviews": 66, "scope_city": "Scottsdale",
+                "leaders": [], "peers": peers}
+
+
+def test_report_benchmarks_against_real_local_competitors():
+    service = AuditReportService(BenchmarkRepository(), FakeReportRepository())
+    snapshot = service.create_report("place-1", selected_signals=["no_service_pages"])["snapshot"]
+
+    rows = {r["metric"]: r for r in snapshot["benchmarks"]["rows"]}
+    assert rows["Google reviews"]["you"] == "6"
+    assert rows["Google reviews"]["note"] == "#7 of 7 nearby"
+    assert rows["Google reviews"]["verdict"] == "behind"
+    assert rows["Mobile speed score"]["typical"] == "58/100"
+    assert rows["Online booking"]["typical"] == "67% offer it"
+    assert rows["Newest Google review"]["verdict"] == "behind"
+    assert rows["Treatment pages"]["verdict"] == "behind"
+
+    gaps = [g["label"] for g in snapshot["page_gaps"]["gaps"]]
+    assert gaps[0] == "Botox & Dysport"
+    assert "Dermal Fillers" in gaps
+
+    snip = snapshot["search_snippet"]
+    assert snip["current_title"] == "Home"
+    assert snip["suggested_title"] == "Glow Aesthetics | Med Spa in Scottsdale, AZ"
+    assert snip["suggested_description"].startswith("Glow Aesthetics is a med spa in Scottsdale, AZ.")
+    assert "(480) 555-0100" in snip["suggested_description"]
+    # Never suggests offerings the business hasn't shown it provides.
+    assert "Botox" not in snip["suggested_title"] + snip["suggested_description"]
+
+    summary = snapshot["executive_summary"]
+    assert "Compared with 6 other med spa businesses in Scottsdale, AZ, it's behind on" in summary
+    assert "competitors with websites have a separate page for Botox & Dysport" in summary
+
+    finding = snapshot["findings"][0]
+    assert "Competitors nearby link separate pages for Botox & Dysport" in finding["evidence"]
+
+    pdf = render_audit_report_pdf({"title": "x", "snapshot": snapshot})
+    assert pdf.startswith(b"%PDF")
+
+
+def test_location_pages_not_pitched_when_competitors_dont_have_them():
+    service = AuditReportService(BenchmarkRepository(), FakeReportRepository())
+    options = {o["signal"]: o for o in service.options_for_prospect("place-1")["options"]}
+    assert options["no_city_pages"]["default_selected"] is False

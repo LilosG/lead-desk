@@ -10,6 +10,8 @@ from app.services.audit_report_policy import (
     observed_summary,
     report_policy_for,
 )
+from app.services import audit_benchmarks
+from app.services.outreach_audit_copy import clean_business_name
 from pipeline import verticals as vertical_config
 
 MAX_BATCH = 50
@@ -195,10 +197,13 @@ def _audit_coverage(prospect: dict[str, Any], audit: dict[str, Any]) -> list[dic
     title = audit.get("title")
     title_length = audit.get("title_length")
     if title is not None or title_length is not None:
-        if title:
-            length_note = f" · {title_length} characters" if title_length is not None else ""
-            value = f"Homepage title detected{length_note}"
+        length = title_length if title_length is not None else len(title or "")
+        if title and 20 <= length <= 65:
+            value = f"Homepage title set · {length} characters"
             status = "confirmed"
+        elif title:
+            value = f"Homepage title is {length} characters"
+            status = "attention"
         else:
             value = "Homepage title not detected"
             status = "attention"
@@ -344,6 +349,8 @@ def _executive_summary(
     findings: list[dict[str, Any]],
     coverage: list[dict[str, str]],
     comparison: dict[str, Any] | None = None,
+    bench: dict[str, Any] | None = None,
+    gaps: dict[str, Any] | None = None,
 ) -> str:
     rating = prospect.get("rating")
     review_count = prospect.get("review_count")
@@ -354,7 +361,7 @@ def _executive_summary(
             f"{business_name} has a {float(rating):.1f}-star rating from "
             f"{int(review_count):,} Google review{'s' if int(review_count) != 1 else ''}"
         )
-        if comparison and comparison.get("median_reviews"):
+        if comparison and comparison.get("median_reviews") and not bench:
             median = int(comparison["median_reviews"])
             ahead = int(review_count) >= median
             footprint += (
@@ -365,6 +372,25 @@ def _executive_summary(
     elif review_count is not None:
         parts.append(f"Google shows {int(review_count):,} reviews for {business_name}.")
 
+    if bench and comparison:
+        behind = [_BENCH_PHRASES.get(r["metric"], r["metric"].lower())
+                  for r in bench.get("rows") or [] if r.get("verdict") == "behind"]
+        n = bench.get("sample_size")
+        where = f"{n} other {comparison['niche']} businesses in {comparison['market']}"
+        if behind:
+            parts.append(
+                f"Compared with {where}, it's behind on {len(behind)} of {len(bench['rows'])} "
+                f"measures, including {_join(behind[:4])}."
+            )
+        else:
+            parts.append(f"Compared with {where}, it's on par or ahead on every measure we compared.")
+    if gaps and gaps.get("gaps"):
+        top = gaps["gaps"][0]
+        parts.append(
+            f"{top['count']} of those {gaps['sample_size']} competitors with websites have a separate "
+            f"page for {top['label']}; this site doesn't."
+        )
+
     phrases: list[str] = []
     for item in sorted(findings, key=_finding_order):
         phrase = (item.get("phrase") or item.get("title") or "").strip()
@@ -374,6 +400,14 @@ def _executive_summary(
             break
     if phrases:
         high = sum(1 for item in findings if item.get("impact") == "high")
+        if bench:
+            first = [
+                (item.get("phrase") or item.get("title") or "").strip()
+                for item in sorted(findings, key=_finding_order)
+                if item.get("impact") == "high"
+            ][:2] or phrases[:1]
+            parts.append(f"Start with {_join(first)}; the action plan lists everything in order.")
+            return " ".join(parts)
         lead = (
             f"The biggest opportunities are {_join(phrases)}."
             if len(phrases) > 1 else f"The biggest opportunity is {phrases[0]}."
@@ -388,6 +422,26 @@ def _executive_summary(
         parts.append("We didn't find anything that needs attention right now.")
 
     return " ".join(parts)
+
+
+_BENCH_PHRASES = {
+    "Google reviews": "review count",
+    "Google rating": "star rating",
+    "Newest Google review": "how recently it got a review",
+    "Hours on Google": "hours on Google",
+    "Mobile speed score": "mobile speed",
+    "Online booking": "online booking",
+    "Business details for Google (schema)": "business details for Google",
+}
+
+
+def _location_pages_common(peers: dict[str, Any] | None) -> bool | None:
+    """Whether location pages are normal for this niche here (None = unknown)."""
+    rows = [p for p in (peers or {}).get("peers") or []
+            if p.get("is_reachable") and p.get("location_page_count") is not None]
+    if len(rows) < audit_benchmarks.MIN_PEERS:
+        return None
+    return sum(1 for p in rows if (p.get("location_page_count") or 0) > 0) / len(rows) >= 0.25
 
 
 class AuditReportService:
@@ -434,6 +488,9 @@ class AuditReportService:
 
         findings = self.prospect_repository.get_findings(place_id)
         options: list[dict[str, Any]] = []
+        location_pages_common = None
+        if any(f.get("signal") == "no_city_pages" for f in findings):
+            location_pages_common = _location_pages_common(self._peers(prospect))
 
         for finding in findings:
             signal = finding.get("signal")
@@ -448,7 +505,10 @@ class AuditReportService:
                     "category": policy.category,
                     "disposition": policy.disposition,
                     "impact": policy.impact,
-                    "default_selected": policy.default_selected,
+                    "default_selected": (
+                        policy.default_selected
+                        and not (policy.signal == "no_city_pages" and location_pages_common is False)
+                    ),
                     "evidence": _evidence_for_signal(
                         policy.signal, finding, prospect, {}
                     ),
@@ -477,6 +537,9 @@ class AuditReportService:
 
         normalized_signals: list[str] = []
         report_findings: list[dict[str, Any]] = []
+        peers = self._peers(prospect)
+        peer_rows = (peers or {}).get("peers") or []
+        gaps = audit_benchmarks.page_gaps(prospect, website_audit, peer_rows)
 
         for signal in selected_signals:
             if signal in normalized_signals:
@@ -523,13 +586,30 @@ class AuditReportService:
         location = ", ".join(
             part for part in [prospect.get("city"), prospect.get("state")] if part
         )
+        if gaps:
+            for item in report_findings:
+                if item["signal"] == "no_service_pages":
+                    named = ", ".join(g["label"] for g in gaps["gaps"][:3])
+                    item["evidence"] = (
+                        f"{(item.get('evidence') or '').rstrip('.')}. "
+                        f"Competitors nearby link separate pages for {named}."
+                    ).lstrip(". ")
         coverage = _audit_coverage(prospect, website_audit)
-        comparison = market_comparison(prospect, self._peers(prospect))
+        comparison = market_comparison(prospect, peers)
+        niche_ctx = _niche_context(prospect)
+        bench = audit_benchmarks.benchmarks(
+            prospect, website_audit, peer_rows, offering_label=niche_ctx["offering_label"],
+        )
+        snippet = audit_benchmarks.search_snippet(
+            prospect, website_audit, clean_business_name(prospect.get("name")),
+        )
+        psi_payload = website_audit.get("raw_psi_payload") or {}
+        screenshot = psi_payload.get("screenshot") if isinstance(psi_payload, dict) else None
 
         snapshot = _json_safe(
             {
                 "report_kind": "local_visibility_audit",
-                "report_version": 6,
+                "report_version": 7,
                 "business": {
                     "name": business_name,
                     "location": location or None,
@@ -543,18 +623,24 @@ class AuditReportService:
                 },
                 "source_checked_at": source_checked_at,
                 "executive_summary": _executive_summary(
-                    business_name,
+                    clean_business_name(business_name),
                     prospect,
                     report_findings,
                     coverage,
                     comparison,
+                    bench,
+                    gaps,
                 ),
                 "audit_scope": coverage,
                 "measurements": {
                     "mobile_speed": website_audit.get("psi_performance"),
                     "lcp_ms": website_audit.get("psi_lcp_ms"),
                     "reachable": website_audit.get("is_reachable"),
+                    "screenshot": screenshot if isinstance(screenshot, str) else None,
                 },
+                "benchmarks": bench,
+                "page_gaps": gaps,
+                "search_snippet": snippet,
                 "strengths": [
                     item for item in coverage
                     if item.get("status") == "confirmed"

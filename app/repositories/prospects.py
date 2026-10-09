@@ -286,6 +286,7 @@ class ProspectRepository:
                 psi_cls,
                 psi_mobile_friendly,
                 crawl_error,
+                raw_psi_payload,
                 offering_page_count,
                 offering_titles,
                 location_page_count,
@@ -328,10 +329,24 @@ class ProspectRepository:
                 b.rating,
                 coalesce(b.review_count, 0) as review_count,
                 b.website_url is not null as has_website,
-                coalesce(b.is_franchise, false) as is_franchise
+                coalesce(b.is_franchise, false) as is_franchise,
+                b.last_review_days,
+                b.has_hours,
+                b.photo_count,
+                we.is_reachable,
+                we.has_ssl,
+                we.psi_performance,
+                we.has_online_booking,
+                we.has_contact_form,
+                we.offering_page_count,
+                we.offering_titles,
+                we.location_page_count,
+                we.has_localbusiness_schema
             from businesses b
             join v_lead_segments seg
               on seg.place_id = b.place_id
+            left join website_enrichment we
+              on we.place_id = b.place_id
             where exists (
                     select 1
                     from business_vertical_memberships bvm
@@ -376,6 +391,9 @@ class ProspectRepository:
             "sample_size": len(peers),
             "median_reviews": median,
             "scope_city": next(iter(cities)) if len(cities) == 1 else None,
+            # Every comparable business except this one, with the public
+            # signals the report benchmarks against (reviews, speed, pages...).
+            "peers": [dict(r) for r in peers if r["place_id"] != place_id],
             "leaders": [
                 {
                     "name": r["name"],

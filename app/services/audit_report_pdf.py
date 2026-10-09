@@ -337,7 +337,7 @@ def _scorecard(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     # Google profile
     profile = [f for f in findings if f.get("category") == "Google Business Profile"
                and f.get("signal") not in REVIEW_SIGNALS | WEBSITE_DOWN_SIGNALS]
-    status, detail, tone = from_findings(profile, "Hours, photos and details in place")
+    status, detail, tone = from_findings(profile, "Nothing flagged in this audit")
     tiles.append({"area": "GOOGLE PROFILE", "status": status, "detail": detail, "tone": tone})
 
     # Reviews
@@ -367,7 +367,7 @@ def _scorecard(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     else:
         site = [f for f in findings if f.get("category") in {"Website", "Consistency"}
                 and f.get("signal") not in SPEED_SIGNALS]
-        status, detail, tone = from_findings(site, "Secure, loads, key pages found")
+        status, detail, tone = from_findings(site, "Nothing flagged in this audit")
         tiles.append({"area": "WEBSITE", "status": status, "detail": detail, "tone": tone})
 
     # Mobile speed
@@ -774,6 +774,186 @@ def _next_step(snapshot: dict[str, Any], st: dict[str, ParagraphStyle]) -> Table
     return t
 
 
+# ---------------------------------------------------------------- competitive sections
+
+VERDICT = {"behind": ("Behind", "red"), "on_par": ("On par", "grey"), "ahead": ("Ahead", "green")}
+
+
+def _benchmark_section(snapshot: dict[str, Any], st: dict[str, ParagraphStyle]) -> list[Flowable]:
+    bench = snapshot.get("benchmarks") or {}
+    rows_in = bench.get("rows") or []
+    if not rows_in:
+        return []
+    comparison = snapshot.get("market_comparison") or {}
+    market = comparison.get("market") or "your area"
+    niche = comparison.get("niche") or "local"
+    n = bench.get("sample_size") or 0
+    head = [Paragraph(h, st["label"]) for h in ("", "YOU", "TYPICAL NEARBY", "BEST NEARBY", "")]
+    rows = [head]
+    for r in rows_in:
+        word, tone = VERDICT.get(r.get("verdict"), ("On par", "grey"))
+        metric = Paragraph(
+            _text(r.get("metric")) + (f"<br/><font size='7' color='#9a9b94'>{_text(r['note'])}</font>"
+                                      if r.get("note") else ""),
+            st["row_title"],
+        )
+        fg = TONES[tone][0] if tone != "grey" else INK
+        you_style = ParagraphStyle(f"you-{tone}", parent=st["row_title"], textColor=fg)
+        rows.append([
+            metric,
+            Paragraph(_text(r.get("you")), you_style),
+            Paragraph(_text(r.get("typical")), st["body"]),
+            Paragraph(_text(r.get("best") or ""), st["body"]),
+            _pill(word, tone, st["body"]),
+        ])
+    widths = [2.35 * inch, 1.2 * inch, 1.35 * inch, 1.25 * inch, CONTENT_W - 6.15 * inch]
+    t = Table(rows, colWidths=widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, LINE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, 0), 0),
+        ("ALIGN", (4, 0), (4, -1), "RIGHT"),
+    ]))
+    behind, total = bench.get("behind") or 0, len(rows_in)
+    intro = (
+        f"We compared {_text(snapshot.get('business', {}).get('name') or 'you')} with {n} other "
+        f"{_text(niche)} businesses in {_text(market)}, using their public Google listings and websites. "
+        + (f"You're behind on {behind} of {total} measures." if behind else
+           "You're on par or ahead on every measure we compared.")
+    )
+    return [
+        *_section("How you stack up locally", "Competitive benchmark", st),
+        Paragraph(intro, st["muted"]),
+        Spacer(1, 6),
+        KeepTogether(t),
+        Spacer(1, 18),
+    ]
+
+
+def _google_result(title: str | None, url: str, desc: str | None, st: dict[str, ParagraphStyle],
+                   missing_title: str, missing_desc: str) -> list[Flowable]:
+    t_style = ParagraphStyle("gtitle", parent=st["body"], fontSize=11.5, leading=14,
+                             textColor=colors.HexColor("#1a0dab"))
+    u_style = ParagraphStyle("gurl", parent=st["body"], fontSize=7.8, leading=10,
+                             textColor=colors.HexColor("#3c7a52"))
+    d_style = ParagraphStyle("gdesc", parent=st["body"], fontSize=8.4, leading=11.4,
+                             textColor=colors.HexColor("#4d5156"))
+    miss = ParagraphStyle("gmiss", parent=d_style, textColor=RED)
+    return [
+        Paragraph(_text(url), u_style),
+        Paragraph(_text(title), t_style) if title else Paragraph(_text(missing_title), miss),
+        Paragraph(_text(desc), d_style) if desc else Paragraph(_text(missing_desc), miss),
+    ]
+
+
+def _snippet_section(snapshot: dict[str, Any], st: dict[str, ParagraphStyle]) -> list[Flowable]:
+    snip = snapshot.get("search_snippet") or {}
+    shot = (snapshot.get("measurements") or {}).get("screenshot")
+    if not snip and not shot:
+        return []
+    image = None
+    if isinstance(shot, str) and "," in shot:
+        try:
+            import base64
+            from reportlab.lib.utils import ImageReader
+            from reportlab.platypus import Image
+
+            raw = base64.b64decode(shot.split(",", 1)[1])
+            iw, ih = ImageReader(BytesIO(raw)).getSize()
+            w = 1.75 * inch
+            h = min(w * ih / iw, 3.6 * inch)
+            image = Table([[Image(BytesIO(raw), width=h * iw / ih, height=h)],
+                           [Paragraph("Your homepage on a phone, as Google's speed test saw it.",
+                                      st["stat_label"])]], colWidths=[w + 0.2 * inch])
+            image.setStyle(TableStyle([
+                ("BOX", (0, 0), (0, 0), 0.6, LINE), ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+        except Exception:
+            image = None
+
+    text_w = CONTENT_W - 2.2 * inch if image is not None else CONTENT_W
+
+    def card(label: str, body: list[Flowable], tone: Any) -> Table:
+        c = Table([[Paragraph(label, st["label"])], [body]], colWidths=[text_w])
+        c.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.6, LINE),
+            ("LINEBEFORE", (0, 0), (0, -1), 3, tone),
+            ("LEFTPADDING", (0, 0), (-1, -1), 11), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, 0), 8), ("BOTTOMPADDING", (0, -1), (-1, -1), 9),
+            ("TOPPADDING", (0, 1), (-1, 1), 2),
+        ]))
+        return c
+
+    blocks: list[Flowable] = []
+    if snip:
+        now = _google_result(snip.get("current_title"), snip.get("url") or "", snip.get("current_description"), st,
+                             "No page title set, so Google writes its own headline.",
+                             "No description set, so Google pulls a random line from the page.")
+        new = _google_result(snip.get("suggested_title"), snip.get("url") or "",
+                             snip.get("suggested_description"), st, "", "")
+        blocks = [
+            card("WHAT GOOGLE SHOWS FOR YOUR HOMEPAGE NOW", now, FAINT), Spacer(1, 8),
+            card("SUGGESTED, WRITTEN FROM YOUR OWN BUSINESS DETAILS", new, GREEN), Spacer(1, 6),
+            Paragraph("The title is the blue headline people click in search results; keep it under about "
+                      "60 characters. The description is the grey text underneath. It doesn't change "
+                      "rankings directly, but it's your pitch for the click.", st["small"]),
+        ]
+
+    title = "Your homepage in Google search" if snip else "Your homepage on a phone"
+    out: list[Flowable] = [*_section(title, "How people see you", st)]
+    if image is not None and blocks:
+        t = Table([[image, blocks]], colWidths=[2.2 * inch, text_w])
+        t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                               ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+        out.append(t)
+    elif image is not None:
+        out.append(image)
+    else:
+        out += blocks
+    return out + [Spacer(1, 18)]
+
+
+def _gaps_section(snapshot: dict[str, Any], st: dict[str, ParagraphStyle]) -> list[Flowable]:
+    gaps = snapshot.get("page_gaps") or {}
+    items = gaps.get("gaps") or []
+    if not items:
+        return []
+    n = gaps.get("sample_size") or 0
+    label = gaps.get("offering_label") or "service pages"
+    rows = []
+    for g in items:
+        rows.append([
+            Paragraph(_text(g.get("label")), st["row_title"]),
+            _MiniBar(int(g.get("count") or 0), n or 1, 2.4 * inch, False),
+            Paragraph(f"{int(g.get('count') or 0)} of {n} competitors", st["row_text"]),
+        ])
+    t = Table(rows, colWidths=[CONTENT_W - 2.6 * inch - 1.5 * inch, 2.6 * inch, 1.5 * inch])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, LINE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    yours = gaps.get("yours") or []
+    have = ("Pages we found linked from your homepage: " + ", ".join(_text(y) for y in yours) + "."
+            if yours else f"We didn't find any separate {_text(label)} linked from your homepage.")
+    return [KeepTogether([
+        *_section("Pages your competitors have that you don't", "Content gap", st),
+        Paragraph(
+            "Each of these has its own page on many competitors' sites (linked from their homepage) "
+            "but not on yours. A dedicated page is what lets you show up when someone searches for "
+            "that exact thing in your area.", st["muted"]),
+        Spacer(1, 6),
+        t,
+        Spacer(1, 5),
+        Paragraph(have, st["small"]),
+    ]), Spacer(1, 18)]
+
+
 # ---------------------------------------------------------------- render
 
 def render_audit_report_pdf(report: dict) -> bytes:
@@ -871,9 +1051,15 @@ def render_audit_report_pdf(report: dict) -> bytes:
                   *_section("Fix these first", "Priorities", st),
                   _top_fixes(findings, st)]
 
-    # Page 2 -------------------------------------------------------------
+    # Page 2: competitors and search ---------------------------------------
     story.append(PageBreak())
+    story += _benchmark_section(snapshot, st)
+    story += _snippet_section(snapshot, st)
+    story += _gaps_section(snapshot, st)
+
+    # Action plan --------------------------------------------------------
     if findings:
+        story.append(CondPageBreak(3.2 * inch))
         story += [
             *_section("Your action plan", "Everything we found", st),
             Paragraph("In order of likely impact. Each item is explained, with how to fix it, "
@@ -882,7 +1068,8 @@ def render_audit_report_pdf(report: dict) -> bytes:
             _action_plan(findings, st),
             Spacer(1, 18),
         ]
-    story += _comparison_table(snapshot, st)
+    if not snapshot.get("benchmarks"):
+        story += _comparison_table(snapshot, st)
     story += _working(snapshot, st)
 
     # Details ------------------------------------------------------------
