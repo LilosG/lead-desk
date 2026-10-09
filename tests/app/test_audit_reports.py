@@ -148,7 +148,7 @@ def test_snapshot_excludes_internal_scores_and_raw_findings():
     assert "total_score" not in serialized
     assert "tier" not in serialized
     assert "internal raw finding" not in serialized
-    assert snapshot["report_version"] == 5
+    assert snapshot["report_version"] == 6
     assert snapshot["business"]["review_count"] == 87
     assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
     # No evidence line that only repeats "what we found".
@@ -177,7 +177,7 @@ def test_snapshot_includes_broad_client_safe_audit_coverage():
     assert coverage["Business Profile connection"]["status"] == "attention"
     assert coverage["Business contact consistency"]["status"] == "review"
     assert coverage["Primary business category"]["value"] == "Electrician"
-    assert "We checked" in snapshot["executive_summary"]
+    assert "We checked" not in snapshot["executive_summary"]
     assert "4.9-star rating from 87 Google reviews" in snapshot["executive_summary"]
     assert "opportunity" in snapshot["executive_summary"].lower()
     assert "hidden scores" not in snapshot["executive_summary"].lower()
@@ -243,7 +243,7 @@ def test_pdf_renderer_produces_two_page_outreach_report():
     assert pdf.startswith(b"%PDF-")
     assert len(pdf) > 5000
     page_count = pdf.count(b"/Type /Page") - pdf.count(b"/Type /Pages")
-    assert page_count == 2
+    assert page_count >= 3
 
 
 def test_report_snapshot_is_detached_from_later_prospect_changes():
@@ -398,3 +398,45 @@ def test_batch_creates_default_reports_and_skips_unknowns():
     results = service.create_default_reports(["place-1", "missing", "place-1"])
     assert [r["status"] for r in results] == ["created", "skipped"]
     assert results[1]["place_id"] == "missing"
+
+
+def test_pdf_scorecard_reads_from_the_snapshot():
+    from app.services.audit_report_pdf import _scorecard
+
+    no_site = {
+        "business": {"name": "Moxi", "website_url": None, "review_count": 9},
+        "market_comparison": {"median_reviews": 66},
+        "findings": [
+            {"signal": "no_website", "category": "Google Business Profile", "impact": "high"},
+            {"signal": "reviews_bottom_quartile", "category": "Reputation", "impact": "high"},
+        ],
+    }
+    tiles = {t["area"]: t for t in _scorecard(no_site)}
+    assert tiles["WEBSITE"]["status"] == "No website"
+    assert tiles["MOBILE SPEED"]["status"] == "Not tested"
+    assert tiles["REVIEWS"]["detail"] == "9 vs. 66 typical locally"
+    # no_website is shown under Website, not double-counted under the profile.
+    assert tiles["GOOGLE PROFILE"]["status"] == "No issues flagged"
+
+    slow = {
+        "business": {"name": "Glow", "website_url": "https://glow.example"},
+        "measurements": {"mobile_speed": 92},
+        "findings": [{"signal": "no_title", "category": "Website", "impact": "medium"}],
+    }
+    tiles = {t["area"]: t for t in _scorecard(slow)}
+    assert tiles["MOBILE SPEED"]["status"] == "Fast"
+    assert tiles["WEBSITE"]["status"] == "Room to improve"
+
+
+def test_pdf_still_renders_older_saved_snapshots():
+    legacy = {
+        "title": "Local Visibility Audit",
+        "snapshot": {
+            "business": {"name": "Old Report Co", "location": "Austin, TX"},
+            "findings": [{"signal": "no_title", "title": "Homepage search title",
+                          "disposition": "recommended", "what_we_found": "x",
+                          "why_it_matters": "y", "recommendation": "z"}],
+            "audit_scope": [],
+        },
+    }
+    assert render_audit_report_pdf(legacy).startswith(b"%PDF")

@@ -365,13 +365,6 @@ def _executive_summary(
     elif review_count is not None:
         parts.append(f"Google shows {int(review_count):,} reviews for {business_name}.")
 
-    checked = len(coverage)
-    if checked:
-        parts.append(
-            f"We checked {checked} part{'s' if checked != 1 else ''} of the Google profile "
-            "and website."
-        )
-
     phrases: list[str] = []
     for item in sorted(findings, key=_finding_order):
         phrase = (item.get("phrase") or item.get("title") or "").strip()
@@ -387,8 +380,8 @@ def _executive_summary(
         )
         if high:
             lead += (
-                f" {high} of the {len(findings)} items below are high impact"
-                if high != len(findings) else " Each item below is high impact"
+                f" {high} of the {len(findings)} items in this report are high impact"
+                if high != len(findings) else " Each item in this report is high impact"
             ) + " and worth fixing first."
         parts.append(lead)
     else:
@@ -536,7 +529,7 @@ class AuditReportService:
         snapshot = _json_safe(
             {
                 "report_kind": "local_visibility_audit",
-                "report_version": 5,
+                "report_version": 6,
                 "business": {
                     "name": business_name,
                     "location": location or None,
@@ -557,6 +550,11 @@ class AuditReportService:
                     comparison,
                 ),
                 "audit_scope": coverage,
+                "measurements": {
+                    "mobile_speed": website_audit.get("psi_performance"),
+                    "lcp_ms": website_audit.get("psi_lcp_ms"),
+                    "reachable": website_audit.get("is_reachable"),
+                },
                 "strengths": [
                     item for item in coverage
                     if item.get("status") == "confirmed"

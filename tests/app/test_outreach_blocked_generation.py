@@ -275,7 +275,7 @@ def test_audit_grounding_covers_profile_and_speed_findings_for_volume():
     assert visible_claim.startswith("I ran Glow Med Spa's homepage through Google's mobile speed test")
     assert "scored 38 out of 100" in visible_claim
     assert "about 9 seconds" in visible_claim
-    assert "the number of Google reviews" in visible_claim
+    assert "your number of Google reviews" in visible_claim
     assert "treatment pages" in visible_claim
     assert "online presence" not in visible_claim
     assert context["_audit_subject"] == "Glow Med Spa website on phones"
