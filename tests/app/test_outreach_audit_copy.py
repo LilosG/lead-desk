@@ -63,3 +63,16 @@ def test_audit_grounded_drafts_attach_the_report_and_others_do_not():
     assert attached and attached[0][0] == "Glow Med Spa - Local Visibility Audit.pdf"
     assert attached[0][1].startswith(b"%PDF")
     assert service.audit_attachments({"claim_signal": "no_ssl", "place_id": "p1"}) is None
+
+
+def test_email_mentions_the_local_benchmark():
+    snapshot = {
+        "market_comparison": {"market": "Scottsdale, AZ", "niche": "med spa", "median_reviews": 64},
+        "benchmarks": {"sample_size": 29, "behind": 6, "rows": [{}] * 8},
+        "findings": [
+            {"signal": "psi_mobile_critical", "data": {"psi_performance": 23, "lcp_ms": 13800}},
+            {"signal": "no_photos"},
+        ],
+    }
+    paragraph, _ = audit_email_paragraph(snapshot, "Desert Bloom Aesthetics LLC")
+    assert "I also compared you with 29 other med spa businesses in Scottsdale; you're behind on 6 of the 8" in paragraph

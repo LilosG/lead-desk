@@ -738,6 +738,11 @@ def apply_psi(f: SiteFindings, payload: dict | None) -> SiteFindings:
         "fetchTime": lh.get("fetchTime"),
         "finalUrl": lh.get("finalUrl"),
     }
+    # Google's own phone-sized render of the homepage (a ~20-60KB JPEG data
+    # URI). The audit report shows it next to the speed score.
+    shot = ((audits.get("final-screenshot") or {}).get("details") or {}).get("data")
+    if isinstance(shot, str) and shot.startswith("data:image/") and len(shot) < 400_000:
+        f.raw_psi_payload["screenshot"] = shot
     return f
 
 

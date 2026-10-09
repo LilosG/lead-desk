@@ -263,4 +263,14 @@ def audit_email_paragraph(snapshot: dict[str, Any], business_name: str) -> tuple
         opening += f"\n\nI found {remaining} other things worth fixing too, including {named}."
     elif others:
         opening += f"\n\nThere's one other thing worth fixing too: {others[0]}."
+
+    bench = snapshot.get("benchmarks") or {}
+    comparison = snapshot.get("market_comparison") or {}
+    city = _short_market(comparison.get("market"))
+    if bench.get("rows") and bench.get("behind") and city:
+        opening += (
+            f" I also compared you with {bench['sample_size']} other "
+            f"{_niche_noun(comparison.get('niche'))} businesses in {city}; you're behind on "
+            f"{bench['behind']} of the {len(bench['rows'])} things I measured."
+        )
     return opening, subject[:60]
