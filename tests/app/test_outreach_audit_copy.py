@@ -104,3 +104,18 @@ def test_postal_address_is_optional_and_configurable():
     assert "Columbia" not in _footer(None)
     assert "no thanks" in _footer(None)
     assert "PO Box 123, San Diego, CA 92101" in _footer("PO Box 123,  San Diego, CA 92101")
+
+
+def test_weak_finding_does_not_lead_when_competitors_have_pages_it_lacks():
+    snapshot = {
+        "business": {"rating": 5.0, "review_count": 40},
+        "market_comparison": {"market": "Scottsdale, AZ", "niche": "med spa", "median_reviews": 64},
+        "benchmarks": {"sample_size": 24, "behind": 2, "rows": [
+            {"metric": "Online booking", "typical": "60% offer it", "verdict": "behind"}]},
+        "page_gaps": {"sample_size": 24, "gaps": [{"label": "Weight Loss", "count": 10}]},
+        "findings": [{"signal": "no_city_pages", "impact": "low", "phrase": "location pages"}],
+    }
+    paragraph, _ = audit_email_paragraph(snapshot, "Bloom Wellness Clinics, LLC")
+    assert "location pages" not in paragraph
+    assert "The clearest gap: 10 of them have their own Weight Loss page" in paragraph
+    assert "60% of them also take bookings online" in paragraph
