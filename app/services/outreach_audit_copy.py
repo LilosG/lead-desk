@@ -322,6 +322,10 @@ def _support_sentence(lead_signal: str, snapshot: dict[str, Any]) -> str | None:
     return None
 
 
+_WEAK_LEADS = {"no_city_pages", "no_localbusiness_schema", "no_gbp_link",
+               "no_business_description", "no_meta_description", "no_h1", "title_length"}
+
+
 def _benchmark_email(snapshot: dict[str, Any], name: str,
                      ordered: list[dict[str, Any]]) -> tuple[str, str] | None:
     bench = snapshot.get("benchmarks") or {}
@@ -338,6 +342,15 @@ def _benchmark_email(snapshot: dict[str, Any], name: str,
             break
     if not gap:
         return None
+    # A low-impact lead ("location pages", "schema") is a weak opener. When
+    # competitors have pages this site lacks, that's the more concrete gap.
+    gaps = (snapshot.get("page_gaps") or {}).get("gaps") or []
+    lead_item = next((i for i in ordered if i["signal"] == lead_signal), {})
+    if gaps and (lead_signal in _WEAK_LEADS or lead_item.get("impact") == "low"):
+        top = gaps[0]
+        gap = (f"The clearest gap: {top['count']} of them have their own {top['label']} page, "
+               "and your site doesn't.")
+        lead_signal = "no_service_pages"
     parts = [f"I compared {name} with {n} other {_plural_niche(comparison.get('niche'))} in {city}.", gap]
     support = _support_sentence(lead_signal, snapshot)
     if support:
