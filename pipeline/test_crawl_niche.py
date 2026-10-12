@@ -74,6 +74,17 @@ broken = E.crawl_site({
     "vertical": "med_spa", "city": "Scottsdale", "phone": "(480) 555-0100",
 })
 
+# No website on the Google profile, but the business has one: find it by name.
+E.candidate_domains = lambda b, limit=8: ["no-such-host.invalid", f"127.0.0.1:{server.server_port}"]
+unlisted = E.crawl_unlisted({
+    "place_id": "unlisted", "name": "Lakeline Family Dentistry", "vertical": "dentist",
+    "city": "Austin", "phone": "(512) 555-0100",
+})
+stranger = E.crawl_unlisted({
+    "place_id": "stranger", "name": "Other Dental Co", "vertical": "dentist",
+    "city": "Denver", "phone": "(303) 555-0199",
+})
+
 business = {
     "place_id": "crawl-test",
     "website_url": base + "/",
@@ -92,6 +103,10 @@ checks = [
     ("location page found from the business's own city", f.has_city_pages),
     ("online booking detected", f.has_online_booking and f.booking_provider == "Vagaro"),
     ("phone on site matches the profile", f.nap_matches_gbp is True),
+    ("site missing from Google but found by name is crawled, not 'no website'",
+     unlisted.site_source == "found" and unlisted.is_reachable and unlisted.has_localbusiness_schema),
+    ("a site that doesn't match the business is never claimed as theirs",
+     stranger.site_source == "gbp" and stranger.crawl_error == "no_website"),
     ("dead profile link with a working homepage is NOT 'site down'",
      (broken.crawl_error or "").startswith("profile_link_404")),
 ]
@@ -99,6 +114,10 @@ checks = [
 import scoring as S  # noqa: E402
 base_line = S.Baseline("med_spa", "Scottsdale, AZ", 10, 50, 20, 80, 4.8, 90)
 _, ev = S.score_website({"name": "Glow", "website_url": base + "/old/"}, broken, base_line)
+_, ev2 = S.score_website({"name": "Lakeline"}, unlisted, base_line)
+checks.append(("unlisted site scores as 'website not on Google', never 'no website'",
+               "website_not_on_gbp" in [e.signal for e in ev2]
+               and "no_website" not in [e.signal for e in ev2]))
 checks.append(("broken profile link scores as its own finding",
                [e.signal for e in ev] == ["broken_profile_link"]))
 

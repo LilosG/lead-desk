@@ -21,7 +21,7 @@ from typing import Any
 
 # Order in which a finding makes the strongest opening line.
 LEAD_PRIORITY = [
-    "broken_profile_link", "no_website", "psi_mobile_critical", "no_reviews",
+    "website_not_on_gbp", "broken_profile_link", "no_website", "psi_mobile_critical", "no_reviews",
     "reviews_bottom_quartile", "no_ssl", "psi_mobile_poor", "reviews_below_median",
     "no_review_replies", "no_service_pages", "no_hours", "no_photos",
     "no_services_listed", "no_title", "no_city_pages", "no_localbusiness_schema",
@@ -37,6 +37,7 @@ _LEGAL_SUFFIX = re.compile(
 # How each finding reads in a sentence to the owner ("including ...").
 EMAIL_PHRASES = {
     "no_website": "getting a website onto your Google listing",
+    "website_not_on_gbp": "linking your website on your Google listing",
     "broken_profile_link": "the broken website link on your Google listing",
     "site_down": "your website not loading",
     "psi_mobile_critical": "how slowly your site loads on phones",
@@ -138,6 +139,13 @@ def _lead_sentence(signal: str, item: dict[str, Any], name: str,
     business = snapshot.get("business") if isinstance(snapshot.get("business"), dict) else {}
     comparison = snapshot.get("market_comparison") or {}
 
+    if signal == "website_not_on_gbp":
+        return (
+            f"{possessive(name)} Google listing doesn't link to your website, so people who "
+            "find you on Google Maps can't get to it. The site itself is up; it just isn't "
+            "on the listing.",
+            f"{name} website on Google Maps",
+        )
     if signal == "broken_profile_link":
         return (
             f"The website link on {possessive(name)} Google listing opens an error page right "
@@ -282,6 +290,9 @@ def _bench_gap_sentence(signal: str, item: dict[str, Any], name: str,
     if signal == "no_website":
         return ("The biggest gap: your Google listing doesn't have a website on it, so people "
                 "who find you on Maps have nowhere to look before deciding whether to call.")
+    if signal == "website_not_on_gbp":
+        return ("The biggest gap: your Google listing doesn't link to your website, so people "
+                "who find you on Maps can't get to it. The site itself is up; it just isn't on the listing.")
     if signal == "broken_profile_link":
         return ("The biggest gap: the website link on your Google listing opens an error page, "
                 "so anyone who taps \"Website\" on Maps hits a dead end. Your homepage itself loads fine.")

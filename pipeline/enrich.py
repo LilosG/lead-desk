@@ -204,6 +204,9 @@ class SiteFindings:
     psi_mobile_friendly: bool | None = None
 
     crawl_error: str | None = None
+    # "gbp": the site linked on the Google profile. "found": no site on the
+    # profile, but we found and verified the business's own site by name.
+    site_source: str = "gbp"
     raw_psi_payload: dict | None = None
 
 
@@ -763,10 +766,12 @@ def enrich_all(
     have_site = [b for b in businesses if b.get("website_url")]
     no_site = [b for b in businesses if not b.get("website_url")]
 
-    for b in no_site:
-        f = SiteFindings(place_id=b["place_id"], crawl_error="no_website")
-        results[b["place_id"]] = f
-    progress(f"{len(no_site)} businesses with no website (top-tier leads by default)")
+    progress(f"{len(no_site)} businesses with no website on Google; checking for an unlisted site...")
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for b, f in zip(no_site, ex.map(crawl_unlisted, no_site)):
+            results[b["place_id"]] = f
+    found = [b for b in no_site if results[b["place_id"]].site_source == "found"]
+    progress(f"  found {len(found)} real site(s) that aren't linked on Google")
     progress(f"crawling {len(have_site)} sites...")
 
     session_pool = [requests.Session() for _ in range(max_workers)]
@@ -789,7 +794,7 @@ def enrich_all(
                 progress(f"  crawled {done}/{len(have_site)}")
 
     if with_psi:
-        targets = [b for b in have_site if results[b["place_id"]].is_reachable]
+        targets = [b for b in have_site + found if results[b["place_id"]].is_reachable]
         if psi_limit:
             targets = targets[:psi_limit]
         progress(f"running PageSpeed on {len(targets)} reachable sites (slow)...")
@@ -812,3 +817,104 @@ def enrich_all(
                     progress(f"  psi {done}/{len(targets)}")
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Sites that exist but aren't on the Google profile
+# ---------------------------------------------------------------------------
+# Google's listing is often missing the website even though the business has
+# one. Calling that "no website" is a false claim, so before we conclude it, we
+# try the obvious domains built from the business name and accept one only if
+# the page carries the profile's phone number, or the business name AND city.
+_LEGAL_WORDS = {"inc", "llc", "co", "corp", "corporation", "ltd", "pllc", "pc", "the"}
+_PARKED_HINTS = ("domain is for sale", "buy this domain", "domain may be for sale",
+                 "this domain is parked", "parked free", "godaddy.com/domainsearch",
+                 "hugedomains", "sedo.com", "dan.com")
+FINDER_TIMEOUT_S = 6
+
+
+def _name_tokens(name: str | None) -> list[str]:
+    text = (name or "").lower()
+    text = re.split(r"\s+[|•·]\s+|\s+[-–—]\s+", text)[0]
+    text = text.replace("&", " and ").replace("+", " and ")
+    tokens = re.findall(r"[a-z0-9]+", text)
+    return [t for t in tokens if t not in _LEGAL_WORDS]
+
+
+def candidate_domains(business: dict, limit: int = 8) -> list[str]:
+    """Likely domains for a business name, most likely first.
+
+    'AAA Goforth Plumbing & Drain Service' -> aaagoforthplumbinganddrainservice.com,
+    aaagoforthplumbingdrainservice.com, ... (with/without each 'and', + city).
+    """
+    tokens = _name_tokens(business.get("name"))
+    if not tokens:
+        return []
+    city = re.sub(r"[^a-z0-9]", "", (business.get("city") or "").lower())
+    variants = [tokens, [t for t in tokens if t != "and"]]
+    and_positions = [i for i, t in enumerate(tokens) if t == "and"]
+    if len(and_positions) > 1:
+        for i in and_positions:
+            variants.append(tokens[:i] + tokens[i + 1:])
+    if city:
+        variants.append([t for t in tokens if t != "and"] + [city])
+    stems: list[str] = []
+    for v in variants:
+        stem = "".join(v)
+        if 4 <= len(stem) <= 63 and stem not in stems:
+            stems.append(stem)
+    out = [stem + ".com" for stem in stems]
+    out.append(stems[0] + ".net") if stems else None
+    return out[:limit]
+
+
+def _digits(text: str) -> str:
+    d = re.sub(r"\D", "", text or "")
+    return d[-10:] if len(d) >= 10 else d
+
+
+def _verifies(business: dict, html: str) -> bool:
+    low = html.lower()
+    if any(h in low for h in _PARKED_HINTS):
+        return False
+    phone = _digits(business.get("phone") or "")
+    if len(phone) == 10:
+        found = {_digits(m) for m in PHONE_RE.findall(html)}
+        if phone in found:
+            return True
+        if phone in re.sub(r"\D", "", low):
+            return True
+    city = (business.get("city") or "").lower().strip()
+    distinctive = [t for t in _name_tokens(business.get("name"))
+                   if len(t) >= 4 and t not in {"and", "plumbing", "service", "services",
+                                                "electric", "electrical", "dental", "spa"}]
+    hits = sum(1 for t in distinctive if t in low)
+    return bool(city) and city in low and distinctive and hits >= min(2, len(distinctive))
+
+
+def find_unlisted_site(business: dict, session: requests.Session | None = None) -> str | None:
+    """The business's own website when Google's profile has none, or None."""
+    session = session or requests.Session()
+    for domain in candidate_domains(business):
+        for url in (f"https://www.{domain}/", f"http://{domain}/"):
+            try:
+                r = session.get(url, timeout=FINDER_TIMEOUT_S, allow_redirects=True,
+                                headers={"User-Agent": C.USER_AGENT})
+            except requests.RequestException:
+                continue
+            if r.status_code < 400 and "html" in (r.headers.get("Content-Type") or "html"):
+                if _verifies(business, r.text or ""):
+                    return r.url
+                break  # domain answered but isn't this business: next domain
+    return None
+
+
+def crawl_unlisted(business: dict, session: requests.Session | None = None) -> SiteFindings:
+    """For a profile with no website: find the real site and crawl it, or say none."""
+    session = session or requests.Session()
+    url = find_unlisted_site(business, session)
+    if not url:
+        return SiteFindings(place_id=business["place_id"], crawl_error="no_website")
+    f = crawl_site({**business, "website_url": url}, session)
+    f.site_source = "found"
+    return f

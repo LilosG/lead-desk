@@ -526,3 +526,29 @@ def test_location_pages_not_pitched_when_competitors_dont_have_them():
     service = AuditReportService(BenchmarkRepository(), FakeReportRepository())
     options = {o["signal"]: o for o in service.options_for_prospect("place-1")["options"]}
     assert options["no_city_pages"]["default_selected"] is False
+
+
+def test_site_missing_from_google_is_reported_as_unlinked_not_missing():
+    from app.services.audit_report_pdf import _scorecard
+    from app.services.outreach_audit_copy import audit_email_paragraph
+
+    repo = FakeProspectRepository()
+    repo.prospect.update({"name": "AAA Goforth Plumbing & Drain Service", "website_url": None})
+    repo.audit.update({"site_source": "found",
+                       "resolved_url": "https://www.aaagoforthplumbinganddrainservice.com/"})
+    repo.findings = [{"signal": "website_not_on_gbp",
+                      "observed": {"found_url": "https://www.aaagoforthplumbinganddrainservice.com/"},
+                      "finding": "internal"}]
+    service = AuditReportService(repo, FakeReportRepository())
+    snapshot = service.create_report("place-1", selected_signals=["website_not_on_gbp"])["snapshot"]
+
+    assert snapshot["business"]["website_url"] == "https://www.aaagoforthplumbinganddrainservice.com/"
+    assert snapshot["business"]["site_on_google"] is False
+    finding = snapshot["findings"][0]
+    assert finding["title"] == "Website isn't linked on the Google profile"
+    assert "Website we found: https://www.aaagoforthplumbinganddrainservice.com/" in finding["evidence"]
+    tiles = {t["area"]: t for t in _scorecard(snapshot)}
+    assert tiles["WEBSITE"]["status"] == "Not on Google"
+    paragraph, subject = audit_email_paragraph(snapshot, "AAA Goforth Plumbing & Drain Service")
+    assert "doesn't link to your website" in paragraph
+    assert "no website" not in paragraph.lower()
