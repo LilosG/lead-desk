@@ -203,3 +203,37 @@ def test_demo_defaults_are_prefilled_for_one_click_mockups(client, seeded_run):
     defaults = response.json()["defaults"]
     assert defaults["services"] == ["Dental Implants", "Invisalign", "Teeth Whitening"]
     assert defaults["service_areas"] == ["Austin"]
+
+
+def test_set_website_by_hand_rescores_and_audits_the_site(client, seeded_run, monkeypatch):
+    import enrich as E
+
+    def fake_crawl(business, session=None):
+        f = _site(business["place_id"])
+        f.resolved_url = business["website_url"]
+        return f
+
+    monkeypatch.setattr(E, "crawl_site", fake_crawl)
+    monkeypatch.setattr(E, "run_psi", lambda url, key: None)
+    monkeypatch.setattr("threading.Thread.start", lambda self: None)  # no background run in tests
+
+    bad = client.post("/api/prospects/e2e-franchise/website", json={"url": "not a site"})
+    assert bad.status_code == 422
+
+    response = client.post("/api/prospects/e2e-franchise/website",
+                           json={"url": "realspa.example.com"})
+    assert response.status_code == 200, response.text
+    assert response.json()["website_url"] == "https://realspa.example.com"
+
+    detail = client.get("/api/prospects/e2e-franchise").json()
+    signals = {f["signal"] for f in detail["findings"]}
+    assert "website_not_on_gbp" in signals and "no_website" not in signals
+    assert detail["website_audit"]["site_source"] == "manual"
+
+    created = client.post("/api/audit-reports/batch", json={"place_ids": ["e2e-franchise"]}).json()
+    item = created["items"][0]
+    assert item["status"] == "created", item
+    report_id = item["report_id"]
+    snapshot = client.get(f"/api/audit-reports/{report_id}").json()["snapshot"]
+    assert snapshot["business"]["website_url"] == "https://realspa.example.com"
+    assert snapshot["business"]["site_on_google"] is False

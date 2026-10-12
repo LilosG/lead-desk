@@ -340,7 +340,7 @@ def score_website(b: dict, w, base: Baseline) -> tuple[int | None, list]:
             {"http_status": w.http_status, "error": w.crawl_error}))
         return SITE_DOWN_AXIS_SCORE, ev
 
-    if getattr(w, "site_source", "gbp") == "found":
+    if getattr(w, "site_source", "gbp") in ("found", "manual"):
         # The business HAS a site; Google's profile just doesn't link to it.
         # Never call this "no website". It's a strong, accurate opener.
         pts += UNLISTED_SITE_POINTS
