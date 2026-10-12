@@ -77,7 +77,7 @@ REVIEW_SIGNALS = {
     "no_review_replies", "few_review_replies",
 }
 SPEED_SIGNALS = {"psi_mobile_critical", "psi_mobile_poor"}
-WEBSITE_DOWN_SIGNALS = {"no_website", "site_down", "broken_profile_link"}
+WEBSITE_DOWN_SIGNALS = {"no_website", "site_down", "broken_profile_link", "website_not_on_gbp"}
 
 
 # ---------------------------------------------------------------- helpers
@@ -358,6 +358,9 @@ def _scorecard(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     if not has_site:
         tiles.append({"area": "WEBSITE", "status": "No website", "tone": "red",
                       "detail": "Nothing linked on Google"})
+    elif "website_not_on_gbp" in signals:
+        tiles.append({"area": "WEBSITE", "status": "Not on Google", "tone": "red",
+                      "detail": "Site exists, listing doesn't link it"})
     elif "site_down" in signals:
         tiles.append({"area": "WEBSITE", "status": "Not loading", "tone": "red",
                       "detail": "Error page when checked"})

@@ -61,6 +61,7 @@ WEBSITE_MAX_POINTS = 93
 NO_WEBSITE_AXIS_SCORE = 100
 SITE_DOWN_AXIS_SCORE = 85
 BROKEN_LINK_AXIS_SCORE = 75
+UNLISTED_SITE_POINTS = 20  # site exists but isn't linked on the Google profile
 
 
 def _normalize(points: int, axis_max: int) -> int:
@@ -338,6 +339,15 @@ def score_website(b: dict, w, base: Baseline) -> tuple[int | None, list]:
             f"They are paying for a domain that actively loses them customers.",
             {"http_status": w.http_status, "error": w.crawl_error}))
         return SITE_DOWN_AXIS_SCORE, ev
+
+    if getattr(w, "site_source", "gbp") == "found":
+        # The business HAS a site; Google's profile just doesn't link to it.
+        # Never call this "no website". It's a strong, accurate opener.
+        pts += UNLISTED_SITE_POINTS
+        ev.append(Evidence("gbp", "website_not_on_gbp", "high", UNLISTED_SITE_POINTS,
+            f"{name} has a website ({w.resolved_url}), but it isn't linked on their Google "
+            f"profile, so people on Google Maps can't get to it.",
+            {"found_url": w.resolved_url}))
 
     if not w.has_ssl:
         pts += 8
@@ -652,6 +662,8 @@ def lead_labels(b: dict, w, base: Baseline | None, evidence: list,
         labels.append("no_website")
     if signals & {"site_down", "broken_profile_link"}:
         labels.append("site_down")
+    if "website_not_on_gbp" in signals:
+        labels.append("site_not_on_google")
     if signals & {"crawl_blocked", "site_down", "nap_mismatch"}:
         labels.append("verify_first")
     emails = list(getattr(w, "emails_found", []) or []) if w else []

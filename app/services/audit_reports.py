@@ -529,6 +529,10 @@ class AuditReportService:
 
         findings = self.prospect_repository.get_findings(place_id)
         website_audit = self.prospect_repository.get_website_audit(place_id) or {}
+        site_on_google = bool(prospect.get("website_url"))
+        if not site_on_google and website_audit.get("site_source") == "found":
+            # Real site, just not on the Google profile: audit it as their site.
+            prospect = {**prospect, "website_url": website_audit.get("resolved_url")}
         findings_by_signal = {
             finding.get("signal"): finding
             for finding in findings
@@ -614,6 +618,7 @@ class AuditReportService:
                     "name": business_name,
                     "location": location or None,
                     "website_url": prospect.get("website_url"),
+                    "site_on_google": site_on_google,
                     "phone": prospect.get("phone"),
                     "rating": prospect.get("rating"),
                     "review_count": prospect.get("review_count"),

@@ -8,7 +8,7 @@ REAL_GAP_SIGNALS = {
     "no_localbusiness_schema", "no_city_pages", "no_service_pages",
     "psi_mobile_critical", "psi_mobile_poor", "thin_content",
     "template_builder", "no_contact_form", "no_ssl", "no_title",
-    "category_generic", "category_mismatch", "no_website", "site_down", "broken_profile_link",
+    "category_generic", "category_mismatch", "no_website", "site_down", "broken_profile_link", "website_not_on_gbp",
     "no_services_listed", "no_business_description", "no_review_replies",
 }
 
@@ -19,6 +19,7 @@ LABEL_NAMES = {
     "strong_reviews": "Strong reviews",
     "no_website": "No website",
     "site_down": "Site or link broken",
+    "site_not_on_google": "Site not on Google",
     "verify_first": "Verify first",
     "email_found": "Email found",
     "phone_only": "Phone only",

@@ -122,8 +122,9 @@ def cmd_status(businesses, cache) -> None:
 
 
 def cmd_crawl(businesses, cache, batch: int) -> None:
-    todo = [b for b in businesses
-            if b.get("website_url") and b["place_id"] not in cache]
+    # Profiles with no website are included: the crawler first looks for the
+    # business's own site (crawl_unlisted) before we call it "no website".
+    todo = [b for b in businesses if b["place_id"] not in cache]
     if not todo:
         print("crawl complete — nothing left")
         return
@@ -153,7 +154,8 @@ def cmd_crawl(businesses, cache, batch: int) -> None:
     workers = C.CRAWL_MAX_CONCURRENT
     done = 0
     ex = ProcessPoolExecutor(max_workers=workers)
-    futs = {ex.submit(E.crawl_site, b): b for b in chunk}
+    futs = {ex.submit(E.crawl_site if b.get("website_url") else E.crawl_unlisted, b): b
+            for b in chunk}
     try:
         for fut in as_completed(futs, timeout=max(5, deadline - time.time())):
             b = futs[fut]

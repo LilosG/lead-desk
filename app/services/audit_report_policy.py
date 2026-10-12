@@ -79,6 +79,16 @@ POLICY: dict[str, AuditReportPolicyItem] = {item.signal: item for item in [
             "{offering_label}, service area and contact details is the first step.",
     ),
     _item(
+        "website_not_on_gbp", "Website isn't linked on the Google profile",
+        impact="high", disposition="recommended", default=True,
+        category="Google Business Profile", phrase="getting your website onto your Google listing",
+        found="The business has a website, but the Google profile doesn't link to it.",
+        why="People who find the business on Google Maps can't tap through to the site, "
+            "and Google can't connect the site to the listing. Both cost calls.",
+        fix="In Google Business Profile, open Edit profile, then Contact, and add the "
+            "website address. It usually shows up within a day.",
+    ),
+    _item(
         "broken_profile_link", "Website link on Google leads to an error page",
         impact="high", disposition="recommended", default=True,
         category="Google Business Profile", phrase="the website link on the Google profile",
@@ -413,6 +423,9 @@ def observed_summary(signal: str, observed: Any) -> str | None:
     if signal == "site_down" and isinstance(observed, dict):
         status = observed.get("http_status")
         return f"Error {status} when we loaded it." if status else "No response when we loaded it."
+
+    if signal == "website_not_on_gbp" and isinstance(observed, dict) and observed.get("found_url"):
+        return f"Website we found: {observed['found_url']}. Website on the Google profile: none."
 
     if signal == "broken_profile_link" and isinstance(observed, dict):
         linked = observed.get("linked_url")
