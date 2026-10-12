@@ -841,31 +841,67 @@ def _name_tokens(name: str | None) -> list[str]:
     return [t for t in tokens if t not in _LEGAL_WORDS]
 
 
-def candidate_domains(business: dict, limit: int = 8) -> list[str]:
+# Words businesses tack onto their name in the domain ("aaagoforthplumbing"
+# + "anddrainservice"). Only tried after the plain name; DNS filters the rest.
+_COMMON_SUFFIXES = ["services", "service", "co", "inc", "llc", "company", "group", "pros"]
+_NICHE_SUFFIXES = {
+    "home_service": ["anddrain", "anddrainservice", "anddrainservices", "anddrainage",
+                     "androoter", "andheating", "andair", "andcooling", "andsons",
+                     "contractor", "contractors"],
+    "medical_aesthetic": ["medspa", "spa", "clinic", "aesthetics", "skincare"],
+    "dental": ["dental", "dentistry", "dds", "smiles"],
+    "legal": ["law", "lawfirm", "lawgroup", "lawyers", "attorneys"],
+    "real_estate": ["realestate", "realty", "homes", "properties"],
+    "wellness_health": ["chiropractic", "clinic", "wellness", "therapy"],
+    "auto": ["auto", "autorepair", "automotive"],
+}
+
+
+def candidate_domains(business: dict, limit: int = 40) -> list[str]:
     """Likely domains for a business name, most likely first.
 
-    'AAA Goforth Plumbing & Drain Service' -> aaagoforthplumbinganddrainservice.com,
-    aaagoforthplumbingdrainservice.com, ... (with/without each 'and', + city).
+    'AAA Goforth Plumbing' -> aaagoforthplumbing.com, ..., then the same name
+    with common and trade suffixes (aaagoforthplumbinganddrainservice.com).
     """
     tokens = _name_tokens(business.get("name"))
     if not tokens:
         return []
     city = re.sub(r"[^a-z0-9]", "", (business.get("city") or "").lower())
-    variants = [tokens, [t for t in tokens if t != "and"]]
+    no_and = [t for t in tokens if t != "and"]
+    variants = [tokens, no_and]
     and_positions = [i for i, t in enumerate(tokens) if t == "and"]
     if len(and_positions) > 1:
         for i in and_positions:
             variants.append(tokens[:i] + tokens[i + 1:])
     if city:
-        variants.append([t for t in tokens if t != "and"] + [city])
+        variants.append(no_and + [city])
     stems: list[str] = []
     for v in variants:
         stem = "".join(v)
         if 4 <= len(stem) <= 63 and stem not in stems:
             stems.append(stem)
+    if not stems:
+        return []
+    base = stems[0]
+    profile = V.vertical_profile(business.get("vertical") or "")
+    suffixes = _NICHE_SUFFIXES.get(profile, []) + _COMMON_SUFFIXES
+    for suffix in suffixes:
+        for stem in dict.fromkeys([base, "".join(no_and)]):
+            cand = stem + suffix
+            if not stem.endswith(suffix) and len(cand) <= 63 and cand not in stems:
+                stems.append(cand)
     out = [stem + ".com" for stem in stems]
-    out.append(stems[0] + ".net") if stems else None
-    return out[:limit]
+    out.insert(len(variants), base + ".net")
+    return list(dict.fromkeys(out))[:limit]
+
+
+def _resolves(domain: str) -> bool:
+    import socket
+    try:
+        socket.getaddrinfo(domain, 443, proto=socket.IPPROTO_TCP)
+        return True
+    except (socket.gaierror, UnicodeError, OSError):
+        return False
 
 
 def _digits(text: str) -> str:
@@ -895,7 +931,12 @@ def _verifies(business: dict, html: str) -> bool:
 def find_unlisted_site(business: dict, session: requests.Session | None = None) -> str | None:
     """The business's own website when Google's profile has none, or None."""
     session = session or requests.Session()
-    for domain in candidate_domains(business):
+    candidates = candidate_domains(business)
+    # DNS first, in parallel: most guesses don't exist and cost nothing to rule out.
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        live = [d for d, ok in zip(candidates, ex.map(
+            lambda d: _resolves(d.split(":")[0]) or ":" in d, candidates)) if ok]
+    for domain in live:
         for url in (f"https://www.{domain}/", f"http://{domain}/"):
             try:
                 r = session.get(url, timeout=FINDER_TIMEOUT_S, allow_redirects=True,
