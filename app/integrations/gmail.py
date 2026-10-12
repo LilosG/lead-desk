@@ -303,6 +303,12 @@ class GmailDraftClient:
             raise GmailDraftError("Google OAuth token refresh failed") from exc
 
         if not response.ok:
+            if "invalid_grant" in response.text:
+                raise GmailDraftError(
+                    "Gmail access has expired. Go to Settings, click Disconnect, then "
+                    "Connect Gmail again. (If this keeps happening every week, the Google "
+                    "OAuth app is still in Testing mode; publish it to Production.)"
+                )
             raise GmailDraftError(
                 f"Google OAuth returned {response.status_code}: {response.text[:500]}"
             )
