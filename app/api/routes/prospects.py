@@ -1,6 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from app.core.database import pool
 from app.repositories.prospects import ProspectRepository
@@ -103,3 +104,42 @@ def update_prospect_workflow(
         raise HTTPException(status_code=404, detail="prospect not found")
 
     return result
+
+
+class WebsiteUpdate(BaseModel):
+    url: str
+
+
+@router.post("/{place_id}/website")
+def set_prospect_website(place_id: str, payload: WebsiteUpdate) -> dict:
+    """Link a website to a lead whose Google profile has none, then re-score it.
+
+    Crawls the site now (seconds) and re-scores; Google's speed test runs in
+    the background and re-scores again when it finishes (about a minute).
+    The lead is then audited on that site, with 'website isn't linked on the
+    Google profile' as a finding instead of 'no website'.
+    """
+    import sys
+    from pathlib import Path
+
+    pipeline_dir = str(Path(__file__).resolve().parents[3] / "pipeline")
+    if pipeline_dir not in sys.path:
+        sys.path.insert(0, pipeline_dir)
+    from site_rescore import WebsiteError, set_manual_website
+
+    try:
+        result = set_manual_website(place_id, payload.url, with_psi=False)
+    except WebsiteError as exc:
+        status = 404 if "not found" in str(exc) else 422
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+    import threading
+
+    def _speed_test() -> None:
+        try:
+            set_manual_website(place_id, result["website_url"], with_psi=True)
+        except Exception:
+            pass  # the crawl-only score already saved stays in place
+
+    threading.Thread(target=_speed_test, daemon=True).start()
+    return {**result, "speed_test": "running"}

@@ -123,6 +123,7 @@ class WebsiteAudit(BaseModel):
     sitemap_url_count: int | None = None
     has_online_booking: bool | None = None
     booking_provider: str | None = None
+    site_source: str | None = None
 
 
 class ProspectWorkflowState(BaseModel):

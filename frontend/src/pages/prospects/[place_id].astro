@@ -65,7 +65,18 @@ const { place_id } = Astro.params;
 
           <section class="rounded-lg border border-[var(--line)] bg-white p-5">
             <div class="text-sm font-medium">Website audit</div>
+            <div id="website-source" class="mt-2 hidden text-xs text-[var(--muted)]"></div>
             <dl id="website-audit" class="mt-4 grid gap-3 text-sm sm:grid-cols-2"></dl>
+            <form id="website-form" class="mt-5 hidden border-t border-[var(--line)] pt-4">
+              <label for="website-input" class="text-xs text-[var(--muted)]">
+                Has a website Google doesn't show? Add it here and the lead is re-audited on that site.
+              </label>
+              <div class="mt-2 flex gap-2">
+                <input id="website-input" type="text" inputmode="url" autocomplete="off" class="min-w-0 flex-1 rounded-md border border-[var(--line)] px-3 py-2 text-sm" placeholder="example.com" />
+                <button id="website-save" type="submit" class="rounded-md bg-[var(--dark)] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">Set website</button>
+              </div>
+              <div id="website-status" class="mt-2 hidden text-xs"></div>
+            </form>
           </section>
         </div>
 
@@ -247,6 +258,8 @@ const { place_id } = Astro.params;
       has_city_pages: boolean | null;
       nap_matches_gbp: boolean | null;
       word_count: number | null;
+      resolved_url?: string | null;
+      site_source?: string | null;
     };
 
     type WorkflowState = {
@@ -432,6 +445,10 @@ const { place_id } = Astro.params;
         const links: string[] = [];
         if (data.phone) links.push(`<a href="tel:${escapeHtml(data.phone)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">${escapeHtml(data.phone)}</a>`);
         if (data.email) links.push(`<a href="mailto:${escapeHtml(data.email)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">${escapeHtml(data.email)}</a>`);
+        const offGoogleSite = !data.website_url
+          && data.website_audit?.resolved_url
+          && ['found', 'manual'].includes(data.website_audit?.site_source ?? '');
+        if (offGoogleSite) links.push(`<a href="${escapeHtml(data.website_audit!.resolved_url!)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Website (not on Google)</a>`);
         if (data.website_url) links.push(`<a href="${escapeHtml(data.website_url)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Website</a>`);
         if (data.google_maps_uri) links.push(`<a href="${escapeHtml(data.google_maps_uri)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Google Maps</a>`);
         required('#business-links').innerHTML = links.join('');
@@ -601,6 +618,22 @@ const { place_id } = Astro.params;
             ].join('')
           : '<div class="text-[var(--muted)]">No website audit available.</div>';
 
+        const sourceBox = required('#website-source');
+        const websiteForm = required<HTMLFormElement>('#website-form');
+        if (!data.website_url) {
+          websiteForm.classList.remove('hidden');
+          const source = audit?.site_source;
+          if (audit?.resolved_url && (source === 'found' || source === 'manual')) {
+            sourceBox.textContent = `${audit.resolved_url}: ${source === 'manual' ? 'set by you' : 'found by name'}. Google's listing doesn't link it.`;
+            sourceBox.classList.remove('hidden');
+          } else {
+            sourceBox.classList.add('hidden');
+          }
+        } else {
+          websiteForm.classList.add('hidden');
+          sourceBox.classList.add('hidden');
+        }
+
         populateWorkflow(data.workflow);
         renderHistory(data.workflow_events);
 
@@ -656,6 +689,39 @@ const { place_id } = Astro.params;
         errorBox.classList.remove('hidden');
       } finally {
         saveButton.disabled = false;
+      }
+    });
+
+    required<HTMLFormElement>('#website-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const placeId = required('#prospect-detail-root').dataset.placeId;
+      if (!placeId) return;
+      const input = required<HTMLInputElement>('#website-input');
+      const button = required<HTMLButtonElement>('#website-save');
+      const status = required('#website-status');
+      const url = input.value.trim();
+      if (!url) return;
+
+      button.disabled = true;
+      status.className = 'mt-2 text-xs text-[var(--muted)]';
+      status.textContent = 'Checking the site…';
+      try {
+        const response = await fetch(`/api/prospects/${encodeURIComponent(placeId)}/website`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+        input.value = '';
+        status.className = 'mt-2 text-xs text-emerald-700';
+        status.textContent = 'Saved and re-scored. Google\'s speed test is running; refresh in about a minute, then build the audit.';
+        await loadDetail();
+      } catch (error) {
+        status.className = 'mt-2 text-xs text-red-700';
+        status.textContent = error instanceof Error ? error.message : 'Unable to set the website.';
+      } finally {
+        button.disabled = false;
       }
     });
 

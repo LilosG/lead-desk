@@ -22,7 +22,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 import enrich as E
-import scoring as S
+from site_rescore import save_rescored
 from store import PostgresStore
 
 
@@ -35,7 +35,7 @@ def main() -> int:
 
     store = PostgresStore()
     with psycopg.connect(store.dsn, row_factory=dict_row) as conn:
-        where = "b.website_url is null and coalesce(we.site_source, 'gbp') <> 'found'"
+        where = "b.website_url is null and coalesce(we.site_source, 'gbp') = 'gbp'"
         params: list = []
         if args.market:
             where += " and b.market = %s"
@@ -59,32 +59,8 @@ def main() -> int:
         if not found or args.dry_run:
             return 0
 
-        # Baselines from each found lead's own niche + market cohort.
-        keys = {(b["vertical"], b["market"]) for b, _ in found}
-        cohort: list[dict] = []
-        for vertical, market in keys:
-            cohort += conn.execute(
-                "select * from businesses where vertical = %s and market is not distinct from %s",
-                (vertical, market),
-            ).fetchall()
-
-    baselines = S.compute_baselines(cohort)
-    scored = []
-    for b, f in found:
-        base = S.baseline_for(baselines, b.get("vertical") or "unknown", b.get("market"))
-        if base is not None:
-            scored.append(S.score_lead(dict(b), f, base))
-
-    run_id = store.start_run(
-        geo_label="Recheck: sites not on Google",
-        verticals=sorted({b["vertical"] for b, _ in found if b.get("vertical")}),
-        grid_points=0,
-        notes=f"recheck_unlisted: {len(found)} site(s) found",
-    )
-    store.save_enrichment({b["place_id"]: f for b, f in found})
-    store.save_scores(scored, run_id)
-    store.finish_run(run_id)
-    print(f"saved {len(scored)} updated lead(s). Regenerate their audits to pick it up.")
+    saved = save_rescored(store, found, "Recheck: sites not on Google")
+    print(f"saved {saved} updated lead(s). Regenerate their audits to pick it up.")
     return 0
 
 
