@@ -434,6 +434,15 @@ class OutreachService:
         if self.repository.is_suppressed(current["to_address"]):
             raise OutreachBlocked("email address is suppressed")
 
+        # Build the audit PDF before anything is recorded: if it fails, the
+        # item must not be left in a "pending" Gmail state that blocks retries.
+        try:
+            attachments = self.audit_attachments(current)
+        except Exception as exc:
+            raise OutreachBlocked(
+                f"couldn't build the audit PDF to attach ({exc}); rebuild the audit report and try again"
+            ) from exc
+
         message_id_header = f"<{uuid4()}@lead-desk.lilosgrowth.com>"
         try:
             operation, conflict = self.repository.begin_gmail_draft_operation(
@@ -464,9 +473,14 @@ class OutreachService:
                         draft_id=recovered.draft_id,
                         message_id=recovered.message_id,
                     )
-                raise OutreachIntegrationUnavailable(
-                    "Gmail draft creation is pending reconciliation; Lead Desk will not create a duplicate draft"
+                # Gmail confirmed no draft carries this Message-ID, so the
+                # earlier attempt never landed: retrying cannot duplicate it.
+                self.repository.record_gmail_operation_error(
+                    operation["id"],
+                    error_message="previous attempt not found in Gmail; retrying",
+                    uncertain=False,
                 )
+                operation = {**operation, "state": "failed"}
             if operation["state"] == "failed":
                 reopened = self.repository.reopen_gmail_draft_operation(operation["id"])
                 if reopened is None:
@@ -481,7 +495,7 @@ class OutreachService:
                 subject=current["subject"],
                 body=current["body"],
                 message_id_header=operation["message_id_header"],
-                attachments=self.audit_attachments(current),
+                attachments=attachments,
             )
         except GmailDraftError as exc:
             self.repository.record_gmail_operation_error(

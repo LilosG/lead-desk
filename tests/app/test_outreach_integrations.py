@@ -537,6 +537,39 @@ def test_uncertain_gmail_result_reconciles_without_duplicate_creation():
     assert repo.operation["state"] == "created"
 
 
+class LostThenWorkingGmail(FakeGmail):
+    """First call errors with an unknown outcome and nothing reached Gmail."""
+
+    def create_draft(self, **kwargs):
+        self.create_calls += 1
+        if self.create_calls == 1:
+            raise GmailDraftError("connection reset", uncertain_side_effect=True)
+        return GmailDraftResult(draft_id="draft-retry", message_id="message-retry")
+
+
+def test_pending_draft_that_never_reached_gmail_is_retried_not_stuck():
+    repo = FakeRepository()
+    repo.item.update({
+        "status": "draft_ready",
+        "subject": "Reviewed subject",
+        "body": "Reviewed body\n\nIf you'd rather not hear from me, just reply \"no thanks\"",
+        "verification_status": "verified",
+    })
+    gmail = LostThenWorkingGmail()
+    service = OutreachService(repo, gmail=gmail)
+
+    try:
+        service.create_gmail_draft(repo.item["id"], expected_version=1)
+    except OutreachIntegrationUnavailable:
+        pass
+    assert repo.operation["state"] == "pending"
+
+    # Gmail has no draft with that Message-ID, so the retry creates it once.
+    result = service.create_gmail_draft(repo.item["id"], expected_version=1)
+    assert result["gmail_draft_id"] == "draft-retry"
+    assert gmail.create_calls == 2
+
+
 def test_gmail_creation_blocks_unreviewed_queue_item():
     repo = FakeRepository()
     repo.item.update({
