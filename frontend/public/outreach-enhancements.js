@@ -116,7 +116,9 @@
         || (activeFilter === 'review' && REVIEW_STATUSES.has(status))
         || (activeFilter === 'gmail' && rowHasGmailDraft(row))
         || (activeFilter === 'contacted' && ['contacted', 'replied'].includes(status));
-      row.classList.toggle('hidden', !visible);
+      // Rows are wrapped with their bulk-select checkbox; hide the whole row.
+      const wrapper = row.closest('[data-queue-row]') || row;
+      wrapper.classList.toggle('hidden', !visible);
     }
 
     for (const id of ['metric-candidates', 'metric-queued', 'metric-ready', 'metric-contacted']) {
