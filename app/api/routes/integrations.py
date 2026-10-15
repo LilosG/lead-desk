@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from urllib.parse import quote
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
@@ -13,6 +16,8 @@ from app.services.integrations import (
     OAuthExchangeError,
 )
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
@@ -47,7 +52,7 @@ def gmail_callback(
     settings = get_settings()
     if error:
         return RedirectResponse(
-            url=f"{settings.public_app_url}/settings?gmail=error&reason=denied",
+            url=f"{settings.public_app_url}/settings?gmail=error&reason=denied&detail={quote(error[:100])}",
             status_code=303,
         )
     if not code or not state:
@@ -62,9 +67,11 @@ def gmail_callback(
             url=f"{settings.public_app_url}/settings?gmail=error&reason=missing_permission",
             status_code=303,
         )
-    except (IntegrationConfigurationError, OAuthExchangeError):
+    except (IntegrationConfigurationError, OAuthExchangeError) as exc:
+        logger.warning("Gmail authorization failed: %s", exc)
+        detail = quote(str(exc)[:300])
         return RedirectResponse(
-            url=f"{settings.public_app_url}/settings?gmail=error&reason=authorization_failed",
+            url=f"{settings.public_app_url}/settings?gmail=error&reason=authorization_failed&detail={detail}",
             status_code=303,
         )
     return RedirectResponse(
