@@ -119,6 +119,9 @@ import AppLayout from '../layouts/AppLayout.astro';
     if (params.get('gmail') === 'connected') {
       showMessage('Gmail connected successfully.');
       history.replaceState({}, '', '/settings');
+    } else if (params.get('gmail') === 'error' && params.get('reason') === 'missing_permission') {
+      showMessage('Gmail was not connected: Google\'s screen had the Gmail permission unticked. Click Connect Gmail again and tick "Manage drafts and send emails" (or click "Select all") before Continue.', true);
+      history.replaceState({}, '', '/settings');
     } else if (params.get('gmail') === 'error') {
       showMessage('Gmail authorization did not complete. Check the Google OAuth client configuration and try again.', true);
       history.replaceState({}, '', '/settings');

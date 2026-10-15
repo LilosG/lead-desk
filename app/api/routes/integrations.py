@@ -9,6 +9,7 @@ from app.repositories.integrations import IntegrationRepository
 from app.services.integrations import (
     GmailIntegrationService,
     IntegrationConfigurationError,
+    MissingGmailPermission,
     OAuthExchangeError,
 )
 
@@ -56,6 +57,11 @@ def gmail_callback(
         )
     try:
         get_gmail_service().complete_authorization(code=code, state=state)
+    except MissingGmailPermission:
+        return RedirectResponse(
+            url=f"{settings.public_app_url}/settings?gmail=error&reason=missing_permission",
+            status_code=303,
+        )
     except (IntegrationConfigurationError, OAuthExchangeError):
         return RedirectResponse(
             url=f"{settings.public_app_url}/settings?gmail=error&reason=authorization_failed",

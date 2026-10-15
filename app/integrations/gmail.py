@@ -270,6 +270,12 @@ class GmailDraftClient:
         except requests.RequestException as exc:
             raise GmailDraftError("Gmail account verification failed") from exc
 
+        if getattr(response, "status_code", None) == 403 and "SCOPE_INSUFFICIENT" in (getattr(response, "text", "") or ""):
+            raise GmailDraftError(
+                "Gmail is connected without permission to create drafts. Go to Settings, "
+                "click Disconnect, then Connect Gmail and make sure the box for "
+                "\"Manage drafts and send emails\" is ticked on Google's screen."
+            )
         if not response.ok:
             raise GmailDraftError(
                 f"Gmail account verification returned {response.status_code}: "
