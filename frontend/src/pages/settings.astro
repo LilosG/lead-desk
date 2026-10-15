@@ -123,7 +123,14 @@ import AppLayout from '../layouts/AppLayout.astro';
       showMessage('Gmail was not connected: Google\'s screen had the Gmail permission unticked. Click Connect Gmail again and tick "Manage drafts and send emails" (or click "Select all") before Continue.', true);
       history.replaceState({}, '', '/settings');
     } else if (params.get('gmail') === 'error') {
-      showMessage('Gmail authorization did not complete. Check the Google OAuth client configuration and try again.', true);
+      const reason = params.get('reason');
+      const detail = params.get('detail');
+      const why = reason === 'denied'
+        ? 'Google sign-in was cancelled or denied'
+        : reason === 'invalid_callback'
+          ? 'Google sent back an incomplete response'
+          : 'Gmail authorization did not complete';
+      showMessage(`${why}${detail ? `: ${detail}` : '.'} Try Connect Gmail again.`, true);
       history.replaceState({}, '', '/settings');
     }
 
