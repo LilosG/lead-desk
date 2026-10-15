@@ -23,6 +23,10 @@ class IntegrationConfigurationError(RuntimeError):
     pass
 
 
+class MissingGmailPermission(RuntimeError):
+    """The Google account was authorized without the Gmail drafts permission."""
+
+
 class OAuthExchangeError(RuntimeError):
     pass
 
@@ -135,9 +139,18 @@ class GmailIntegrationService:
                 f"Authorize {expected_email}; Google returned {account_email}"
             )
 
+        # Google lets people untick individual permissions on the consent
+        # screen. Without gmail.compose every draft fails with a 403 later,
+        # so refuse the connection now and say why.
+        scopes = str(payload.get("scope") or "").split()
+        if scopes and GMAIL_SCOPE not in scopes:
+            raise MissingGmailPermission(
+                "Google didn't grant the Gmail drafts permission"
+            )
+
         cipher = self._cipher()
         encrypted = cipher.encrypt(refresh_token, aad=GMAIL_PROVIDER)
-        scopes = str(payload.get("scope") or f"openid email {GMAIL_SCOPE}").split()
+        scopes = scopes or f"openid email {GMAIL_SCOPE}".split()
         return self.repository.upsert_credential(
             GMAIL_PROVIDER,
             account_email=account_email,

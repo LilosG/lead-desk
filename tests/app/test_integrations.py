@@ -98,3 +98,45 @@ def test_gmail_status_never_exposes_encrypted_token():
     assert "refresh_token" not in status
     assert "ciphertext" not in status
     assert status["send_enabled"] is False
+
+
+class _Resp:
+    def __init__(self, payload, ok=True, status=200):
+        self._payload, self.ok, self.status_code, self.text = payload, ok, status, ""
+
+    def json(self):
+        return self._payload
+
+
+def _authorize(monkeypatch, granted_scope):
+    import pytest
+    from app.services import integrations as I
+
+    repo = FakeRepository()
+    service = GmailIntegrationService(repo, make_settings())
+    service.authorization_url()
+    monkeypatch.setattr(I.secrets, "token_urlsafe", lambda n=32: "state", raising=False)
+    monkeypatch.setattr(I.requests, "post", lambda *a, **k: _Resp(
+        {"refresh_token": "r", "access_token": "a", "scope": granted_scope}))
+    monkeypatch.setattr(I.requests, "get", lambda *a, **k: _Resp({"email": "mike@lilosgrowth.com"}))
+    monkeypatch.setattr(repo, "consume_oauth_state", lambda provider, state_hash: True)
+    return repo, service
+
+
+def test_connect_refuses_a_grant_without_the_gmail_permission(monkeypatch):
+    import pytest
+    from app.services.integrations import MissingGmailPermission
+
+    repo, service = _authorize(monkeypatch, "openid https://www.googleapis.com/auth/userinfo.email")
+    with pytest.raises(MissingGmailPermission):
+        service.complete_authorization(code="c", state="state")
+    assert repo.credential is None
+
+
+def test_connect_accepts_a_grant_with_the_gmail_permission(monkeypatch):
+    repo, service = _authorize(
+        monkeypatch,
+        "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.compose",
+    )
+    service.complete_authorization(code="c", state="state")
+    assert repo.credential is not None
