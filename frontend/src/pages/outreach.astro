@@ -44,6 +44,12 @@ import AppLayout from '../layouts/AppLayout.astro';
           </div>
           <button id="refresh-outreach" type="button" class="rounded-md border border-[var(--line)] px-3 py-2 text-xs font-medium">Refresh</button>
         </div>
+        <div class="flex flex-wrap items-center gap-3 border-b border-[var(--line)] bg-[var(--surface-muted)] px-5 py-3 text-xs">
+          <label class="flex items-center gap-2"><input id="candidate-select-all" type="checkbox" /> Select all</label>
+          <span id="candidate-selected-count" class="text-[var(--muted)]">0 selected</span>
+          <button id="fast-track" type="button" disabled class="ml-auto rounded-md bg-[var(--dark)] px-3 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Audit + email draft + Gmail draft</button>
+        </div>
+        <div id="fast-track-progress" class="hidden border-b border-[var(--line)] px-5 py-3 text-xs leading-5"></div>
         <div id="candidate-list" class="divide-y divide-[var(--line)]"></div>
       </div>
 
@@ -53,6 +59,18 @@ import AppLayout from '../layouts/AppLayout.astro';
             <div class="text-sm font-medium">Active queue</div>
             <div class="mt-1 text-xs text-[var(--muted)]">Generate, verify, review, then create a Gmail draft. Nothing is sent automatically.</div>
           </div>
+          <div class="flex flex-wrap items-center gap-3 border-b border-[var(--line)] bg-[var(--surface-muted)] px-5 py-3 text-xs">
+            <label class="flex items-center gap-2"><input id="queue-select-all" type="checkbox" /> Select all</label>
+            <span id="queue-selected-count" class="text-[var(--muted)]">0 selected</span>
+            <select id="bulk-status" class="ml-auto rounded-md border border-[var(--line)] bg-white px-2 py-1.5">
+              <option value="contacted">Contacted</option>
+              <option value="replied">Replied</option>
+              <option value="draft_ready">Draft ready</option>
+              <option value="archived">Archived</option>
+            </select>
+            <button id="bulk-status-apply" type="button" disabled class="rounded-md bg-[var(--dark)] px-3 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Set status</button>
+          </div>
+          <div id="bulk-status-result" class="hidden border-b border-[var(--line)] px-5 py-3 text-xs leading-5"></div>
           <div id="queue-list" class="divide-y divide-[var(--line)]"></div>
         </section>
 
@@ -185,6 +203,25 @@ import AppLayout from '../layouts/AppLayout.astro';
     };
 
     let queueItems: QueueItem[] = [];
+    const selectedPlaces = new Set<string>();
+    const selectedItems = new Set<string>();
+
+    const STEP_LABELS: Record<string, string> = {
+      audit: 'audit PDF', queue: 'queue', draft: 'email draft', ready: 'draft ready', gmail_draft: 'Gmail draft',
+    };
+
+    function updateSelectionUi() {
+      const placeBoxes = [...document.querySelectorAll<HTMLInputElement>('[data-select-place]:not(:disabled)')];
+      const itemBoxes = [...document.querySelectorAll<HTMLInputElement>('[data-select-item]')];
+      [...selectedPlaces].forEach((id) => { if (!placeBoxes.some((b) => b.dataset.selectPlace === id)) selectedPlaces.delete(id); });
+      [...selectedItems].forEach((id) => { if (!itemBoxes.some((b) => b.dataset.selectItem === id)) selectedItems.delete(id); });
+      el('#candidate-selected-count').textContent = `${selectedPlaces.size} selected`;
+      el('#queue-selected-count').textContent = `${selectedItems.size} selected`;
+      el<HTMLButtonElement>('#fast-track').disabled = selectedPlaces.size === 0;
+      el<HTMLButtonElement>('#bulk-status-apply').disabled = selectedItems.size === 0;
+      el<HTMLInputElement>('#candidate-select-all').checked = placeBoxes.length > 0 && selectedPlaces.size === placeBoxes.length;
+      el<HTMLInputElement>('#queue-select-all').checked = itemBoxes.length > 0 && selectedItems.size === itemBoxes.length;
+    }
     let integrations: Integrations = {
       openrouter_configured: false,
       openrouter_model: null,
@@ -231,10 +268,13 @@ import AppLayout from '../layouts/AppLayout.astro';
         const channel = item.email ? 'email' : item.phone ? 'phone' : null;
         const blocked = item.suppressed || item.already_queued || !channel;
         const warning = item.needs_manual_check ? '<span class="text-amber-700">manual check</span>' : '';
+        const selectable = Boolean(item.email) && !item.suppressed;
         return `
           <div class="p-5">
             <div class="flex items-start justify-between gap-4">
-              <div class="min-w-0">
+              <input type="checkbox" class="mt-1 shrink-0" data-select-place="${esc(item.place_id)}" data-name="${esc(item.name)}"
+                ${selectable ? '' : 'disabled'} ${selectedPlaces.has(item.place_id) ? 'checked' : ''} />
+              <div class="min-w-0 flex-1">
                 <a href="/prospects/${encodeURIComponent(item.place_id)}" class="font-medium hover:underline">${esc(item.name)}</a>
                 <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.city)} · ${esc(item.vertical)} · Tier ${esc(item.tier)} · Score ${esc(item.total_score)}</div>
                 <div class="mt-2 text-sm leading-5">${esc(item.headline_gap)}</div>
@@ -250,6 +290,15 @@ import AppLayout from '../layouts/AppLayout.astro';
             </div>
           </div>`;
       }).join('') : '<div class="p-5 text-sm text-[var(--muted)]">No eligible candidates.</div>';
+
+      document.querySelectorAll<HTMLInputElement>('[data-select-place]').forEach((box) => {
+        box.addEventListener('change', () => {
+          const id = box.dataset.selectPlace || '';
+          if (box.checked) selectedPlaces.add(id); else selectedPlaces.delete(id);
+          updateSelectionUi();
+        });
+      });
+      updateSelectionUi();
 
       document.querySelectorAll<HTMLButtonElement>('[data-queue-place]').forEach((button) => {
         button.addEventListener('click', async () => {
@@ -276,7 +325,9 @@ import AppLayout from '../layouts/AppLayout.astro';
       el('#metric-ready').textContent = String(items.filter((i) => i.status === 'draft_ready' || i.status === 'approved').length);
       el('#metric-contacted').textContent = String(items.filter((i) => i.status === 'contacted' || i.status === 'replied').length);
       el('#queue-list').innerHTML = items.length ? items.map((item) => `
-        <button type="button" data-edit-id="${esc(item.id)}" class="block w-full p-5 text-left hover:bg-[var(--surface-muted)]">
+        <div data-queue-row class="flex items-start gap-3 px-5 hover:bg-[var(--surface-muted)]">
+        <input type="checkbox" class="mt-6 shrink-0" data-select-item="${esc(item.id)}" ${selectedItems.has(item.id) ? 'checked' : ''} />
+        <button type="button" data-edit-id="${esc(item.id)}" class="block w-full py-5 text-left">
           <div class="flex items-center justify-between gap-3">
             <div class="font-medium">${esc(item.name)}</div>
             <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase">${esc(statusLabel(item.status))}</span>
@@ -284,11 +335,20 @@ import AppLayout from '../layouts/AppLayout.astro';
           <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.channel)} · ${esc(item.to_address)} · verification ${esc(item.verification_status)}</div>
           ${item.status === 'no_outreach_finding' ? '<div class="mt-1 text-xs font-medium text-amber-700">No approved client-facing finding after live verification</div>' : ''}
           ${item.gmail_draft_id ? '<div class="mt-1 text-xs font-medium text-emerald-700">Gmail draft created</div>' : ''}
-        </button>`).join('') : '<div class="p-5 text-sm text-[var(--muted)]">Queue is empty.</div>';
+        </button>
+        </div>`).join('') : '<div class="p-5 text-sm text-[var(--muted)]">Queue is empty.</div>';
 
       document.querySelectorAll<HTMLButtonElement>('[data-edit-id]').forEach((button) => {
         button.addEventListener('click', () => openEditor(button.dataset.editId || ''));
       });
+      document.querySelectorAll<HTMLInputElement>('[data-select-item]').forEach((box) => {
+        box.addEventListener('change', () => {
+          const id = box.dataset.selectItem || '';
+          if (box.checked) selectedItems.add(id); else selectedItems.delete(id);
+          updateSelectionUi();
+        });
+      });
+      updateSelectionUi();
     }
 
     function openEditor(id: string) {
@@ -430,6 +490,81 @@ import AppLayout from '../layouts/AppLayout.astro';
         openEditor(itemId);
       } catch (error) {
         editorError(error);
+      }
+    });
+
+    el<HTMLInputElement>('#candidate-select-all').addEventListener('change', (event) => {
+      const on = (event.target as HTMLInputElement).checked;
+      document.querySelectorAll<HTMLInputElement>('[data-select-place]:not(:disabled)').forEach((box) => {
+        box.checked = on;
+        const id = box.dataset.selectPlace || '';
+        if (on) selectedPlaces.add(id); else selectedPlaces.delete(id);
+      });
+      updateSelectionUi();
+    });
+
+    el<HTMLInputElement>('#queue-select-all').addEventListener('change', (event) => {
+      const on = (event.target as HTMLInputElement).checked;
+      document.querySelectorAll<HTMLInputElement>('[data-select-item]').forEach((box) => {
+        if (box.closest('[data-queue-row]')?.classList.contains('hidden')) return;
+        box.checked = on;
+        const id = box.dataset.selectItem || '';
+        if (on) selectedItems.add(id); else selectedItems.delete(id);
+      });
+      updateSelectionUi();
+    });
+
+    el<HTMLButtonElement>('#fast-track').addEventListener('click', async () => {
+      const ids = [...selectedPlaces];
+      if (!ids.length) return;
+      const button = el<HTMLButtonElement>('#fast-track');
+      const box = el('#fast-track-progress');
+      button.disabled = true;
+      box.classList.remove('hidden');
+      const names = new Map([...document.querySelectorAll<HTMLInputElement>('[data-select-place]')]
+        .map((b) => [b.dataset.selectPlace || '', b.dataset.name || b.dataset.selectPlace || '']));
+      const lines: string[] = [];
+      let done = 0;
+      for (const placeId of ids) {
+        box.innerHTML = `Working on ${done + 1} of ${ids.length}: ${esc(names.get(placeId))}…<br>${lines.join('<br>')}`;
+        try {
+          const r = await api(`/api/outreach/fast-track/${encodeURIComponent(placeId)}`, {
+            method: 'POST', body: JSON.stringify({ gmail: true }),
+          });
+          lines.push(r.ok
+            ? `<span class="text-emerald-700">✓ ${esc(names.get(placeId))}: Gmail draft ready</span>`
+            : `<span class="text-red-700">✗ ${esc(names.get(placeId))}: stopped at ${esc(STEP_LABELS[r.failed_step] || r.failed_step)}: ${esc(r.detail)}</span>`);
+          if (r.ok) selectedPlaces.delete(placeId);
+        } catch (error) {
+          lines.push(`<span class="text-red-700">✗ ${esc(names.get(placeId))}: ${esc(error instanceof Error ? error.message : error)}</span>`);
+        }
+        done += 1;
+      }
+      box.innerHTML = `Finished ${done} of ${ids.length}. Review the drafts in Gmail before sending.<br>${lines.join('<br>')}`;
+      await loadAll().catch(showError);
+    });
+
+    el<HTMLButtonElement>('#bulk-status-apply').addEventListener('click', async () => {
+      const ids = [...selectedItems];
+      if (!ids.length) return;
+      const status = el<HTMLSelectElement>('#bulk-status').value;
+      const button = el<HTMLButtonElement>('#bulk-status-apply');
+      const box = el('#bulk-status-result');
+      button.disabled = true;
+      try {
+        const r = await api('/api/outreach/bulk/status', {
+          method: 'POST', body: JSON.stringify({ ids, status }),
+        });
+        const failed = (r.results as { id: string; ok: boolean; detail?: string }[]).filter((x) => !x.ok);
+        box.className = `border-b border-[var(--line)] px-5 py-3 text-xs leading-5 ${failed.length ? 'text-red-700' : 'text-emerald-700'}`;
+        box.innerHTML = `Updated ${r.updated} of ${ids.length} to ${esc(statusLabel(status))}.`
+          + (failed.length ? '<br>' + failed.map((x) => `${esc(queueItems.find((q) => q.id === x.id)?.name || x.id)}: ${esc(x.detail)}`).join('<br>') : '');
+        selectedItems.clear();
+        await loadAll();
+      } catch (error) {
+        showError(error);
+      } finally {
+        updateSelectionUi();
       }
     });
 

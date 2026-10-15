@@ -251,3 +251,32 @@ def review_and_create_gmail_draft(
     if result is None:
         raise HTTPException(status_code=404, detail='outreach item not found')
     return result
+
+
+class BulkStatusRequest(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=50)
+    status: Literal[
+        'queued', 'review_required', 'draft_ready', 'approved', 'contacted',
+        'replied', 'archived',
+    ]
+
+
+class FastTrackRequest(BaseModel):
+    gmail: bool = True
+
+
+@router.post('/bulk/status')
+def bulk_status(payload: BulkStatusRequest) -> dict:
+    from app.services.outreach_bulk import bulk_set_status
+
+    results = bulk_set_status(get_service(), payload.ids, payload.status)
+    return {'results': results, 'updated': sum(1 for r in results if r['ok'])}
+
+
+@router.post('/fast-track/{place_id}')
+def fast_track_prospect(place_id: str, payload: FastTrackRequest) -> dict:
+    """Audit PDF, queue, draft, Draft ready and Gmail draft for one prospect."""
+    from app.api.routes.audit_reports import get_service as get_audit_service
+    from app.services.outreach_bulk import fast_track
+
+    return fast_track(get_service(), get_audit_service(), place_id, gmail=payload.gmail)
