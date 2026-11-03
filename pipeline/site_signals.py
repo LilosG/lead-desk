@@ -365,10 +365,7 @@ def ai_readiness(signals: dict | None, audit: dict, business: dict) -> dict[str,
          {True: "pass", False: "fail", None: "not_checked"}[signals.get("clear_identity")],
          "Named in the opening of the homepage" if signals.get("clear_identity")
          else "Not stated plainly in the opening text"),
-        ("A page for each service",
-         "pass" if audit.get("has_service_pages") else "fail",
-         f"{int(audit.get('offering_page_count') or 0)} found" if audit.get("has_service_pages")
-         else "None found"),
+        ("A page for each service", *_service_page_check(audit)),
         ("Answers common customer questions", "pass" if signals.get("faq_content") else "fail",
          "Question-and-answer content found" if signals.get("faq_content") else "None found on the homepage"),
         ("Business details in structured data",
@@ -387,6 +384,13 @@ def ai_readiness(signals: dict | None, audit: dict, business: dict) -> dict[str,
         "passed": sum(1 for r in rows if r["status"] == "pass"),
         "total": sum(1 for r in rows if r["status"] in {"pass", "fail"}),
     }
+
+
+def _service_page_check(audit: dict) -> tuple[str, str]:
+    if not audit.get("has_service_pages"):
+        return "fail", "None found"
+    count = int(audit.get("offering_page_count") or 0)
+    return ("review", "Only 1 found") if count == 1 else ("pass", f"{count} found")
 
 
 def site_structure(signals: dict | None, audit: dict) -> dict[str, Any] | None:

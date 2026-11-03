@@ -572,9 +572,13 @@ def observed_summary(signal: str, observed: Any) -> str | None:
         return f"Service pages found: {_num(observed['offering_pages'])}. Pages for a service in a specific town: 0."
 
     if signal == "thin_service_pages" and isinstance(observed, dict) and observed.get("sampled"):
+        if observed["sampled"] == 1:
+            return "The one page we read has under 200 words."
         return f"{_num(observed.get('thin'))} of the {_num(observed['sampled'])} pages we read have under 200 words."
 
     if signal == "service_pages_missing_location" and isinstance(observed, dict) and observed.get("sampled"):
+        if observed["sampled"] == 1:
+            return "The one page we read doesn't name the town."
         return f"{_num(observed.get('unlocated'))} of the {_num(observed['sampled'])} pages we read don't name the town."
 
     if signal == "images_missing_alt" and isinstance(observed, dict) and observed.get("images"):

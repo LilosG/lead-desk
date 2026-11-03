@@ -39,6 +39,9 @@ def _finding_order(item: dict[str, Any]) -> tuple[int, int]:
     )
 
 
+REVIEW_SIGNALS = {"no_reviews", "reviews_bottom_quartile", "reviews_below_median"}
+
+
 class _SafeDict(dict):
     def __missing__(self, key: str) -> str:
         return "{" + key + "}"
@@ -260,7 +263,10 @@ def _audit_coverage(prospect: dict[str, Any], audit: dict[str, Any]) -> list[dic
                     if service_pages
                     else f"{_niche_context(prospect)['Offering_label']} not detected"
                 ),
-                status="confirmed" if service_pages else "attention",
+                # One catch-all page isn't a strength worth listing.
+                status=("attention" if not service_pages
+                        else "confirmed" if int(audit.get("offering_page_count") or 0) != 1
+                        else "context"),
                 category="Website",
             )
         )
@@ -449,6 +455,45 @@ def _location_pages_common(peers: dict[str, Any] | None) -> bool | None:
     return sum(1 for p in rows if (p.get("location_page_count") or 0) > 0) / len(rows) >= 0.25
 
 
+def _with_latest_offerings(audit: dict[str, Any]) -> dict[str, Any]:
+    """The report's page counts, from the newest crawl of the site.
+
+    A site check just before a report can find pages the sweep missed, and
+    every section of the report has to agree on them.
+    """
+    found = int((audit.get("site_signals") or {}).get("offering_paths") or 0)
+    if found <= int(audit.get("offering_page_count") or 0):
+        return audit
+    return {**audit, "has_service_pages": True, "offering_page_count": found}
+
+
+def _checked_on(audit: dict[str, Any], prospect: dict[str, Any]) -> Any:
+    """When the site was last read: the sweep, or the check before this report."""
+    checked = audit.get("checked_at") or prospect.get("scored_at")
+    refreshed = (audit.get("site_signals") or {}).get("checked_at")
+    if not refreshed:
+        return checked
+    refreshed = datetime.fromisoformat(refreshed)
+    return max(checked, refreshed) if isinstance(checked, datetime) else refreshed
+
+
+def _review_finding_at_report_median(
+    signal: str, observed: Any, comparison: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """A review finding restated against the peers shown in this report.
+
+    Returns None when those peers no longer support it. The stored figure comes
+    from the sweep's market, which can differ from the report's comparison set.
+    """
+    if not isinstance(observed, dict) or not (comparison and comparison.get("median_reviews")):
+        return observed
+    median = comparison["median_reviews"]
+    if signal == "reviews_below_median" and int(observed.get("reviews") or 0) >= median:
+        return None
+    return {**observed, "median": median, "market": comparison.get("market"),
+            "niche": comparison.get("niche")}
+
+
 def _merge_site_findings(
     findings: list[dict[str, Any]],
     website_audit: dict[str, Any],
@@ -463,7 +508,8 @@ def _merge_site_findings(
     if not signals:
         return findings
     profile = vertical_config.vertical_profile(prospect.get("vertical") or "")
-    kept = [f for f in findings if f.get("signal") not in signal_rules.SIGNALS]
+    kept = [f for f in findings if f.get("signal") not in signal_rules.SIGNALS
+            and not (f.get("signal") == "no_service_pages" and website_audit.get("has_service_pages"))]
     return kept + signal_rules.findings(signals, profile)
 
 
@@ -522,7 +568,9 @@ class AuditReportService:
             raise AuditReportError("prospect not found")
 
         self._refresh_site(prospect)
-        website_audit = self.prospect_repository.get_website_audit(place_id) or {}
+        website_audit = _with_latest_offerings(
+            self.prospect_repository.get_website_audit(place_id) or {}
+        )
         findings = _merge_site_findings(
             self.prospect_repository.get_findings(place_id), website_audit, prospect,
         )
@@ -566,7 +614,9 @@ class AuditReportService:
         if prospect is None:
             raise AuditReportError("prospect not found")
 
-        website_audit = self.prospect_repository.get_website_audit(place_id) or {}
+        website_audit = _with_latest_offerings(
+            self.prospect_repository.get_website_audit(place_id) or {}
+        )
         findings = _merge_site_findings(
             self.prospect_repository.get_findings(place_id), website_audit, prospect,
         )
@@ -585,6 +635,7 @@ class AuditReportService:
         peers = self._peers(prospect)
         peer_rows = (peers or {}).get("peers") or []
         gaps = audit_benchmarks.page_gaps(prospect, website_audit, peer_rows)
+        comparison = market_comparison(prospect, peers)
 
         for signal in selected_signals:
             if signal in normalized_signals:
@@ -593,6 +644,13 @@ class AuditReportService:
             source_finding = findings_by_signal.get(signal)
             if policy is None or source_finding is None:
                 raise AuditReportError(f"finding is not reportable: {signal}")
+            if signal in REVIEW_SIGNALS:
+                observed = _review_finding_at_report_median(
+                    signal, source_finding.get("observed"), comparison,
+                )
+                if observed is None:
+                    continue
+                source_finding = {**source_finding, "observed": observed}
 
             normalized_signals.append(signal)
             ctx = _niche_context(prospect, source_finding)
@@ -626,7 +684,7 @@ class AuditReportService:
 
         report_findings.sort(key=_finding_order)
 
-        source_checked_at = website_audit.get("checked_at") or prospect.get("scored_at")
+        source_checked_at = _checked_on(website_audit, prospect)
         business_name = prospect.get("name") or "Business"
         location = ", ".join(
             part for part in [prospect.get("city"), prospect.get("state")] if part
@@ -640,7 +698,6 @@ class AuditReportService:
                         f"Competitors nearby link separate pages for {named}."
                     ).lstrip(". ")
         coverage = _audit_coverage(prospect, website_audit)
-        comparison = market_comparison(prospect, peers)
         niche_ctx = _niche_context(prospect)
         bench = audit_benchmarks.benchmarks(
             prospect, website_audit, peer_rows, offering_label=niche_ctx["offering_label"],

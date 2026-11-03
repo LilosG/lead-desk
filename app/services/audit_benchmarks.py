@@ -174,8 +174,24 @@ def benchmarks(
     }
 
 
-def _titles(row: dict[str, Any]) -> list[str]:
-    return [t for t in (row.get("offering_titles") or []) if isinstance(t, str) and t.strip()]
+_LINK_LABELS = {"services", "our services", "all services", "learn more", "read more",
+                "view all", "view more", "see more", "find out more", "click here",
+                "get started", "details", "view details", "home", "menu", "more"}
+
+
+def offering_titles(row: dict[str, Any]) -> list[str]:
+    """Service names read from a site, without its generic link labels.
+
+    Also applied here because rows crawled earlier can hold "Learn More ›".
+    """
+    titles = []
+    for title in row.get("offering_titles") or []:
+        if not isinstance(title, str) or not title.strip():
+            continue
+        if " ".join(re.sub(r"[^a-z0-9 ]", " ", title.lower()).split()) not in _LINK_LABELS:
+            titles.append(title)
+    return titles
+
 
 
 def page_gaps(
@@ -188,24 +204,24 @@ def page_gaps(
     audit = audit or {}
     if not (prospect.get("website_url") and audit.get("is_reachable")):
         return None
-    site_peers = [p for p in _site_peers(peers or []) if _titles(p)]
+    site_peers = [p for p in _site_peers(peers or []) if offering_titles(p)]
     if len(site_peers) < MIN_PEERS:
         return None
 
     profile = vertical_config.niche_profile(prospect.get("vertical"))
     words = [w.strip("-") for w in profile.get("offering_words", []) if w.strip("-") not in _GENERIC_WORDS]
-    own = " ".join(_slug(t) for t in _titles(audit))
+    own = " ".join(_slug(t) for t in offering_titles(audit))
 
     gaps = []
     for word in words:
         if word in own:
             continue
-        holders = [p for p in site_peers if any(word in _slug(t) for t in _titles(p))]
+        holders = [p for p in site_peers if any(word in _slug(t) for t in offering_titles(p))]
         if len(holders) < max(2, round(len(site_peers) * 0.25)):
             continue
         names: dict[str, int] = {}
         for p in holders:
-            for t in _titles(p):
+            for t in offering_titles(p):
                 if word in _slug(t):
                     key = " ".join(t.split())
                     names[key] = names.get(key, 0) + 1
@@ -227,7 +243,7 @@ def page_gaps(
     return {
         "sample_size": len(site_peers),
         "gaps": unique[:limit],
-        "yours": _titles(audit)[:8],
+        "yours": offering_titles(audit)[:8],
         "offering_label": profile["offering_label"],
     }
 
@@ -254,7 +270,7 @@ def search_snippet(
     place = ", ".join(p for p in [city, state] if p)
     niche = vertical_config.vertical_label(prospect.get("vertical") or "") or ""
     niche_title = " ".join(w[:1].upper() + w[1:] for w in niche.split())
-    offerings = [" ".join(t.split()) for t in _titles(audit)][:3]
+    offerings = [" ".join(t.split()) for t in offering_titles(audit)][:3]
 
     focus = ""
     if offerings:

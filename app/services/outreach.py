@@ -22,7 +22,7 @@ from app.services.outreach_verification import OutreachClaimVerifier
 
 PROMPT_VERSION = "outreach-v12"
 # Reports older than this version lack the checks the email and PDF now rely on.
-CURRENT_AUDIT_VERSION = 8
+CURRENT_AUDIT_VERSION = 9
 MAX_DRAFT_ATTEMPTS = 3
 # Signature plus a working opt-out. The postal line is optional and comes from
 # OUTREACH_POSTAL_ADDRESS (e.g. a PO box or virtual mailbox); CAN-SPAM expects

@@ -1,19 +1,28 @@
 import re
 import secrets
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from app.repositories.demo_sites import DemoSiteRepository
 from app.repositories.prospects import ProspectRepository
+from app.services import audit_benchmarks
 from app.services.demo_site_renderer import palette_for, render_demo_site, template_options
 from app.services.demo_site_renderer_v3 import V3_TEMPLATE_OPTION, niche_copy, render_demo_site_v3
 from pipeline import verticals as vertical_config
 
 
+REVIEW_MIN_CHARS = 40
+
+
 class DemoSiteError(Exception):
     pass
+
+
+def _https_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) and value.startswith("https://") else None
 
 
 def _normalize_list(values: list[str], *, max_items: int) -> list[str]:
@@ -57,8 +66,37 @@ def _market_city(market: str | None) -> str | None:
 
 def _auto_services(audit: dict[str, Any] | None) -> list[str]:
     """Offering names read from the prospect's own site navigation."""
-    titles = (audit or {}).get("offering_titles") or []
-    return _normalize_list([str(t) for t in titles], max_items=6)
+    return _normalize_list(audit_benchmarks.offering_titles(audit or {}), max_items=6)
+
+
+def _review_month(published: Any) -> str | None:
+    try:
+        return datetime.fromisoformat(str(published)[:10]).strftime("%B %Y")
+    except ValueError:
+        return None
+
+
+def showcase_reviews(reviews: list[dict[str, Any]], limit: int = 3) -> list[dict[str, Any]]:
+    """The strongest real Google reviews, keeping Google's attribution with each."""
+    usable = []
+    for review in reviews:
+        text = " ".join(str((review.get("text") or {}).get("text") or "").split())
+        author = review.get("authorAttribution") or {}
+        rating = int(review.get("rating") or 0)
+        if rating < 4 or len(text) < REVIEW_MIN_CHARS or not author.get("displayName"):
+            continue
+        usable.append({
+            "author": author["displayName"],
+            "author_url": _https_or_none(author.get("uri")),
+            "author_photo": _https_or_none(author.get("photoUri")),
+            "rating": rating,
+            "text": text,
+            "date": _review_month(review.get("publishTime")),
+            "published": str(review.get("publishTime") or ""),
+            "url": _https_or_none(review.get("googleMapsUri")),
+        })
+    usable.sort(key=lambda r: (r["rating"], r["published"]), reverse=True)
+    return [{k: v for k, v in r.items() if k != "published"} for r in usable[:limit]]
 
 
 def _auto_areas(prospect: dict[str, Any]) -> list[str]:
@@ -123,6 +161,15 @@ class DemoSiteService:
             },
         }
 
+    def _google_reviews(self, place_id: str) -> list[dict[str, Any]]:
+        lookup = getattr(self.prospect_repository, "get_google_reviews", None)
+        if lookup is None:
+            return []
+        try:
+            return lookup(place_id)
+        except Exception:
+            return []
+
     def _website_audit(self, place_id: str) -> dict[str, Any] | None:
         lookup = getattr(self.prospect_repository, "get_website_audit", None)
         if lookup is None:
@@ -176,6 +223,7 @@ class DemoSiteService:
             "rating": float(prospect["rating"]) if prospect.get("rating") is not None else None,
             "review_count": int(prospect["review_count"]) if prospect.get("review_count") is not None else None,
             "scored_at": prospect.get("scored_at").isoformat() if prospect.get("scored_at") else None,
+            "reviews": showcase_reviews(self._google_reviews(place_id)),
         }
         content_snapshot = {
             "headline": (headline or _default_headline(prospect, primary_type_display, city)).strip(),
