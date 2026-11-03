@@ -68,7 +68,7 @@ COST_PER_1K = {
 }
 FREE_TIER_MONTHLY = {"essentials": 10_000, "pro": 5_000, "enterprise": 1_000}
 
-MAX_PAGES_PER_QUERY = 3      # Google hard cap: 60 results / 3 pages
+MAX_PAGES_PER_QUERY = 3      # up to 20 results a page, often fewer; Google stops at 60
 RESULTS_PER_PAGE    = 20
 
 # ---------------------------------------------------------------------------
