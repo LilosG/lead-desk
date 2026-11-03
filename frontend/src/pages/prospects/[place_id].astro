@@ -779,7 +779,9 @@ const { place_id } = Astro.params;
         if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
         input.value = '';
         status.className = 'mt-2 text-xs text-emerald-700';
-        status.textContent = 'Saved and re-scored. Google\'s speed test is running; refresh in about a minute, then build the audit.';
+        status.textContent = body.blocked
+          ? 'Saved and re-scored. This site blocks automated checks, so its pages can\'t be audited.'
+          : 'Saved and re-scored. Google\'s speed test is running; refresh in about a minute, then build the audit.';
         await loadDetail();
       } catch (error) {
         status.className = 'mt-2 text-xs text-red-700';

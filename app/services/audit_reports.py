@@ -177,7 +177,9 @@ def _audit_coverage(prospect: dict[str, Any], audit: dict[str, Any]) -> list[dic
     items: list[dict[str, str]] = []
 
     reachable = audit.get("is_reachable")
-    if reachable is not None:
+    # A bot filter says nothing about whether visitors can load the site.
+    blocked = str(audit.get("crawl_error") or "").startswith("blocked_")
+    if reachable is not None and not blocked:
         items.append(
             _coverage_item(
                 label="Website availability",
