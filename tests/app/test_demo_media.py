@@ -1,7 +1,9 @@
 import base64
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from app.services.demo_media import DemoMediaError, DemoMediaService
 
@@ -39,23 +41,28 @@ class FakeMediaRepository:
 
 
 class FakeResponse:
-    ok = True
-    status_code = 200
-
-    def __init__(self, encoded):
+    def __init__(self, encoded, status_code=200):
         self.encoded = encoded
+        self.status_code = status_code
+        self.ok = status_code < 400
 
     def json(self):
-        return {"data": [{"b64_json": self.encoded}]}
+        url = f"data:image/png;base64,{self.encoded}"
+        return {"choices": [{"message": {"images": [{"image_url": {"url": url}}]}}]}
+
+
+def png_bytes(width=3000, height=1600):
+    out = BytesIO()
+    Image.new("RGB", (width, height), "#336699").save(out, "PNG")
+    return out.getvalue()
 
 
 def test_demo_media_generation_is_explicit_single_role_and_persisted(monkeypatch, tmp_path):
-    png_bytes = b"\x89PNG\r\n\x1a\n" + b"fake-image"
     captured = {}
 
     def fake_post(url, *, headers, json, timeout):
         captured.update({"url": url, "headers": headers, "json": json, "timeout": timeout})
-        return FakeResponse(base64.b64encode(png_bytes).decode("ascii"))
+        return FakeResponse(base64.b64encode(png_bytes()).decode("ascii"))
 
     monkeypatch.setattr("app.services.demo_media.requests.post", fake_post)
     repository = FakeMediaRepository()
@@ -65,21 +72,49 @@ def test_demo_media_generation_is_explicit_single_role_and_persisted(monkeypatch
         "volt-place",
         role="hero",
         api_key="test-key",
-        model="bytedance-seed/seedream-4.5",
+        model="google/gemini-2.5-flash-image",
         root=tmp_path,
         base_url="https://demo.example.test",
     )
 
-    assert captured["url"] == "https://openrouter.ai/api/v1/images"
-    assert captured["json"]["model"] == "bytedance-seed/seedream-4.5"
-    assert captured["json"]["aspect_ratio"] == "16:9"
-    assert "do not place any business name, logo" in captured["json"]["prompt"].lower()
-    assert "do not imply that generated people are the real owner or employees" in captured["json"]["prompt"].lower()
+    assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert captured["json"]["model"] == "google/gemini-2.5-flash-image"
+    assert captured["json"]["modalities"] == ["image", "text"]
+    assert captured["json"]["image_config"] == {"aspect_ratio": "16:9"}
+    prompt = captured["json"]["messages"][0]["content"].lower()
+    assert "do not place any business name, logo" in prompt
+    assert "do not imply that any person shown is the real owner" in prompt
+    assert "southern california" not in prompt
     assert result["role"] == "hero"
     assert result["public_url"].startswith("https://demo.example.test/_media/")
     stored = Path(repository.created[0]["storage_path"])
-    assert stored.exists()
-    assert stored.read_bytes() == png_bytes
+    with Image.open(stored) as saved:
+        assert saved.format == "WEBP"
+        assert saved.width == 2000
+
+
+def test_image_only_models_get_a_second_attempt(monkeypatch, tmp_path):
+    attempts = []
+
+    def fake_post(url, *, headers, json, timeout):
+        attempts.append(json["modalities"])
+        encoded = base64.b64encode(png_bytes(800, 450)).decode("ascii")
+        return FakeResponse(encoded, status_code=400 if len(attempts) == 1 else 200)
+
+    monkeypatch.setattr("app.services.demo_media.requests.post", fake_post)
+    DemoMediaService(FakeProspectRepository(), FakeMediaRepository()).generate(
+        "volt-place", role="hero", api_key="k", model="bytedance-seed/seedream-4.5",
+        root=tmp_path, base_url="https://demo.example.test",
+    )
+    assert attempts == [["image", "text"], ["image"]]
+
+
+def test_prompt_follows_the_niche_not_home_services():
+    prompt = DemoMediaService._prompt(
+        {"name": "Glow", "city": "Scottsdale", "state": "AZ", "primary_type": "spa", "vertical": "med_spa"},
+        role="hero", direction=None,
+    )
+    assert "treatment room" in prompt and "Scottsdale, AZ" in prompt
 
 
 def test_demo_media_rejects_invalid_role_before_provider_call(tmp_path):

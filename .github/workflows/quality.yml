@@ -65,6 +65,7 @@ jobs:
           python pipeline/test_run_lifecycle.py
           python pipeline/test_market_scope.py
           python pipeline/test_crawl_niche.py
+          python pipeline/test_site_signals.py
 
   frontend:
     runs-on: ubuntu-latest

@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.database import pool
 from app.repositories.prospects import ProspectRepository
@@ -12,6 +12,7 @@ from app.schemas.prospects import (
     ProspectWorkflowState,
     ProspectWorkflowUpdate,
 )
+from app.services.pipeline_bridge import load
 from app.services.prospects import ProspectService, WorkflowVersionConflict
 
 
@@ -39,6 +40,7 @@ def list_prospects(
     category_opportunity: bool | None = None,
     label: str | None = Query(default=None, max_length=40, pattern=r"^[a-z_]+$"),
     market: str | None = Query(default=None, max_length=120),
+    qualification: str | None = Query(default=None, max_length=40, pattern=r"^[a-z_]+$"),
 ) -> dict:
     return get_service().list_prospects(
         page=page,
@@ -53,6 +55,7 @@ def list_prospects(
         category_opportunity=category_opportunity,
         label=label,
         market=market,
+        qualification=qualification,
     )
 
 
@@ -110,6 +113,28 @@ class WebsiteUpdate(BaseModel):
     url: str
 
 
+class ContactUpdate(BaseModel):
+    email: str | None = Field(
+        default=None, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    )
+    site_checked: bool = False
+
+
+@router.post("/{place_id}/contact")
+def update_prospect_contact(place_id: str, payload: ContactUpdate) -> dict:
+    """Add an email Mike found, or sign off a site the crawler couldn't read."""
+    if payload.email is None and not payload.site_checked:
+        raise HTTPException(status_code=422, detail="nothing to update")
+    email = payload.email.lower() if payload.email else None
+    if not get_service().repository.set_manual_contact(
+        place_id, email=email, site_checked=payload.site_checked,
+    ):
+        raise HTTPException(status_code=404, detail="prospect not found")
+
+    load("site_rescore").rescore_lead(place_id, "Contact updated by hand")
+    return {"place_id": place_id, "email": email, "site_checked": payload.site_checked}
+
+
 @router.post("/{place_id}/website")
 def set_prospect_website(place_id: str, payload: WebsiteUpdate) -> dict:
     """Link a website to a lead whose Google profile has none, then re-score it.
@@ -119,13 +144,8 @@ def set_prospect_website(place_id: str, payload: WebsiteUpdate) -> dict:
     The lead is then audited on that site, with 'website isn't linked on the
     Google profile' as a finding instead of 'no website'.
     """
-    import sys
-    from pathlib import Path
-
-    pipeline_dir = str(Path(__file__).resolve().parents[3] / "pipeline")
-    if pipeline_dir not in sys.path:
-        sys.path.insert(0, pipeline_dir)
-    from site_rescore import WebsiteError, set_manual_website
+    site_rescore = load("site_rescore")
+    WebsiteError, set_manual_website = site_rescore.WebsiteError, site_rescore.set_manual_website
 
     try:
         result = set_manual_website(place_id, payload.url, with_psi=False)

@@ -11,6 +11,7 @@ pydantic-settings>=2.10,<3
 psycopg-pool>=3.2,<4
 cryptography>=45,<46
 reportlab>=4.2,<5
+pillow>=10,<14
 
 # Application testing
 pytest>=8,<9

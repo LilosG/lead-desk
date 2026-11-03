@@ -6,6 +6,7 @@ from app.core.database import pool
 from app.repositories.runs import RunRepository
 from app.schemas.runs import RunDetail, RunListResponse
 from app.services.runs import RunService
+from pipeline.config import QUALIFICATION_LABELS
 
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -18,6 +19,14 @@ def list_runs(
 ) -> dict:
     service = RunService(RunRepository(pool))
     return service.list_runs(page=page, page_size=page_size)
+
+
+@router.get("/{run_id}/funnel")
+def run_funnel(run_id: UUID) -> dict:
+    result = RunRepository(pool).funnel(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return {**result, "labels": QUALIFICATION_LABELS}
 
 
 @router.get("/{run_id}", response_model=RunDetail)

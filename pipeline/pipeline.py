@@ -60,6 +60,32 @@ def save_cache(cache: dict) -> None:
     os.replace(tmp, CACHE_FILE)   # atomic, so a crash mid-write can't corrupt it
 
 
+def prune_cache(max_age_days: int = C.CRAWL_CACHE_MAX_AGE_DAYS) -> int:
+    """Forget crawl results a new sweep shouldn't reuse. Run once per sweep.
+
+    The cache outlives sweeps, so without this a lead keeps its first crawl
+    forever: a site quarantined once stayed quarantined, and old entries never
+    gain newer checks.
+    """
+    cache = load_cache()
+    cutoff = datetime.now(timezone.utc).timestamp() - max_age_days * 86400
+
+    def stale(f: E.SiteFindings) -> bool:
+        if f.crawl_error == "blocked_crawl_hang":
+            return True
+        if not f.is_reachable:
+            return False
+        checked = (f.site_signals or {}).get("checked_at")
+        if not checked:
+            return True
+        return datetime.fromisoformat(checked).timestamp() < cutoff
+
+    kept = {pid: f for pid, f in cache.items() if not stale(f)}
+    if len(kept) != len(cache):
+        save_cache(kept)
+    return len(cache) - len(kept)
+
+
 def active_run_store(required: bool = False):
     from run_state import load_current_run
     from store import PostgresStore
@@ -154,8 +180,7 @@ def cmd_crawl(businesses, cache, batch: int) -> None:
     workers = C.CRAWL_MAX_CONCURRENT
     done = 0
     ex = ProcessPoolExecutor(max_workers=workers)
-    futs = {ex.submit(E.crawl_site if b.get("website_url") else E.crawl_unlisted, b): b
-            for b in chunk}
+    futs = {ex.submit(E.crawl_business, b): b for b in chunk}
     try:
         for fut in as_completed(futs, timeout=max(5, deadline - time.time())):
             b = futs[fut]
@@ -171,21 +196,22 @@ def cmd_crawl(businesses, cache, batch: int) -> None:
     except FTimeout:
         print(f"  deadline hit at {done}/{len(chunk)} — killing stalled fetches", flush=True)
 
-    # Quarantine whatever never came back, using a `blocked_` prefix on purpose:
-    # scoring treats any OTHER unreachable error as "their website does not
-    # load", which for a site that merely stalled our crawler would be a false
-    # claim made to a business about its own website. The blocked_ path scores 0
-    # and flags a manual check instead.
-    stalled = 0
-    for b in chunk:
-        if b["place_id"] not in cache:
+    # Sites we didn't get to are simply crawled in the next batch. Marking them
+    # "blocked" here is what used to remove healthy businesses from outreach:
+    # they had never been requested at all. A site that really hangs is caught
+    # per-site by crawl_business, so it can't starve the rest of the batch.
+    unfinished = [b for b in chunk if b["place_id"] not in cache]
+    for fut in futs:
+        fut.cancel()
+    if unfinished and done == 0:
+        # Nothing finished in a whole batch window: quarantine rather than loop.
+        for b in unfinished:
             cache[b["place_id"]] = E.SiteFindings(
                 place_id=b["place_id"], crawl_error="blocked_crawl_hang")
-            stalled += 1
+        print(f"  {len(unfinished)} site(s) quarantined after a batch with no progress", flush=True)
+    elif unfinished:
+        print(f"  {len(unfinished)} site(s) carried over to the next batch", flush=True)
     save_cache(cache)
-    if stalled:
-        print(f"  {stalled} site(s) quarantined as blocked_crawl_hang "
-              f"(NOT scored as down — needs a manual look)", flush=True)
 
     # Kill the stalled children rather than joining them; a normal shutdown
     # would block on exactly the sockets we just gave up on.
@@ -194,9 +220,9 @@ def cmd_crawl(businesses, cache, batch: int) -> None:
             proc.kill()
         except Exception:
             pass
-    ex.shutdown(wait=False)
+    ex.shutdown(wait=False, cancel_futures=True)
 
-    remaining = len(todo) - len(chunk)
+    remaining = sum(1 for b in businesses if b["place_id"] not in cache)
     print(f"done. {remaining} sites still to crawl.")
 
     store, run_id = active_run_store()

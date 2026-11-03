@@ -118,11 +118,12 @@ class RunRepository:
 
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("select count(*) from runs")
+                cur.execute("select count(*) from runs where kind = 'sweep'")
                 total = cur.fetchone()["count"]
 
                 cur.execute(
                     RUN_SELECT
+                    + " where r.kind = 'sweep' "
                     + RUN_GROUP_BY
                     + """
                       order by r.started_at desc
@@ -133,6 +134,48 @@ class RunRepository:
                 rows = cur.fetchall()
 
         return rows, total
+
+    def funnel(self, run_id: UUID) -> dict[str, Any] | None:
+        """Where a sweep's leads ended up, and why the rest aren't qualified."""
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("select discovery_stats from runs where id = %s", (run_id,))
+                run = cur.fetchone()
+                if run is None:
+                    return None
+                # Latest verdict per lead, so a rescore updates older sweeps too.
+                cur.execute(
+                    """
+                    select coalesce(latest.qualification, 'unscored') as qualification,
+                           count(*) as count
+                    from scores s
+                    join v_latest_score latest on latest.place_id = s.place_id
+                    where s.run_id = %s
+                    group by 1
+                    """,
+                    (run_id,),
+                )
+                verdicts = {r["qualification"]: r["count"] for r in cur.fetchall()}
+                cur.execute(
+                    """
+                    select
+                        count(*) filter (where w.crawl_error = 'blocked_crawl_hang') as stalled,
+                        count(*) filter (where left(w.crawl_error, 8) = 'blocked_'
+                                           and w.crawl_error <> 'blocked_crawl_hang') as blocked,
+                        count(*) filter (where cardinality(coalesce(w.emails_found, '{}'::text[])) > 0) as with_email
+                    from scores s
+                    join website_enrichment w on w.place_id = s.place_id
+                    where s.run_id = %s
+                    """,
+                    (run_id,),
+                )
+                crawl = cur.fetchone()
+        return {
+            "total": sum(verdicts.values()),
+            "verdicts": verdicts,
+            "dropped": run["discovery_stats"] or {},
+            "crawl": dict(crawl),
+        }
 
     def get_run(self, run_id: UUID) -> dict[str, Any] | None:
         with self.pool.connection() as conn:

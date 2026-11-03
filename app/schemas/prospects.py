@@ -54,6 +54,8 @@ class ProspectListItem(BaseModel):
 
     needs_manual_check: bool
     scored_at: datetime
+    fit_score: int | None = None
+    qualification: str | None = None
 
 
 class ProspectListResponse(BaseModel):
@@ -124,6 +126,7 @@ class WebsiteAudit(BaseModel):
     has_online_booking: bool | None = None
     booking_provider: str | None = None
     site_source: str | None = None
+    site_signals: dict[str, Any] | None = None
 
 
 class ProspectWorkflowState(BaseModel):
@@ -209,6 +212,10 @@ class ProspectDetail(BaseModel):
     what_to_fix: str | None
     major_issues: int
     needs_manual_check: bool
+    fit_score: int | None = None
+    qualification: str | None = None
+    qualification_reasons: list[str] | None = None
+    site_checked_at: datetime | None = None
 
     website_audit: WebsiteAudit | None
     findings: list[AuditFinding]
@@ -221,5 +228,6 @@ class ProspectFilterMeta(BaseModel):
     verticals: list[str]
     markets: list[str] = []
     labels: dict[str, str] = {}
+    qualifications: dict[str, str] = {}
     tiers: list[str]
     total_prospects: int

@@ -74,6 +74,13 @@ const { run_id } = Astro.params;
         </div>
       </section>
 
+      <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+        <div class="text-sm font-medium">Where the leads went</div>
+        <div class="mt-1 text-xs text-[var(--muted)]">Nothing is deleted. Every lead stays in Prospects with its verdict.</div>
+        <div id="funnel-rows" class="mt-4 space-y-2"></div>
+        <div id="funnel-notes" class="mt-4 text-xs leading-5 text-[var(--muted)]"></div>
+      </section>
+
       <div class="grid gap-6 xl:grid-cols-2">
         <section class="rounded-lg border border-[var(--line)] bg-white p-5">
           <div class="text-sm font-medium">Tier distribution</div>
@@ -174,6 +181,43 @@ const { run_id } = Astro.params;
   </div>
 
   <script>
+    type Funnel = {
+      total: number;
+      verdicts: Record<string, number>;
+      labels: Record<string, string>;
+      dropped: Record<string, number>;
+      crawl: { stalled: number; blocked: number; with_email: number };
+    };
+
+    async function loadFunnel(runId: string): Promise<void> {
+      const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/funnel`, { headers: { Accept: 'application/json' } });
+      if (!response.ok) return;
+      const funnel = (await response.json()) as Funnel;
+      const box = document.querySelector('#funnel-rows');
+      if (!box) return;
+      const clean = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;');
+      const top = Math.max(1, ...Object.values(funnel.verdicts));
+      box.innerHTML = [...Object.keys(funnel.labels), 'unscored']
+        .filter((key) => funnel.verdicts[key])
+        .map((key) => {
+          const count = funnel.verdicts[key];
+          const name = funnel.labels[key] ?? 'Not rescored yet';
+          const link = key === 'unscored' ? '/prospects' : `/prospects?qualification=${encodeURIComponent(key)}`;
+          return `<a href="${link}" class="grid grid-cols-[150px_minmax(0,1fr)_50px] items-center gap-3 text-sm hover:underline"><span>${clean(name)}</span><span class="h-2 rounded bg-[var(--surface-muted)]"><span class="block h-2 rounded ${key === 'qualified' ? 'bg-emerald-600' : 'bg-[var(--accent)]'}" style="width:${Math.max(2, (count / top) * 100)}%"></span></span><span class="text-right font-medium">${count.toLocaleString()}</span></a>`;
+        }).join('');
+      const dropped = funnel.dropped ?? {};
+      const notes = [
+        `${funnel.crawl.with_email.toLocaleString()} of ${funnel.total.toLocaleString()} leads have an email.`,
+        funnel.crawl.blocked ? `Sites that blocked our crawler: ${funnel.crawl.blocked}.` : '',
+        funnel.crawl.stalled ? `Sites that never finished loading: ${funnel.crawl.stalled}.` : '',
+        dropped.outside_market ? `Google results outside the market: ${dropped.outside_market}.` : '',
+        dropped.wrong_niche ? `Wrong kind of business: ${dropped.wrong_niche}.` : '',
+        dropped.closed ? `Permanently closed: ${dropped.closed}.` : '',
+      ].filter(Boolean).join(' ');
+      const noteBox = document.querySelector('#funnel-notes');
+      if (noteBox) noteBox.textContent = notes;
+    }
+
     type RunDetail = {
       id: string;
       started_at: string;
@@ -259,6 +303,7 @@ const { run_id } = Astro.params;
           `$${Number(data.est_cost_usd ?? 0).toFixed(2)}`,
         );
 
+        loadFunnel(data.id).catch(() => undefined);
         setText('#tier-a', data.tier_a);
         setText('#tier-b', data.tier_b);
         setText('#tier-c', data.tier_c);

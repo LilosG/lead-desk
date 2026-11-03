@@ -42,8 +42,9 @@ class OutreachRepository:
         order by
             case when cardinality(coalesce(w.emails_found, '{}'::text[])) > 0 then 0 else 1 end,
             -- Volume first, quality on top: nothing is excluded for a small
-            -- review count; established and well-reviewed leads simply sort
-            -- ahead of the rest.
+            -- review count; qualified, established and well-reviewed leads
+            -- simply sort ahead of the rest.
+            case when w.qualification = 'qualified' then 0 else 1 end,
             case when seg.established then 0 else 1 end,
             case when coalesce(w.review_count, 0) >= 15 then 0 else 1 end,
             w.total_score desc,
@@ -238,7 +239,11 @@ class OutreachRepository:
                 b.place_id,
                 b.name,
                 b.phone,
-                we.emails_found,
+                case
+                    when b.manual_email is not null
+                        then array_prepend(b.manual_email, coalesce(we.emails_found, '{}'::text[]))
+                    else we.emails_found
+                end as emails_found,
                 coalesce(f.needs_manual_check, false) as needs_manual_check
             from businesses b
             left join website_enrichment we on we.place_id = b.place_id
@@ -456,6 +461,10 @@ class OutreachRepository:
                         set status=%s, to_address=%s, subject=%s, body=%s,
                             claim_signal=%s, verification_status=%s,
                             verification_note=%s, version=version+1,
+                            contacted_at=case
+                                when %s = 'contacted' then coalesce(contacted_at, now())
+                                else contacted_at
+                            end,
                             updated_at=now()
                         where id=%s::uuid
                         returning id::text as id, place_id, channel, status,
@@ -470,6 +479,7 @@ class OutreachRepository:
                             state['status'], state['to_address'], state['subject'],
                             state['body'], state['claim_signal'],
                             state['verification_status'], state['verification_note'],
+                            state['status'],
                             item_id,
                         ),
                     )
@@ -886,3 +896,14 @@ class OutreachRepository:
                         ),
                     )
                     return updated
+
+    def find_email_item(self, place_id: str) -> dict[str, Any] | None:
+        query = """
+            select id::text as id, status, body, gmail_draft_id, version
+            from outreach_queue
+            where place_id = %s and channel = 'email'
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (place_id,))
+                return cur.fetchone()

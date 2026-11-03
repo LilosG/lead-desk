@@ -1,4 +1,5 @@
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -10,6 +11,7 @@ from app.integrations.openrouter_constrained import ConstrainedOutreachClient
 from app.integrations.openrouter_structured import StructuredOpenRouterClient
 from app.repositories.integrations import IntegrationRepository
 from app.repositories.outreach import OutreachRepository
+from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_evidence import OutreachEvidenceRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
 from app.schemas.outreach import (
@@ -25,6 +27,7 @@ from app.services.outreach import (
     OutreachIntegrationUnavailable,
     OutreachService,
 )
+from app.services.outreach_board import OutreachBoardService, Stage
 from app.services.outreach_gmail_review import OutreachGmailReviewService
 
 
@@ -115,6 +118,52 @@ def integration_status() -> dict:
 @router.get('/candidates')
 def list_candidates(limit: int = Query(default=100, ge=1, le=250)) -> dict:
     return get_service().list_candidates(limit=limit)
+
+
+def get_board_service() -> OutreachBoardService:
+    gmail = None
+    try:
+        gmail = GmailIntegrationService(IntegrationRepository(pool), get_settings()).gmail_client()
+    except IntegrationConfigurationError:
+        gmail = None
+    return OutreachBoardService(
+        OutreachBoardRepository(pool),
+        gmail_repository=OutreachGmailRepository(pool),
+        gmail=gmail,
+    )
+
+
+@router.get('/board')
+def outreach_board(
+    stage: Stage = 'to_prep',
+    q: str | None = Query(default=None, max_length=120),
+    vertical: str | None = Query(default=None, max_length=100),
+    market: str | None = Query(default=None, max_length=120),
+    qualified_only: bool = False,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
+) -> dict:
+    return get_board_service().board(
+        stage=stage, q=q, vertical=vertical, market=market,
+        qualified_only=qualified_only, page=page, page_size=page_size,
+    )
+
+
+@router.get('/items/{item_id}')
+def get_outreach_item(item_id: UUID) -> dict:
+    result = get_board_service().item(str(item_id))
+    if result is None:
+        raise HTTPException(status_code=404, detail='outreach item not found')
+    return result
+
+
+@router.post('/gmail/sync')
+def sync_gmail_drafts() -> dict:
+    """Move prospects on once their draft has left Gmail's Drafts folder."""
+    try:
+        return get_board_service().sync_gmail()
+    except OutreachIntegrationUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get('/readiness/{place_id}')

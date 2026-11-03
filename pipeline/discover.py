@@ -63,6 +63,11 @@ class CostLedger:
     search_calls: int = 0
     details_calls: int = 0
     psi_calls: int = 0
+    # Results Google returned that we left out, by reason. Shown on the run page.
+    dropped: dict = field(default_factory=dict)
+
+    def drop(self, reason: str) -> None:
+        self.dropped[reason] = self.dropped.get(reason, 0) + 1
 
     def est_usd(self) -> float:
         return (
@@ -562,6 +567,7 @@ def sweep(
                     for place in raw:
                         rec = normalize(place, vertical)
                         if rec["business_status"] in C.EXCLUDE_BUSINESS_STATUS:
+                            ledger.drop("closed")
                             continue
                         records.append(rec)
 
@@ -578,10 +584,12 @@ def sweep(
                                 continue
                             rec["market"] = C.DEFAULT_GEO_LABEL
                         elif not in_market(rec, target_city, center):
+                            ledger.drop("outside_market")
                             continue
                         else:
                             rec["market"] = target_city
                         if wrong_vertical(rec, vertical):
+                            ledger.drop("wrong_niche")
                             continue
 
                         if pid in found:
@@ -747,6 +755,10 @@ if __name__ == "__main__":
     print(f"\n{len(results)} unique businesses -> {args.out}")
     print(ledger.summary())
 
+    from pipeline import prune_cache  # the sibling pipeline.py, which imports this module
+
+    print(f"cleared {prune_cache()} stale crawl results")
+
     if store is not None and run_id is not None:
         store.update_run_progress(
             run_id,
@@ -755,4 +767,5 @@ if __name__ == "__main__":
             api_calls_details=ledger.details_calls,
             est_cost_usd=round(ledger.est_usd(), 4),
             discovery_finished_at=datetime.now(timezone.utc),
+            discovery_stats=ledger.dropped,
         )

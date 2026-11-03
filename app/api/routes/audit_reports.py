@@ -14,6 +14,7 @@ from app.schemas.audit_reports import (
 )
 from app.services.audit_report_pdf import render_audit_report_pdf
 from app.services.audit_reports import AuditReportError, AuditReportService
+from app.services.site_refresh import SiteRefresher
 
 
 router = APIRouter(
@@ -27,6 +28,7 @@ def get_service() -> AuditReportService:
         ProspectRepository(pool),
         AuditReportRepository(pool),
         DemoSiteRepository(pool),
+        site_refresher=SiteRefresher(ProspectRepository(pool)),
     )
 
 

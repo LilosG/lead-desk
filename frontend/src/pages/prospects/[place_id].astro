@@ -82,9 +82,27 @@ const { place_id } = Astro.params;
 
         <div class="space-y-6">
           <section class="rounded-lg border border-[var(--line)] bg-white p-5">
+            <div class="flex items-center justify-between gap-3">
+              <div class="text-sm font-medium">Verdict</div>
+              <span id="verdict-badge" class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[11px] font-medium">—</span>
+            </div>
+            <ul id="verdict-reasons" class="mt-3 space-y-1.5 text-sm leading-5"></ul>
+            <form id="contact-form" class="mt-4 border-t border-[var(--line)] pt-4">
+              <label for="contact-email" class="text-xs text-[var(--muted)]">Found their email yourself? Add it and this lead moves to email.</label>
+              <div class="mt-2 flex gap-2">
+                <input id="contact-email" type="email" autocomplete="off" placeholder="owner@business.com" class="min-w-0 flex-1 rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
+                <button id="contact-save" type="submit" class="rounded-md bg-[var(--dark)] px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">Add</button>
+              </div>
+              <button id="site-ok" type="button" class="mt-3 hidden w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium">I checked the site, it's fine</button>
+              <div id="contact-status" class="mt-2 hidden text-xs"></div>
+            </form>
+          </section>
+
+          <section class="rounded-lg border border-[var(--line)] bg-white p-5">
             <div class="text-sm font-medium">Opportunity</div>
             <div id="headline-gap" class="mt-4 text-sm leading-6"></div>
             <dl class="mt-5 space-y-3 text-sm">
+              <div class="flex justify-between gap-4"><dt class="text-[var(--muted)]">Fit</dt><dd id="fit-score" class="font-medium">—</dd></div>
               <div class="flex justify-between gap-4"><dt class="text-[var(--muted)]">GBP gap</dt><dd id="gbp-gap" class="font-medium">—</dd></div>
               <div class="flex justify-between gap-4"><dt class="text-[var(--muted)]">Website gap</dt><dd id="website-gap" class="font-medium">—</dd></div>
               <div class="flex justify-between gap-4"><dt class="text-[var(--muted)]">Reachability</dt><dd id="reachability" class="font-medium">—</dd></div>
@@ -316,6 +334,9 @@ const { place_id } = Astro.params;
       labels?: string[];
       market?: string | null;
       needs_manual_check: boolean;
+      fit_score?: number | null;
+      qualification?: string | null;
+      qualification_reasons?: string[] | null;
       findings: Finding[];
       website_audit: WebsiteAudit | null;
       workflow: WorkflowState;
@@ -425,6 +446,15 @@ const { place_id } = Astro.params;
         setText('#website-gap', data.website_gap_score ?? 'Not audited');
         setText('#reachability', data.reachability_score);
         setText('#real-gaps', data.real_gap_count);
+        setText('#fit-score', data.fit_score ?? 'Not rescored');
+        const VERDICTS: Record<string, string> = {
+          qualified: 'Qualified', call_first: 'Qualified, call first', verify_first: 'Check site first',
+          low_fit: 'Too early', no_gap: 'Nothing to pitch', franchise: 'Franchise', no_contact: 'No contact route',
+        };
+        setText('#verdict-badge', VERDICTS[data.qualification ?? ''] ?? 'Not rescored');
+        required('#verdict-reasons').innerHTML = (data.qualification_reasons ?? [])
+          .map((reason) => `<li>${escapeHtml(reason)}</li>`).join('');
+        required('#site-ok').classList.toggle('hidden', !data.needs_manual_check);
 
         const badges: string[] = [];
         const LABEL_NAMES: Record<string, string> = {
@@ -690,6 +720,40 @@ const { place_id } = Astro.params;
       } finally {
         saveButton.disabled = false;
       }
+    });
+
+    async function saveContact(body: { email?: string; site_checked?: boolean }): Promise<void> {
+      const placeId = required('#prospect-detail-root').dataset.placeId;
+      if (!placeId) return;
+      const status = required('#contact-status');
+      status.className = 'mt-2 text-xs text-[var(--muted)]';
+      status.textContent = 'Saving…';
+      try {
+        const response = await fetch(`/api/prospects/${encodeURIComponent(placeId)}/contact`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Check the email address and try again.');
+        status.className = 'mt-2 text-xs text-emerald-700';
+        status.textContent = 'Saved and re-scored.';
+        required<HTMLInputElement>('#contact-email').value = '';
+        await loadDetail();
+      } catch (error) {
+        status.className = 'mt-2 text-xs text-red-700';
+        status.textContent = error instanceof Error ? error.message : 'Unable to save.';
+      }
+    }
+
+    required<HTMLFormElement>('#contact-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const email = required<HTMLInputElement>('#contact-email').value.trim();
+      if (email) saveContact({ email });
+    });
+
+    required<HTMLButtonElement>('#site-ok').addEventListener('click', () => {
+      saveContact({ site_checked: true });
     });
 
     required<HTMLFormElement>('#website-form').addEventListener('submit', async (event) => {

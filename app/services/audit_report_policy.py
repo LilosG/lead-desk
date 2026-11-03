@@ -236,7 +236,138 @@ POLICY: dict[str, AuditReportPolicyItem] = {item.signal: item for item in [
         fix="Confirm the business's main service and choose the most specific category "
             "Google offers for it.",
     ),
+    # --- AI search ------------------------------------------------------------
+    _item(
+        "noindex_homepage", "Homepage is hidden from search engines",
+        impact="high", disposition="recommended", default=True,
+        category="AI search", phrase="the setting hiding your homepage from search engines",
+        found="The homepage carries a 'noindex' instruction, which tells search engines to "
+              "leave it out of their results.",
+        why="A page with this setting can't show in Google, and it can't be used in Google's "
+            "AI Overviews either. It's often left on by accident after a site launch.",
+        fix="Remove the noindex tag or header, then request indexing in Google Search Console.",
+    ),
+    _item(
+        "ai_crawlers_blocked", "AI search tools are blocked from the site",
+        impact="high", disposition="recommended", default=True,
+        category="AI search", phrase="the block keeping AI search tools off your site",
+        found="The site's robots.txt file tells AI search crawlers not to read it.",
+        why="ChatGPT, Perplexity and similar tools read websites to answer questions like "
+            "'who should I call near me?'. A site they can't read "
+            "can't be used as a source. Some hosts turn this block on by default.",
+        fix="Update robots.txt to allow the search crawlers listed above. Blocking training-only "
+            "crawlers such as GPTBot is a separate choice and doesn't affect this.",
+    ),
+    _item(
+        "js_only_content", "Page text only appears after JavaScript runs",
+        impact="high", disposition="recommended", default=True,
+        category="AI search", phrase="page text that AI tools can't read",
+        found="The homepage HTML contains almost no text. It's added by JavaScript in the browser.",
+        why="Google can usually handle this, but many AI crawlers don't run JavaScript, so "
+            "they see a nearly empty page.",
+        fix="Turn on server-side rendering or pre-rendering so the text is in the HTML.",
+    ),
+    _item(
+        "homepage_unclear", "Homepage doesn't say what you do and where",
+        impact="medium", disposition="recommended", default=True,
+        category="AI search", phrase="a clear opening line on your homepage",
+        found="The opening of the homepage doesn't state plainly what the business does and "
+              "which area it serves.",
+        why="Visitors decide in seconds, and search and AI tools lean on clear, direct "
+            "statements to work out what a business offers and where.",
+        fix="Open the homepage with one plain sentence: what you do, for whom, and where.",
+    ),
+    _item(
+        "no_faq_content", "No answers to common customer questions",
+        impact="low", disposition="recommended", default=True,
+        category="AI search", phrase="answers to common customer questions",
+        found="We didn't find a questions section on the homepage.",
+        why="People ask AI tools and Google full questions. Clear, honest answers on your site "
+            "give them something accurate to find, and save your team the same phone calls.",
+        fix="Add the 5 to 8 questions customers really ask, such as pricing, timing and "
+            "service area, with short, direct answers.",
+    ),
+    _item(
+        "no_service_schema", "Services aren't in the site's structured data",
+        impact="low", disposition="optional", default=False,
+        category="AI search", phrase="your services in structured data",
+        found="The site's structured data doesn't list its services.",
+        why="Structured data states your services in a format software reads reliably. "
+            "It supports your content; it doesn't replace it.",
+        fix="Add Service markup that matches what each page actually offers.",
+    ),
+    _item(
+        "no_schema_profile_links", "Your online profiles aren't connected",
+        impact="low", disposition="optional", default=False,
+        category="AI search", phrase="links between your website and your other profiles",
+        found="The site's structured data doesn't link to the business's other profiles.",
+        why="Linking your site, Google profile and social pages helps software treat them as "
+            "one business.",
+        fix="Add your official profile links to the 'sameAs' field of your business markup.",
+    ),
     # --- website content ------------------------------------------------------
+    _item(
+        "no_service_city_pages", "No pages for a service in a specific town",
+        impact="medium", disposition="recommended", default=True,
+        category="Website", phrase="pages for your services in each town",
+        found="The site has {offering_label}, but none aimed at one {offering_singular} in one town.",
+        why="Searches like '{offering_singular} in [town]' are usually made by people ready to "
+            "buy. A page written for that exact need is what can rank for it.",
+        fix="Start with your top 3 {offering_label} in your top 3 towns. Make each page useful "
+            "with real local detail; don't just swap the town name.",
+    ),
+    _item(
+        "thin_service_pages", "Service pages are very short",
+        impact="medium", disposition="recommended", default=True,
+        category="Website", phrase="how little your service pages say",
+        found="Most of the {offering_label} we read are very short.",
+        why="A short page can't answer what someone wants to know before they call, so it "
+            "struggles to rank and to convert.",
+        fix="Cover what's included, who it's for, how it works, typical questions, and how to "
+            "get started.",
+    ),
+    _item(
+        "service_pages_missing_location", "Service pages don't name your town",
+        impact="medium", disposition="recommended", default=True,
+        category="Website", phrase="your town on your service pages",
+        found="Most of the {offering_label} we read don't name the town in the title or main heading.",
+        why="The title and main heading are the strongest on-page clues to what a page is about "
+            "and who it's for.",
+        fix="Add the main town to each page's title and main heading, in natural wording.",
+    ),
+    _item(
+        "title_missing_location", "Homepage title doesn't name your town",
+        impact="medium", disposition="recommended", default=True,
+        category="Website", phrase="your town in the homepage title",
+        found="Neither the homepage title nor its main heading names the town you serve.",
+        why="For a local business, this is one of the clearest signals of where it operates.",
+        fix="Add your main {offering_singular} and town to the homepage title and main heading.",
+    ),
+    _item(
+        "no_click_to_call", "Phone number isn't tappable on mobile",
+        impact="medium", disposition="recommended", default=True,
+        category="Website", phrase="a tap-to-call phone number",
+        found="The phone number on the homepage isn't a tap-to-call link.",
+        why="Most local searches happen on phones. If people have to copy a number, some of "
+            "them won't call.",
+        fix="Make every phone number on the site a tel: link, and keep one in the mobile header.",
+    ),
+    _item(
+        "no_analytics", "No analytics found",
+        impact="low", disposition="optional", default=False,
+        category="Website", phrase="analytics on your site",
+        found="We didn't find a common analytics tool on the homepage.",
+        why="Without it, there's no reliable way to see where calls and leads come from.",
+        fix="Install Google Analytics 4 and track calls and form submissions as conversions.",
+    ),
+    _item(
+        "images_missing_alt", "Most images have no text description",
+        impact="low", disposition="optional", default=False,
+        category="Website", phrase="text descriptions on your images",
+        found="Most homepage images have no alt text.",
+        why="Alt text is how screen readers and search tools understand an image.",
+        fix="Add a short, accurate description to each meaningful image.",
+    ),
     _item(
         "no_service_pages", "No individual {offering_label}",
         impact="medium", disposition="recommended", default=True,
@@ -433,6 +564,21 @@ def observed_summary(signal: str, observed: Any) -> str | None:
         if linked:
             return f"Link on Google: {linked} (error {status})." if status else f"Link on Google: {linked}."
         return None
+
+    if signal == "ai_crawlers_blocked" and isinstance(observed, dict) and observed.get("blocked"):
+        return f"Blocked in robots.txt: {', '.join(observed['blocked'])}."
+
+    if signal == "no_service_city_pages" and isinstance(observed, dict) and observed.get("offering_pages"):
+        return f"Service pages found: {_num(observed['offering_pages'])}. Pages for a service in a specific town: 0."
+
+    if signal == "thin_service_pages" and isinstance(observed, dict) and observed.get("sampled"):
+        return f"{_num(observed.get('thin'))} of the {_num(observed['sampled'])} pages we read have under 200 words."
+
+    if signal == "service_pages_missing_location" and isinstance(observed, dict) and observed.get("sampled"):
+        return f"{_num(observed.get('unlocated'))} of the {_num(observed['sampled'])} pages we read don't name the town."
+
+    if signal == "images_missing_alt" and isinstance(observed, dict) and observed.get("images"):
+        return f"{_num(observed.get('missing'))} of {_num(observed['images'])} homepage images have no alt text."
 
     if signal == "title_length":
         if isinstance(observed, dict):

@@ -11,7 +11,9 @@ import os
 import sys
 from pathlib import Path
 
+import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 PIPELINE = Path(__file__).resolve().parents[2] / "pipeline"
 if str(PIPELINE) not in sys.path:
@@ -237,3 +239,33 @@ def test_set_website_by_hand_rescores_and_audits_the_site(client, seeded_run, mo
     snapshot = client.get(f"/api/audit-reports/{report_id}").json()["snapshot"]
     assert snapshot["business"]["website_url"] == "https://realspa.example.com"
     assert snapshot["business"]["site_on_google"] is False
+
+
+def test_an_email_added_by_hand_comes_first_and_regrades_the_lead(client, seeded_run):
+    """A hand-found email outranks the crawl and survives into outreach."""
+    with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
+        place = conn.execute(
+            """
+            select w.place_id
+            from v_lead_worklist w
+            left join v_lead_findings f on f.place_id = w.place_id
+            where not coalesce(f.needs_manual_check, false)
+              and not exists (select 1 from outreach_queue q where q.place_id = w.place_id)
+            order by w.place_id
+            limit 1
+            """
+        ).fetchone()
+    assert place, "seed data should include a lead outside the queue"
+    pid = place["place_id"]
+
+    assert client.post(f"/api/prospects/{pid}/contact", json={"email": "nope"}).status_code == 422
+    assert client.post(f"/api/prospects/{pid}/contact", json={}).status_code == 422
+    assert client.post(f"/api/prospects/{pid}/contact",
+                       json={"email": "Owner@Example.com"}).status_code == 200
+
+    assert client.get(f"/api/prospects/{pid}").json()["email"] == "owner@example.com"
+    board = client.get("/api/outreach/board?stage=to_prep&q=owner@example.com").json()
+    assert [row["place_id"] for row in board["items"]] == [pid]
+
+    runs = client.get("/api/runs?page_size=100").json()["items"]
+    assert not any(r["geo_label"].startswith("Contact updated") for r in runs)

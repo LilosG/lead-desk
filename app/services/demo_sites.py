@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from app.repositories.demo_sites import DemoSiteRepository
 from app.repositories.prospects import ProspectRepository
 from app.services.demo_site_renderer import palette_for, render_demo_site, template_options
-from app.services.demo_site_renderer_v3 import V3_TEMPLATE_OPTION, render_demo_site_v3
+from app.services.demo_site_renderer_v3 import V3_TEMPLATE_OPTION, niche_copy, render_demo_site_v3
 from pipeline import verticals as vertical_config
 
 
@@ -67,7 +67,25 @@ def _auto_areas(prospect: dict[str, Any]) -> list[str]:
 
 
 def _template_options() -> list[dict[str, str]]:
-    return [dict(V3_TEMPLATE_OPTION), *template_options()]
+    """What the builder offers. Older templates stay valid for existing demos."""
+    return [dict(V3_TEMPLATE_OPTION)]
+
+
+def _valid_template_keys() -> set[str]:
+    return {V3_TEMPLATE_OPTION["key"], *(item["key"] for item in template_options())}
+
+
+def _default_headline(prospect: dict[str, Any], category: str, city: str) -> str:
+    rating, reviews = prospect.get("rating"), prospect.get("review_count") or 0
+    if rating is not None and float(rating) >= 4.5 and reviews >= 10 and prospect.get("city"):
+        return f"{city}'s {float(rating):.1f}-star {category.lower()}"
+    return f"{category} in {city}"
+
+
+def _default_subheadline(prospect: dict[str, Any], city: str) -> str:
+    audience = niche_copy(vertical_config.vertical_profile(prospect.get("vertical") or ""))["audience"]
+    name = prospect.get("name") or "We"
+    return f"{name} works with {audience} across {city} and nearby communities. Get in touch to talk through what you need."
 
 
 class DemoSiteService:
@@ -93,11 +111,8 @@ class DemoSiteService:
             "business_name": business_name,
             "templates": _template_options(),
             "defaults": {
-                "headline": f"{primary_type} in {city}",
-                "subheadline": (
-                    f"See what {business_name} offers, where it serves, and the quickest way "
-                    "to get in touch."
-                ),
+                "headline": _default_headline(prospect, primary_type, city),
+                "subheadline": _default_subheadline(prospect, city),
                 # Pre-filled from the prospect's own site and market so a demo
                 # can be generated in one click; still editable before saving.
                 "services": _auto_services(audit),
@@ -133,7 +148,7 @@ class DemoSiteService:
         prospect = self.prospect_repository.get_prospect(place_id)
         if prospect is None:
             raise DemoSiteError("prospect not found")
-        if template_key not in {item["key"] for item in _template_options()}:
+        if template_key not in _valid_template_keys():
             raise DemoSiteError("unsupported demo template")
 
         primary_type_display = _display_type(prospect.get("primary_type"))
@@ -153,6 +168,7 @@ class DemoSiteService:
             "state": prospect.get("state"),
             "phone": prospect.get("phone"),
             "website_url": prospect.get("website_url"),
+            "google_maps_uri": prospect.get("google_maps_uri"),
             "primary_type": prospect.get("primary_type"),
             "primary_type_display": primary_type_display,
             "vertical": prospect.get("vertical"),
@@ -162,11 +178,8 @@ class DemoSiteService:
             "scored_at": prospect.get("scored_at").isoformat() if prospect.get("scored_at") else None,
         }
         content_snapshot = {
-            "headline": (headline or f"{primary_type_display} in {city}").strip(),
-            "subheadline": (
-                subheadline
-                or f"See what {business_name} offers, where it serves, and the quickest way to get in touch."
-            ).strip(),
+            "headline": (headline or _default_headline(prospect, primary_type_display, city)).strip(),
+            "subheadline": (subheadline or _default_subheadline(prospect, city)).strip(),
             "services": normalized_services,
             "service_areas": normalized_areas,
             "hero_image_url": _normalize_media_url(hero_image_url),
@@ -175,7 +188,7 @@ class DemoSiteService:
         }
         brand_snapshot = {
             "template_key": template_key,
-            "palette": palette_for(prospect.get("primary_type")),
+            "palette": palette_for(prospect.get("primary_type"), source_snapshot["niche_profile"]),
         }
         if template_key == V3_TEMPLATE_OPTION["key"]:
             html_document = render_demo_site_v3(

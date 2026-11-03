@@ -18,8 +18,17 @@ PALETTES = {
     "electrician": {"ink": "#102033", "accent": "#f0b22c", "surface": "#f4f6f7"},
     "plumber": {"ink": "#0e2c43", "accent": "#2f91c3", "surface": "#f1f7fa"},
     "hvac": {"ink": "#17303b", "accent": "#df7840", "surface": "#f5f6f4"},
-    "roofer": {"ink": "#272b2e", "accent": "#ba6847", "surface": "#f5f3f0"},
-    "default": {"ink": "#18272f", "accent": "#b88747", "surface": "#f5f4f1"},
+    "roofing_contractor": {"ink": "#272b2e", "accent": "#d27a52", "surface": "#f5f3f0"},
+    "default": {"ink": "#18272f", "accent": "#c9984f", "surface": "#f5f4f1"},
+}
+# Used when the Google category has no palette of its own.
+PROFILE_PALETTES = {
+    "medical_aesthetic": {"ink": "#2b2430", "accent": "#d9a5a0", "surface": "#faf6f4"},
+    "dental": {"ink": "#10303f", "accent": "#4fb6c2", "surface": "#f1f8f9"},
+    "real_estate": {"ink": "#14233a", "accent": "#c9a45c", "surface": "#f6f4ef"},
+    "legal": {"ink": "#16213a", "accent": "#c7a15a", "surface": "#f4f4f1"},
+    "wellness_health": {"ink": "#183330", "accent": "#7fbf9e", "surface": "#f2f7f4"},
+    "auto": {"ink": "#1d2125", "accent": "#e2583e", "surface": "#f4f4f3"},
 }
 
 
@@ -30,9 +39,9 @@ def template_options() -> list[dict[str, str]]:
     ]
 
 
-def palette_for(primary_type: str | None) -> dict[str, str]:
+def palette_for(primary_type: str | None, profile: str | None = None) -> dict[str, str]:
     key = (primary_type or "").lower().replace(" ", "_")
-    return dict(PALETTES.get(key, PALETTES["default"]))
+    return dict(PALETTES.get(key) or PROFILE_PALETTES.get(profile or "") or PALETTES["default"])
 
 
 def _safe(value: object) -> str:

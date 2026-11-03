@@ -43,11 +43,30 @@ def save_rescored(store: PostgresStore, pairs: list[tuple[dict, Any]], label: st
         verticals=sorted({b["vertical"] for b, _ in pairs if b.get("vertical")}),
         grid_points=0,
         notes=f"{label}: {len(pairs)} lead(s)",
+        kind="rescore",
     )
-    store.save_enrichment({b["place_id"]: f for b, f in pairs})
+    store.save_enrichment({b["place_id"]: f for b, f in pairs if f is not None})
     store.save_scores(scored, run_id)
     store.finish_run(run_id)
     return len(scored)
+
+
+def rescore_lead(place_id: str, label: str, dsn: str | None = None) -> None:
+    """Re-grade one lead after a manual change (an email added, a site checked)."""
+    from rescore import findings_from_row
+
+    store = PostgresStore(dsn or os.environ.get("DATABASE_URL"))
+    with psycopg.connect(store.dsn, row_factory=dict_row) as conn:
+        business = conn.execute(
+            "select * from businesses where place_id = %s", (place_id,)
+        ).fetchone()
+        row = conn.execute(
+            "select * from website_enrichment where place_id = %s", (place_id,)
+        ).fetchone()
+    if business is None:
+        raise WebsiteError("prospect not found")
+    found = findings_from_row(row, business.get("manual_email"))
+    save_rescored(store, [(business, found)], label)
 
 
 class WebsiteError(ValueError):

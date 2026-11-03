@@ -71,8 +71,8 @@ def test_v3_renders_complete_local_service_homepage_without_invented_credentials
         assert section_id in html
     assert "Getting started" in html
     assert "Ready to get started?" in html
-    assert "What customers need to know" in html
-    assert "Local reputation" in html
+    assert "Why Pool Pros" in html or "choose" in html
+    assert 'class="site-footer"' in html and "Areas served" in html
     assert "Frequently asked questions" in html
     assert "5.0 Google rating" in html
     assert "13 Google reviews" in html

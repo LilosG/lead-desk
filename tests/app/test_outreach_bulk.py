@@ -10,6 +10,9 @@ class FakeRepo:
         item = self.items.get(item_id)
         return dict(item) if item else None
 
+    def find_email_item(self, place_id):
+        return next((dict(i) for i in self.items.values() if i["place_id"] == place_id), None)
+
 
 class FakeOutreach:
     def __init__(self, gmail_error=None):
@@ -80,11 +83,22 @@ def test_fast_track_skips_prospects_with_nothing_to_audit():
 
 def test_fast_track_does_not_duplicate_an_existing_gmail_draft():
     outreach = FakeOutreach()
-    outreach.repository.items["q1"] = {"id": "q1", "status": "draft_ready", "version": 3,
-                                       "body": "Hi", "gmail_draft_id": "d0"}
+    outreach.repository.items["q1"] = {"id": "q1", "place_id": "p1", "status": "draft_ready",
+                                       "version": 3, "body": "Hi", "gmail_draft_id": "d0"}
     result = fast_track(outreach, FakeAudits(), "p1")
     assert result["ok"] is True
     assert "gmail" not in outreach.calls
+
+
+def test_fast_track_resumes_without_replacing_an_existing_draft():
+    outreach = FakeOutreach()
+    outreach.repository.items["q1"] = {"id": "q1", "place_id": "p1", "status": "review_required",
+                                       "version": 3, "body": "Edited by hand", "gmail_draft_id": None}
+    audits = FakeAudits()
+    result = fast_track(outreach, audits, "p1")
+    assert result["ok"] is True
+    assert "draft" not in outreach.calls and "gmail" in outreach.calls
+    assert outreach.repository.items["q1"]["body"] == "Edited by hand"
 
 
 def test_bulk_status_updates_each_item_and_reports_failures():
