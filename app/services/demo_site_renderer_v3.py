@@ -5,6 +5,8 @@ from datetime import date
 from html import escape
 from typing import Any
 
+from app.services.demo_service_copy import describe_service
+
 
 V3_TEMPLATE_OPTION = {
     "key": "trade-modern-v3",
@@ -190,7 +192,7 @@ def render_demo_site_v3(
         f'''<article class="service-card">
           <div class="service-icon">{index:02d}</div>
           <h3>{_safe(service)}</h3>
-          <p>Talk to {business_name} about {_safe(service.lower())} in {city}.</p>
+          <p>{_safe(describe_service(service, index, unit))}</p>
           <a href="{call_href}">Ask about this {unit} <span>→</span></a>
         </article>'''
         for index, service in enumerate(services[:6], start=1)

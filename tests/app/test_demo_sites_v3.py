@@ -227,3 +227,23 @@ def test_without_review_text_the_page_keeps_only_the_rating():
     assert 'href="#reviews"' not in html
     assert 'class="review-card"' not in html
     assert "rating-panel" in html
+
+
+def test_service_cards_describe_the_job_not_the_business_name():
+    source = {"name": "Fast Plumbing", "city": "Las Vegas", "state": "NV", "rating": 4.7, "review_count": 13}
+    content = {"services": ["Water Heater Repair & Installation", "Sewer Line Repair & Replacement",
+                            "Commercial Plumbing Maintenance", "Emergency Plumbing Services"]}
+    html = render_demo_site_v3(source=source, content=content, brand={"palette": PALETTE})
+    assert "Talk to Fast Plumbing about" not in html
+    assert "No hot water, a leaking tank" in html
+    assert "Upkeep and repairs for offices" in html
+
+
+def test_unknown_services_get_varied_lines_with_the_right_word():
+    from app.services.demo_service_copy import describe_service
+
+    lines = {describe_service("Lip Filler", i, "treatment") for i in range(3)}
+    assert len(lines) == 3
+    assert any("right treatment" in line for line in lines)
+    assert describe_service("Tankless Water Heater") == describe_service("Water Heater Repair")
+    assert describe_service("Pest Control") != describe_service("Lock Change")
