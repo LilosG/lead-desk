@@ -29,6 +29,10 @@ class OverviewResponse(BaseModel):
     tier_c: int
     tier_d: int
 
+    qualified: int = 0
+    call_first: int = 0
+    verify_first: int = 0
+
     emailable: int
     phone_only: int
     no_contact: int

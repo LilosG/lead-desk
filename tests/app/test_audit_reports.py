@@ -148,7 +148,7 @@ def test_snapshot_excludes_internal_scores_and_raw_findings():
     assert "total_score" not in serialized
     assert "tier" not in serialized
     assert "internal raw finding" not in serialized
-    assert snapshot["report_version"] == 7
+    assert snapshot["report_version"] == 8
     assert snapshot["business"]["review_count"] == 87
     assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
     # No evidence line that only repeats "what we found".
@@ -552,3 +552,43 @@ def test_site_missing_from_google_is_reported_as_unlinked_not_missing():
     paragraph, subject = audit_email_paragraph(snapshot, "AAA Goforth Plumbing & Drain Service")
     assert "doesn't link to your website" in paragraph
     assert "no website" not in paragraph.lower()
+
+
+def test_depth_checks_replace_the_sweeps_version_and_reach_the_pdf():
+    from app.services.audit_report_pdf import render_audit_report_pdf
+    from app.services.audit_reports import _merge_site_findings
+    from pipeline import site_signals
+
+    signals = {
+        "indexable": True, "ai_bots": {"OAI-SearchBot": False}, "faq_content": False,
+        "has_click_to_call": True, "analytics": ["Google Analytics"], "clear_identity": True,
+        "service_schema": True, "profile_links_in_schema": True, "offering_paths": 3,
+        "location_paths": 0, "service_city_paths": 0, "has_sitemap": True,
+        "page_samples": [{"path": "/drains", "words": 50, "names_location": False}],
+    }
+    stale = [{"signal": "ai_crawlers_blocked", "observed": {"blocked": ["old"]}},
+             {"signal": "no_reviews", "observed": {}}]
+    merged = _merge_site_findings(stale, {"site_signals": signals}, {"vertical": "plumber"})
+    by_signal = {f["signal"]: f for f in merged}
+
+    assert by_signal["ai_crawlers_blocked"]["observed"]["blocked"] == ["ChatGPT search"]
+    assert "no_reviews" in by_signal
+    assert "no_service_city_pages" in by_signal and "thin_service_pages" in by_signal
+    assert all(s in site_signals.SIGNALS for s in by_signal if s != "no_reviews")
+    assert _merge_site_findings(stale, {}, {"vertical": "plumber"}) == stale
+
+    audit = {"has_service_pages": True, "offering_page_count": 3, "nap_matches_gbp": None}
+    pdf = render_audit_report_pdf({"title": "Audit", "snapshot": {
+        "business": {"name": "Solid", "website_url": "https://a.co"},
+        "findings": [],
+        "ai_readiness": site_signals.ai_readiness(signals, audit, {}),
+        "site_structure": site_signals.site_structure(signals, audit),
+    }})
+    assert pdf.startswith(b"%PDF")
+
+
+def test_every_depth_signal_has_report_wording():
+    from app.services.audit_report_policy import report_policy_for
+    from pipeline import site_signals
+
+    assert all(report_policy_for(signal) for signal in site_signals.SIGNALS)

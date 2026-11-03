@@ -10,6 +10,8 @@ REAL_GAP_SIGNALS = {
     "template_builder", "no_contact_form", "no_ssl", "no_title",
     "category_generic", "category_mismatch", "no_website", "site_down", "broken_profile_link", "website_not_on_gbp",
     "no_services_listed", "no_business_description", "no_review_replies",
+    "noindex_homepage", "ai_crawlers_blocked", "js_only_content",
+    "no_service_city_pages", "title_missing_location",
 }
 
 # Human-readable names for every label, shared with the API and UI.

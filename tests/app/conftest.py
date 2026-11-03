@@ -29,6 +29,12 @@ os.environ["AUTH_SESSION_SECRET"] = (
 from app.main import app  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def no_live_site_refresh(monkeypatch):
+    """Audit builds re-check the real site; tests never touch the network."""
+    monkeypatch.setattr("app.services.site_refresh.SiteRefresher.__call__", lambda self, prospect: None)
+
+
 @pytest.fixture(scope="session")
 def app_client():
     # A psycopg ConnectionPool cannot be reopened after the application lifespan

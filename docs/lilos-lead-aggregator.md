@@ -1,5 +1,13 @@
 # Lilos Growth — Lead Aggregator
 
+> **November 2026 update — scoring model v3.** The score now needs both fit and
+> opportunity (`pipeline/scoring.py`), which answers the open question below: the
+> established segment comes first. Each lead also gets a `qualification` verdict
+> with reasons, shown on Prospects, Outreach and each run's funnel. Re-grade stored
+> leads free with `python pipeline/rescore.py`. Depth checks (service + town pages,
+> AI search access) live in `pipeline/site_signals.py`. Sections below that describe
+> the v2 formula or `activity_multiplier` are historical.
+
 > **October 2026 update — open niche, open geo, labels instead of filters.**
 > Sweeps take any niche and any U.S. cities; nothing defaults to San Diego or
 > to trades. Leads are compared with the same niche in the same searched market

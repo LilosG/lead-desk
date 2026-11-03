@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import signal
 import time
 import urllib.parse as urlparse
 import urllib.robotparser as robotparser
@@ -60,10 +61,21 @@ def _plausible_phone(digits: str) -> bool:
 # and the outreach list looks fuller than it is.
 EMAIL_JUNK = re.compile(
     r"(\.(png|jpg|jpeg|gif|svg|webp|css|js)$"
-    r"|^(example|test|your|email|name|info)@(example|test|domain|email|yoursite)\."
+    r"|@(example|test|domain|email|yoursite|yourdomain|yourcompany|mysite|website|company)\."
+    r"|^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|abuse|webmaster)@"
     r"|sentry\.io$|wixpress\.com$|@2x\.|godaddy\.com$|squarespace\.com$)",
     re.I,
 )
+# "info [at] site [dot] com" and friends, written to dodge scrapers but meant
+# for people to read and use.
+OBFUSCATED_EMAIL_RE = re.compile(
+    r"\b([a-z0-9._%+\-]+)\s*(?:\[at\]|\(at\)|\{at\}|\s+at\s+)\s*"
+    r"([a-z0-9\-]+(?:\s*(?:\.|\[dot\]|\(dot\)|\{dot\}|\s+dot\s+)\s*[a-z0-9\-]+)*"
+    r"\s*(?:\.|\[dot\]|\(dot\)|\{dot\}|\s+dot\s+)\s*(?:com|net|org|co|us|biz|info))\b",
+    re.I,
+)
+# Standard pages worth trying when the homepage doesn't link one.
+FALLBACK_CONTACT_PATHS = ("/contact", "/contact-us", "/about", "/about-us")
 
 SOCIAL_DOMAINS = {
     "facebook.com": "facebook", "instagram.com": "instagram",
@@ -89,6 +101,7 @@ CMS_SIGNATURES = [
 # platforms cap out fast on local SEO. Easiest displacement in the list.
 TEMPLATE_BUILDERS = {"wix", "squarespace", "godaddy", "weebly", "duda"}
 
+import site_signals as SS
 import verticals as V
 
 # Online booking / scheduling platforms. A booking widget is a real conversion
@@ -208,6 +221,8 @@ class SiteFindings:
     # profile, but we found and verified the business's own site by name.
     site_source: str = "gbp"
     raw_psi_payload: dict | None = None
+    # Depth checks behind the audit report (see site_signals.py).
+    site_signals: dict = field(default_factory=dict)
 
 
 def _norm_phone(p: str | None) -> str:
@@ -355,20 +370,10 @@ MedicalOrganization Contractor HomeAndConstructionBusiness
 
 def _extract_schema(soup: BeautifulSoup) -> tuple[bool, list]:
     types: list[str] = []
-    for tag in soup.find_all("script", type="application/ld+json"):
-        try:
-            data = json.loads(tag.string or "{}")
-        except Exception:
-            continue
-        for node in (data if isinstance(data, list) else [data]):
-            if not isinstance(node, dict):
-                continue
-            graph = node.get("@graph")
-            nodes = graph if isinstance(graph, list) else [node]
-            for n in nodes:
-                if isinstance(n, dict) and n.get("@type"):
-                    t = n["@type"]
-                    types.extend(t if isinstance(t, list) else [t])
+    for node in SS.schema_nodes(soup):
+        t = node.get("@type")
+        if t:
+            types.extend(t if isinstance(t, list) else [t])
     # LocalBusiness has many subtypes (Electrician, Plumber, HVACBusiness...) and
     # any of them counts as correctly marked up.
     has_local = any(str(t).lower().rsplit("/", 1)[-1] in LOCAL_BUSINESS_TYPES for t in types)
@@ -388,7 +393,52 @@ def _registrable(host: str) -> str:
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
-def _clean_emails(raw: set, site_host: str = "") -> list:
+def _decode_cfemail(encoded: str) -> str | None:
+    """Cloudflare Email Protection: first byte is the XOR key for the rest."""
+    try:
+        data = bytes.fromhex(encoded)
+        return bytes(b ^ data[0] for b in data[1:]).decode("utf-8")
+    except (ValueError, IndexError, UnicodeDecodeError):
+        return None
+
+
+def extract_emails(html: str, soup: BeautifulSoup) -> set:
+    """Every address a visitor to this page could read."""
+    found = set(EMAIL_RE.findall(html))
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if href.lower().startswith("mailto:"):
+            found.add(urlparse.unquote(href[7:].split("?")[0]))
+        elif "/cdn-cgi/l/email-protection#" in href:
+            decoded = _decode_cfemail(href.rsplit("#", 1)[-1])
+            if decoded:
+                found.add(decoded)
+    for tag in soup.find_all(attrs={"data-cfemail": True}):
+        decoded = _decode_cfemail(tag["data-cfemail"])
+        if decoded:
+            found.add(decoded)
+    for local, domain in OBFUSCATED_EMAIL_RE.findall(soup.get_text(" ", strip=True)):
+        domain = re.sub(r"\s*(?:\[dot\]|\(dot\)|\{dot\}|\s+dot\s+)\s*", ".", domain, flags=re.I)
+        found.add(f"{local}@{domain.replace(' ', '')}")
+    return found
+
+
+def _same_business_domain(email_domain: str, business_name: str | None) -> bool:
+    """A second domain that carries the business's own distinctive name.
+
+    Businesses often rebrand or run two domains, so joesplumbingsd.com may list
+    joe@joesplumbing.com. An agency's domain never contains the client's name,
+    so this keeps the 'site by' guard intact.
+    """
+    label = email_domain.split(".")[0]
+    generic = {"plumbing", "electric", "electrical", "dental", "services", "service",
+               "roofing", "hvac", "group", "company", "home", "homes", "the", "and"}
+    tokens = [t for t in re.findall(r"[a-z0-9]+", (business_name or "").lower())
+              if len(t) >= 4 and t not in generic]
+    return any(t in label for t in tokens)
+
+
+def _clean_emails(raw: set, site_host: str = "", business_name: str | None = None) -> list:
     """Keep only addresses plausibly belonging to THIS business.
 
     The trap this closes: contractor sites routinely carry a 'site by <agency>'
@@ -397,9 +447,10 @@ def _clean_emails(raw: set, site_host: str = "") -> list:
     caught exactly this in testing (micah@micahrich.com harvested off DJB
     Electric's site).
 
-    Rule: accept the address if its domain matches the website's domain, or if
-    it's a consumer mailbox (plenty of real contractors run on gmail). Reject
-    any OTHER custom domain — that's someone else's business.
+    Rule: accept the address if its domain matches the website's domain, carries
+    the business's own distinctive name, or is a consumer mailbox (plenty of real
+    contractors run on gmail). Reject any OTHER custom domain — that's someone
+    else's business.
     """
     site_domain = _registrable(site_host)
     out, rejected = [], []
@@ -408,7 +459,8 @@ def _clean_emails(raw: set, site_host: str = "") -> list:
         if EMAIL_JUNK.search(e) or len(e) > 80 or "@" not in e:
             continue
         edomain = _registrable(e.split("@")[-1])
-        if site_domain and edomain != site_domain and edomain not in FREE_MAIL_DOMAINS:
+        if (site_domain and edomain != site_domain and edomain not in FREE_MAIL_DOMAINS
+                and not _same_business_domain(edomain, business_name)):
             rejected.append(e)
             continue
         out.append(e)
@@ -458,8 +510,18 @@ def _sitemap_paths(session, base: str, robots_cache: dict) -> list[str] | None:
     return paths
 
 
-def crawl_site(business: dict, session: requests.Session | None = None) -> SiteFindings:
-    """Crawl one prospect site. Never raises — failures land in crawl_error."""
+def _bare_host(netloc: str) -> str:
+    return netloc.lower().removeprefix("www.")
+
+
+def crawl_site(business: dict, session: requests.Session | None = None,
+               deep: bool = False) -> SiteFindings:
+    """Crawl one prospect site. Never raises — failures land in crawl_error.
+
+    deep=True also fetches a sample of offering and location pages for the audit
+    report. Sweeps stay shallow: it's a request-heavy step that only earns its
+    keep for a lead about to get a report.
+    """
     f = SiteFindings(place_id=business["place_id"])
     url = business.get("website_url")
     if not url:
@@ -528,15 +590,15 @@ def crawl_site(business: dict, session: requests.Session | None = None) -> SiteF
             break
     f.is_template_builder = f.cms_detected in TEMPLATE_BUILDERS
 
-    emails: set = set(EMAIL_RE.findall(html))
+    emails: set = extract_emails(html, soup)
     phones: set = set(PHONE_RE.findall(html))
 
-    # mailto:/tel: are higher-confidence than body-text regex hits
+    # tel: links are higher-confidence than body-text regex hits
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
         low = href.lower()
         if low.startswith("mailto:"):
-            emails.add(urlparse.unquote(href[7:].split("?")[0]))
+            continue
         elif low.startswith("tel:"):
             phones.add(href[4:])
         else:
@@ -565,7 +627,9 @@ def crawl_site(business: dict, session: requests.Session | None = None) -> SiteF
         if not href or href.startswith(("mailto:", "tel:", "javascript:")):
             continue
         full = urlparse.urljoin(base, href)
-        if urlparse.urlparse(full).netloc != parsed.netloc:
+        # www and bare hosts are the same site; comparing them literally dropped
+        # every absolute internal link on sites that mix the two.
+        if _bare_host(urlparse.urlparse(full).netloc) != _bare_host(parsed.netloc):
             continue
         path = urlparse.urlparse(full).path.lower()
         anchor = a.get_text(" ", strip=True)
@@ -586,20 +650,25 @@ def crawl_site(business: dict, session: requests.Session | None = None) -> SiteF
             seen.add(full.rstrip("/"))
         f.page_count_estimate += 1
 
+    # Contact pages first: when the budget runs out, an unvisited /schedule costs
+    # little and an unvisited /contact costs the email address.
+    internal.sort(key=lambda u: (0 if "contact" in urlparse.urlparse(u).path.lower() else
+                                 1 if "about" in urlparse.urlparse(u).path.lower() else 2))
+    if not any("contact" in urlparse.urlparse(u).path.lower() for u in internal):
+        internal += [urlparse.urljoin(base, p) for p in FALLBACK_CONTACT_PATHS
+                     if urlparse.urljoin(base, p).rstrip("/") not in seen]
+
     for link in internal[: C.CRAWL_MAX_PAGES - 1]:
         if not _robots_ok(base, link, robots_cache):
             continue
         time.sleep(C.CRAWL_DELAY_S)
-        r2 = _fetch(session, link)
+        r2 = _fetch(session, link, _retry=False)
         if not r2 or r2.status_code >= 400:
             continue
         h2 = r2.text or ""
         s2 = BeautifulSoup(h2, "html.parser")
-        emails |= set(EMAIL_RE.findall(h2))
+        emails |= extract_emails(h2, s2)
         phones |= set(PHONE_RE.findall(h2))
-        for a in s2.find_all("a", href=True):
-            if a["href"].lower().startswith("mailto:"):
-                emails.add(urlparse.unquote(a["href"][7:].split("?")[0]))
         if s2.find("form") and f.contact_page_url is None:
             f.has_contact_form = True
             f.contact_page_url = r2.url
@@ -666,7 +735,7 @@ def crawl_site(business: dict, session: requests.Session | None = None) -> SiteF
                     f.contact_page_url = resp.url
                     break
 
-    f.emails_found = _clean_emails(emails, parsed.netloc)
+    f.emails_found = _clean_emails(emails, parsed.netloc, business.get("name"))
 
     all_phones = {d for d in (_norm_phone(p) for p in phones) if _plausible_phone(d)}
 
@@ -686,13 +755,60 @@ def crawl_site(business: dict, session: requests.Session | None = None) -> SiteF
 
     f.phones_found = sorted(all_phones)[:8]
 
+    _robots_ok(base, resp.url, robots_cache)
+    f.site_signals = SS.collect(
+        business=business, soup=soup, html=html, final_url=resp.url,
+        headers=dict(resp.headers), word_count=f.word_count,
+        robots=robots_cache.get(base), has_sitemap=sitemap_paths is not None,
+        offering_paths=sorted(offering_paths), location_paths=sorted(location_paths),
+        offering_words=offering_words, sample_page=None if not deep else _page_sampler(session, base, robots_cache),
+    )
     return f
+
+
+def _page_sampler(session, base: str, robots_cache: dict):
+    """Fetcher handed to site_signals for the deep audit sample."""
+    def fetch(path: str) -> str | None:
+        url = urlparse.urljoin(base, path)
+        if not _robots_ok(base, url, robots_cache):
+            return None
+        time.sleep(C.CRAWL_DELAY_S)
+        r = _fetch(session, url, _retry=False)
+        return r.text if r is not None and r.status_code < 400 else None
+    return fetch
+
+
+class SiteCrawlTimeout(BaseException):
+    """BaseException so the crawler's own `except Exception` can't swallow it."""
+
+
+def crawl_business(business: dict) -> SiteFindings:
+    """Pool entry point: one site, one hard wall-clock cap.
+
+    `requests` timeouts are per-socket-read, so a trickling server can hold a
+    worker for minutes. The alarm guarantees a stuck site costs this one lead,
+    not everything queued behind it. Must run in a process's main thread.
+    """
+    def expired(*_: object) -> None:
+        raise SiteCrawlTimeout()
+
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, C.SITE_CRAWL_CAP_S)
+    try:
+        crawl = crawl_site if business.get("website_url") else crawl_unlisted
+        return crawl(business)
+    except SiteCrawlTimeout:
+        return SiteFindings(place_id=business["place_id"], crawl_error="blocked_crawl_hang")
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 # ---------------------------------------------------------------------------
 # PageSpeed Insights
 # ---------------------------------------------------------------------------
-def run_psi(url: str, api_key: str, strategy: str = "mobile") -> dict | None:
+def run_psi(url: str, api_key: str, strategy: str = "mobile",
+            timeout: float = 90) -> dict | None:
     """PSI is free but slow (10-30s/site) and rate limited to roughly 4 QPS."""
     params = {
         "url": url,
@@ -702,7 +818,7 @@ def run_psi(url: str, api_key: str, strategy: str = "mobile") -> dict | None:
     if api_key:
         params["key"] = api_key
     try:
-        r = requests.get(C.PSI_URL, params=params, timeout=90)
+        r = requests.get(C.PSI_URL, params=params, timeout=timeout)
         if r.status_code != 200:
             return None
         return r.json()

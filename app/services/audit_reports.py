@@ -12,6 +12,7 @@ from app.services.audit_report_policy import (
 )
 from app.services import audit_benchmarks
 from app.services.outreach_audit_copy import clean_business_name
+from pipeline import site_signals as signal_rules
 from pipeline import verticals as vertical_config
 
 MAX_BATCH = 50
@@ -351,6 +352,7 @@ def _executive_summary(
     comparison: dict[str, Any] | None = None,
     bench: dict[str, Any] | None = None,
     gaps: dict[str, Any] | None = None,
+    ai: dict[str, Any] | None = None,
 ) -> str:
     rating = prospect.get("rating")
     review_count = prospect.get("review_count")
@@ -390,6 +392,9 @@ def _executive_summary(
             f"{top['count']} of those {gaps['sample_size']} competitors with websites have a separate "
             f"page for {top['label']}; this site doesn't."
         )
+
+    if ai and ai.get("total") and ai["passed"] < ai["total"]:
+        parts.append(f"For AI search, the site passes {ai['passed']} of {ai['total']} readiness checks.")
 
     phrases: list[str] = []
     for item in sorted(findings, key=_finding_order):
@@ -444,16 +449,46 @@ def _location_pages_common(peers: dict[str, Any] | None) -> bool | None:
     return sum(1 for p in rows if (p.get("location_page_count") or 0) > 0) / len(rows) >= 0.25
 
 
+def _merge_site_findings(
+    findings: list[dict[str, Any]],
+    website_audit: dict[str, Any],
+    prospect: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Scored evidence plus the latest depth checks.
+
+    Depth checks are re-run when a report is built, so they replace the sweep's
+    version here rather than being scored into a new run.
+    """
+    signals = website_audit.get("site_signals")
+    if not signals:
+        return findings
+    profile = vertical_config.vertical_profile(prospect.get("vertical") or "")
+    kept = [f for f in findings if f.get("signal") not in signal_rules.SIGNALS]
+    return kept + signal_rules.findings(signals, profile)
+
+
 class AuditReportService:
     def __init__(
         self,
         prospect_repository: ProspectRepository,
         report_repository: AuditReportRepository,
         demo_repository: Any | None = None,
+        site_refresher: Any | None = None,
     ):
         self.prospect_repository = prospect_repository
         self.report_repository = report_repository
         self.demo_repository = demo_repository
+        # Callable(prospect) -> None. Brings a lead's site checks up to date.
+        self.site_refresher = site_refresher
+
+    def _refresh_site(self, prospect: dict[str, Any]) -> None:
+        """Best effort: a failed refresh leaves the report on the sweep's data."""
+        if self.site_refresher is None:
+            return
+        try:
+            self.site_refresher(prospect)
+        except Exception:
+            return
 
     def _published_demo_url(self, place_id: str) -> str | None:
         if self.demo_repository is None:
@@ -486,7 +521,11 @@ class AuditReportService:
         if prospect is None:
             raise AuditReportError("prospect not found")
 
-        findings = self.prospect_repository.get_findings(place_id)
+        self._refresh_site(prospect)
+        website_audit = self.prospect_repository.get_website_audit(place_id) or {}
+        findings = _merge_site_findings(
+            self.prospect_repository.get_findings(place_id), website_audit, prospect,
+        )
         options: list[dict[str, Any]] = []
         location_pages_common = None
         if any(f.get("signal") == "no_city_pages" for f in findings):
@@ -527,8 +566,10 @@ class AuditReportService:
         if prospect is None:
             raise AuditReportError("prospect not found")
 
-        findings = self.prospect_repository.get_findings(place_id)
         website_audit = self.prospect_repository.get_website_audit(place_id) or {}
+        findings = _merge_site_findings(
+            self.prospect_repository.get_findings(place_id), website_audit, prospect,
+        )
         site_on_google = bool(prospect.get("website_url"))
         if not site_on_google and website_audit.get("site_source") in ("found", "manual"):
             # Real site, just not on the Google profile: audit it as their site.
@@ -607,13 +648,14 @@ class AuditReportService:
         snippet = audit_benchmarks.search_snippet(
             prospect, website_audit, clean_business_name(prospect.get("name")),
         )
+        ai = signal_rules.ai_readiness(website_audit.get("site_signals"), website_audit, prospect)
         psi_payload = website_audit.get("raw_psi_payload") or {}
         screenshot = psi_payload.get("screenshot") if isinstance(psi_payload, dict) else None
 
         snapshot = _json_safe(
             {
                 "report_kind": "local_visibility_audit",
-                "report_version": 7,
+                "report_version": 8,
                 "business": {
                     "name": business_name,
                     "location": location or None,
@@ -635,6 +677,7 @@ class AuditReportService:
                     comparison,
                     bench,
                     gaps,
+                    ai,
                 ),
                 "audit_scope": coverage,
                 "measurements": {
@@ -646,6 +689,10 @@ class AuditReportService:
                 "benchmarks": bench,
                 "page_gaps": gaps,
                 "search_snippet": snippet,
+                "ai_readiness": ai,
+                "site_structure": signal_rules.site_structure(
+                    website_audit.get("site_signals"), website_audit,
+                ),
                 "strengths": [
                     item for item in coverage
                     if item.get("status") == "confirmed"
@@ -655,6 +702,8 @@ class AuditReportService:
                 "next_step": next_step(self._published_demo_url(place_id)),
                 "methodology_note": (
                     "Point-in-time review of public business information and website signals as of the evidence date shown. "
+                    "The AI search section checks whether AI tools can read and understand the site. It doesn't "
+                    "measure whether the business is currently mentioned in AI answers, and no one can guarantee that. "
                     "Findings should be rechecked before implementation."
                 ),
             }

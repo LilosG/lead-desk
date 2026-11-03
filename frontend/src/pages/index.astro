@@ -71,17 +71,17 @@ import AppLayout from '../layouts/AppLayout.astro';
 
       <button
         type="button"
-        data-filter-link="/outreach"
+        data-filter-link="/prospects?qualification=qualified"
         class="rounded-lg border border-[var(--dark)] bg-[var(--dark)] p-5 text-left text-white transition hover:opacity-95"
       >
         <div class="text-xs font-semibold uppercase tracking-[0.12em] text-white/55">
-          Ready for outreach
+          Qualified leads
         </div>
-        <div id="metric-outreach-candidates" class="mt-3 text-4xl font-semibold tracking-tight">
+        <div id="metric-qualified" class="mt-3 text-4xl font-semibold tracking-tight">
           —
         </div>
         <div class="mt-2 text-sm text-white/60">
-          Eligible under outreach contract
+          Active, reachable by email, provable gap
         </div>
       </button>
     </section>
@@ -206,7 +206,7 @@ import AppLayout from '../layouts/AppLayout.astro';
         setText('#metric-prospects', data.prospects);
         setText('#metric-trading', data.confirmed_trading);
         setText('#metric-category', data.category_opportunity);
-        setText('#metric-outreach-candidates', data.outreach_candidates);
+        setText('#metric-qualified', data.qualified);
 
         setText('#tier-a', data.tier_a);
         setText('#tier-b', data.tier_b);

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -9,6 +10,59 @@ from psycopg_pool import ConnectionPool
 class OutreachGmailRepository:
     def __init__(self, pool: ConnectionPool):
         self.pool = pool
+
+    def open_gmail_drafts(self, created_before: datetime) -> list[dict[str, Any]]:
+        """Items we believe are sitting in Gmail's Drafts folder."""
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select q.id::text as id, q.place_id, q.gmail_draft_id
+                    from outreach_queue q
+                    where q.gmail_draft_id is not null
+                      and q.status in ('draft_ready', 'approved')
+                      and q.gmail_draft_created_at < %s
+                      and not exists (
+                          select 1 from gmail_draft_operations o
+                          where o.queue_id = q.id and o.state = 'pending'
+                      )
+                    """,
+                    (created_before,),
+                )
+                return cur.fetchall()
+
+    def mark_draft_left_gmail(self, item_id: str, draft_id: str) -> bool:
+        """The draft is gone from Gmail: sent, or deleted by hand. Treated as contacted."""
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set status = 'contacted',
+                            contacted_at = coalesce(contacted_at, now()),
+                            gmail_draft_left_at = now(),
+                            version = version + 1,
+                            updated_at = now()
+                        where id = %s::uuid
+                          and gmail_draft_id = %s
+                          and status in ('draft_ready', 'approved')
+                        returning place_id
+                        """,
+                        (item_id, draft_id),
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        return False
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (
+                            queue_id, place_id, event_type, changes
+                        ) values (%s::uuid, %s, 'gmail_draft_left', %s)
+                        """,
+                        (item_id, row["place_id"], Jsonb({"gmail_draft_id": draft_id})),
+                    )
+                    return True
 
     def clear_stale_draft(
         self,

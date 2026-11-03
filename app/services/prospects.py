@@ -29,6 +29,7 @@ class ProspectService:
         category_opportunity: bool | None,
         label: str | None = None,
         market: str | None = None,
+        qualification: str | None = None,
     ) -> dict:
         rows, total = self.repository.list_prospects(
             page=page,
@@ -43,6 +44,7 @@ class ProspectService:
             category_opportunity=category_opportunity,
             label=label,
             market=market,
+            qualification=qualification,
         )
 
         return {
@@ -74,6 +76,7 @@ class ProspectService:
             "verticals": [v for v in configured_verticals if v in seen]
             + sorted(observed_verticals),
             "labels": dict(LABEL_NAMES),
+            "qualifications": dict(market_config.QUALIFICATION_LABELS),
         }
 
     @staticmethod

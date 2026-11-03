@@ -8,7 +8,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
 >
   <div class="space-y-5">
     <section class="rounded-lg border border-[var(--line)] bg-white p-4">
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(220px,1.4fr)_repeat(6,minmax(120px,0.7fr))]">
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(200px,1.3fr)_repeat(7,minmax(110px,0.7fr))]">
         <div>
           <label for="search" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
             Search
@@ -19,6 +19,18 @@ import AppLayout from '../../layouts/AppLayout.astro';
             placeholder="Business, city, phone, address…"
             class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[var(--accent)]"
           />
+        </div>
+
+        <div>
+          <label for="qualification" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">
+            Verdict
+          </label>
+          <select
+            id="qualification"
+            class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">All verdicts</option>
+          </select>
         </div>
 
         <div>
@@ -181,7 +193,9 @@ import AppLayout from '../../layouts/AppLayout.astro';
                 <input id="select-page" type="checkbox" aria-label="Select all on this page" />
               </th>
               <th class="px-4 py-3">Business</th>
+              <th class="px-4 py-3">Verdict</th>
               <th class="px-4 py-3">Score</th>
+              <th class="px-4 py-3">Fit</th>
               <th class="px-4 py-3">Tier</th>
               <th class="px-4 py-3">Reviews</th>
               <th class="px-4 py-3">Contact</th>
@@ -248,6 +262,8 @@ import AppLayout from '../../layouts/AppLayout.astro';
       labels: string[];
       market: string | null;
       needs_manual_check: boolean;
+      fit_score: number | null;
+      qualification: string | null;
     };
 
     type ProspectResponse = {
@@ -265,6 +281,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       verticals: string[];
       markets: string[];
       labels: Record<string, string>;
+      qualifications: Record<string, string>;
       tiers: string[];
       total_prospects: number;
     };
@@ -279,11 +296,18 @@ import AppLayout from '../../layouts/AppLayout.astro';
     const contactSelect = $('#contact') as HTMLSelectElement;
     const marketSelect = $('#market') as HTMLSelectElement;
     const labelSelect = $('#label') as HTMLSelectElement;
+    const qualificationSelect = $('#qualification') as HTMLSelectElement;
     const batchButton = $('#batch-audit') as HTMLButtonElement;
     const batchStatus = $('#batch-status') as HTMLSpanElement;
     const selectPage = $('#select-page') as HTMLInputElement;
     const selected = new Set<string>();
     let labelNames: Record<string, string> = {};
+    let verdictNames: Record<string, string> = {};
+    const VERDICT_STYLES: Record<string, string> = {
+      qualified: 'bg-emerald-50 text-emerald-800',
+      call_first: 'bg-blue-50 text-blue-800',
+      verify_first: 'bg-amber-50 text-amber-800',
+    };
     const pageSizeSelect = $('#page-size') as HTMLSelectElement;
 
     const rows = $('#prospect-rows') as HTMLTableSectionElement;
@@ -304,6 +328,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       contact: '',
       market: '',
       label: '',
+      qualification: '',
       trading: false,
       // Volume first: show every lead by default; labels and filters narrow it.
       established: false,
@@ -336,6 +361,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       state.contact = params.get('contact') || '';
       state.market = params.get('market') || '';
       state.label = params.get('label') || '';
+      state.qualification = params.get('qualification') || '';
 
       state.trading = params.get('trading') === 'true';
 
@@ -353,6 +379,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       contactSelect.value = state.contact;
       marketSelect.value = state.market;
       labelSelect.value = state.label;
+      qualificationSelect.value = state.qualification;
       pageSizeSelect.value = String(state.pageSize);
 
       updateToggleStyles();
@@ -388,6 +415,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       if (state.contact) params.set('contact', state.contact);
       if (state.market) params.set('market', state.market);
       if (state.label) params.set('label', state.label);
+      if (state.qualification) params.set('qualification', state.qualification);
       if (state.trading) params.set('trading', 'true');
       if (state.established) params.set('established', 'true');
       if (state.categoryOpportunity) {
@@ -495,8 +523,16 @@ import AppLayout from '../../layouts/AppLayout.astro';
               </td>
 
               <td class="px-4 py-4">
+                <span class="whitespace-nowrap rounded-full ${VERDICT_STYLES[item.qualification || ''] || 'bg-neutral-100 text-neutral-600'} px-2 py-1 text-[11px] font-medium">
+                  ${escapeHtml(verdictNames[item.qualification || ''] || 'Not rescored')}
+                </span>
+              </td>
+
+              <td class="px-4 py-4">
                 <div class="text-lg font-semibold">${item.total_score}</div>
               </td>
+
+              <td class="px-4 py-4 text-sm">${item.fit_score ?? '—'}</td>
 
               <td class="px-4 py-4">
                 <span class="inline-flex min-w-8 justify-center rounded-md border border-[var(--line)] px-2 py-1 text-xs font-semibold">
@@ -579,6 +615,14 @@ import AppLayout from '../../layouts/AppLayout.astro';
         );
       });
 
+      verdictNames = meta.qualifications || {};
+      Object.entries(verdictNames).forEach(([key, name]) => {
+        qualificationSelect.insertAdjacentHTML(
+          'beforeend',
+          `<option value="${escapeHtml(key)}">${escapeHtml(name)}</option>`,
+        );
+      });
+
       labelNames = meta.labels || {};
       Object.entries(labelNames).forEach(([key, name]) => {
         labelSelect.insertAdjacentHTML(
@@ -639,6 +683,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       state.contact = contactSelect.value;
       state.market = marketSelect.value;
       state.label = labelSelect.value;
+      state.qualification = qualificationSelect.value;
       state.pageSize = Number(pageSizeSelect.value);
 
       loadProspects();
@@ -654,7 +699,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       }, 300);
     });
 
-    [citySelect, verticalSelect, tierSelect, contactSelect, marketSelect, labelSelect, pageSizeSelect]
+    [citySelect, verticalSelect, tierSelect, contactSelect, marketSelect, labelSelect, qualificationSelect, pageSizeSelect]
       .forEach((element) => {
         element.addEventListener('change', refreshFromControls);
       });
@@ -692,6 +737,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       state.contact = '';
       state.market = '';
       state.label = '';
+      state.qualification = '';
       state.trading = false;
       state.established = false;
       state.categoryOpportunity = false;

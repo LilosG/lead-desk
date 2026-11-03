@@ -5,6 +5,13 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 
+SITE_REFRESH_COLUMNS = {
+    "site_signals", "psi_performance", "psi_seo", "psi_accessibility", "psi_best_practices",
+    "psi_lcp_ms", "psi_cls", "psi_mobile_friendly", "raw_psi_payload",
+}
+JSON_COLUMNS = {"site_signals", "raw_psi_payload"}
+
+
 class ProspectRepository:
     def __init__(self, pool: ConnectionPool):
         self.pool = pool
@@ -24,6 +31,7 @@ class ProspectRepository:
         category_opportunity: bool | None,
         label: str | None = None,
         market: str | None = None,
+        qualification: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         conditions: list[sql.Composable] = []
         params: dict[str, Any] = {}
@@ -113,6 +121,10 @@ class ProspectRepository:
             conditions.append(sql.SQL("seg.market = %(market)s"))
             params["market"] = market
 
+        if qualification:
+            conditions.append(sql.SQL("w.qualification = %(qualification)s"))
+            params["qualification"] = qualification
+
         where_clause = (
             sql.SQL(" where ") + sql.SQL(" and ").join(conditions)
             if conditions
@@ -164,7 +176,9 @@ class ProspectRepository:
                     seg.labels,
                     seg.market,
                     coalesce(f.needs_manual_check, false) as needs_manual_check,
-                    w.scored_at
+                    w.scored_at,
+                    w.fit_score,
+                    w.qualification
                 """
             )
             + base
@@ -230,7 +244,11 @@ class ProspectRepository:
                 seg.market,
                 f.what_to_fix,
                 coalesce(f.major_issues, 0) as major_issues,
-                coalesce(f.needs_manual_check, false) as needs_manual_check
+                coalesce(f.needs_manual_check, false) as needs_manual_check,
+                w.fit_score,
+                w.qualification,
+                w.qualification_reasons,
+                b.site_checked_at
             from v_lead_worklist w
             join businesses b
               on b.place_id = w.place_id
@@ -293,7 +311,8 @@ class ProspectRepository:
                 location_page_count,
                 sitemap_url_count,
                 has_online_booking,
-                booking_provider
+                booking_provider,
+                site_signals
             from website_enrichment
             where place_id = %s
         """
@@ -302,6 +321,43 @@ class ProspectRepository:
             with conn.cursor() as cur:
                 cur.execute(query, (place_id,))
                 return cur.fetchone()
+
+    def set_manual_contact(
+        self,
+        place_id: str,
+        *,
+        email: str | None,
+        site_checked: bool,
+    ) -> bool:
+        """Record what Mike confirmed by hand. Returns False for an unknown lead."""
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        update businesses
+                        set manual_email = coalesce(%s, manual_email),
+                            site_checked_at = case when %s then now() else site_checked_at end
+                        where place_id = %s
+                        """,
+                        (email, site_checked, place_id),
+                    )
+                    return cur.rowcount == 1
+
+    def save_site_refresh(self, place_id: str, fields: dict[str, Any]) -> None:
+        """Store an on-demand site check. Columns come from SITE_REFRESH_COLUMNS."""
+        columns = [c for c in fields if c in SITE_REFRESH_COLUMNS]
+        if not columns:
+            return
+        assignments = sql.SQL(", ").join(
+            sql.SQL("{} = %s").format(sql.Identifier(c)) for c in columns
+        )
+        values = [Jsonb(fields[c]) if c in JSON_COLUMNS else fields[c] for c in columns]
+        query = sql.SQL("update website_enrichment set {} where place_id = %s").format(assignments)
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(query, [*values, place_id])
 
     def market_peers(
         self,
@@ -669,6 +725,9 @@ class ProspectRepository:
                 count(*) filter (where w.tier = 'B') as tier_b,
                 count(*) filter (where w.tier = 'C') as tier_c,
                 count(*) filter (where w.tier = 'D') as tier_d,
+                count(*) filter (where w.qualification = 'qualified') as qualified,
+                count(*) filter (where w.qualification = 'call_first') as call_first,
+                count(*) filter (where w.qualification = 'verify_first') as verify_first,
                 count(*) filter (
                     where cardinality(coalesce(w.emails_found, '{}'::text[])) > 0
                 ) as emailable,

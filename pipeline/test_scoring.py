@@ -195,10 +195,7 @@ checks = [
      sc["down"].total_score > sc["strong"].total_score),
     ("neglected GBP with good site still surfaces",
      sc["nogbp"].total_score > sc["strong"].total_score),
-    ("dream lead is a top-3 lead and tier A or B",
-     pos["dream"] <= 2 + 20 and sc["dream"].tier in ("A", "B")
-     and sum(1 for x in scored if not x.place_id.startswith("avg")
-             and x.total_score > sc["dream"].total_score) <= 2),
+    ("active no-website lead stays tier A or B", sc["dream"].tier in ("A", "B")),
     ("live business outranks an identical DORMANT one",
      pos["dream"] < pos["dormant"]),
     ("dormant listing is discounted below tier A",
@@ -236,7 +233,7 @@ blocked_site = SiteFindings(place_id="blocked", crawl_error="blocked_403", http_
 pop2 = population + [blocked_b, blocked_open_b]
 enr2 = dict(enrichment)
 enr2["blocked"] = blocked_site
-enr2["blocked_open"] = site("blocked_open")
+enr2["blocked_open"] = site("blocked_open", emails_found=[], contact_page_url=None)
 sc2 = {x.place_id: x for x in S.score_all(pop2, enr2, "San Diego County")[0]}
 checks.append(("bot-blocked site is NOT halved (website axis left out, not zeroed)",
                sc2["blocked"].website_gap_score is None
@@ -281,6 +278,42 @@ checks.append(("online booking counts as a contact path (no 'no contact form' cl
                    spa, site("spa", has_contact_form=False, contact_page_url=None,
                              has_online_booking=True, booking_provider="Vagaro"),
                    S.baseline_for(S.compute_baselines(spa_pop), "med_spa", None)).evidence)))
+
+# --- model v3: fit AND opportunity ---------------------------------------------
+# The exact pair that exposed v2: the buyer Mike wants was graded below a dead listing.
+solid_site = site("solid", has_localbusiness_schema=False, has_city_pages=False,
+                  psi_performance=45, has_gbp_link=False)
+solid = S.score_lead(biz("solid", "Solid Electric", review_count=85, rating=4.8,
+                         last_review_days=20), solid_site, base)
+dead = S.score_lead(biz("dead", "Old Wire Two", website_url=None, review_count=2,
+                        rating=4.5, photo_count=1, last_review_days=900), None, base)
+checks.append(("established business with a weak site is tier A", solid.tier == "A"))
+checks.append(("established business with a weak site outranks a dormant micro listing",
+               solid.total_score > dead.total_score))
+checks.append(("established business with a weak site and email is QUALIFIED",
+               solid.qualification == "qualified"))
+checks.append(("dormant micro listing is not qualified, and stays in the list",
+               dead.qualification == "low_fit"))
+checks.append(("every lead carries a reason", all(x.qualification_reasons for x in scored)))
+checks.append(("healthy incumbent has high fit but nothing to pitch ranks low",
+               sc["strong"].fit_score >= 80 and sc["strong"].tier in ("C", "D")))
+
+no_email = site("noem", emails_found=[], has_localbusiness_schema=False, has_city_pages=False)
+checks.append(("good fit without an email is call_first, not dropped",
+               S.score_lead(biz("noem", "No Email Electric", review_count=85), no_email,
+                            base).qualification == "call_first"))
+checks.append(("blocked site with a good profile is verify_first, with a reason",
+               S.score_lead(biz("blk", "Blocked Electric", review_count=85, photo_count=2),
+                            SiteFindings(place_id="blk", crawl_error="blocked_403", http_status=403),
+                            base).qualification == "verify_first"))
+checks.append(("franchise verdict wins over fit",
+               S.score_lead(biz("frq", "Mr Rooter", review_count=200, is_franchise=True),
+                            site("frq", has_localbusiness_schema=False), base).qualification == "franchise"))
+# Old review sample can't sink a well-reviewed business with a working site.
+quiet = S.score_lead(biz("old", "Old Sample Electric", review_count=85, last_review_days=900),
+                     site("old", has_localbusiness_schema=False), base)
+checks.append(("stale review sample doesn't disqualify a well-reviewed live business",
+               quiet.qualification == "qualified"))
 
 ok = True
 for label, passed in checks:

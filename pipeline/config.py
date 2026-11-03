@@ -89,7 +89,7 @@ DEFAULT_GEO_LABEL = "Custom market"
 # neighborhood or suburb of the searched city (e.g. "La Jolla" for "San Diego")
 # is still in that market. Results within this radius of the searched market's
 # center, in the same state, are kept and attributed to that market.
-NEARBY_RADIUS_KM = 10.0
+NEARBY_RADIUS_KM = 25.0
 
 # Google caps one Text Search at 60 results (3 pages x 20). When a query comes
 # back full, the market is denser than one query can see, so the area the
@@ -340,6 +340,8 @@ CRAWL_TIMEOUT_S      = 15
 CRAWL_DELAY_S        = 1.0     # per-domain politeness delay
 CRAWL_MAX_PAGES      = 6       # home + contact + about + a few service pages
 CRAWL_MAX_CONCURRENT = 8
+CRAWL_CACHE_MAX_AGE_DAYS = 30  # a re-swept site older than this is crawled again
+SITE_CRAWL_CAP_S     = 75      # hard wall-clock cap for one site, all its pages included
 RESPECT_ROBOTS       = True
 
 CONTACT_PAGE_HINTS = [
@@ -350,17 +352,38 @@ CONTACT_PAGE_HINTS = [
 # ---------------------------------------------------------------------------
 # Scoring model
 # ---------------------------------------------------------------------------
-MODEL_VERSION = "v2.0"
+MODEL_VERSION = "v3.0"
 
-# gbp and website split the "opportunity" score 50/50. Reachability is NOT a
-# weight — it's applied as a multiplier afterwards (see scoring.py), because
-# being easy to contact is not itself an opportunity.
-WEIGHTS = {"gbp": 0.50, "website": 0.50}
+# The worse of the two axes leads. A healthy Google profile must not cancel out
+# a weak website: that average is what graded established businesses Tier D.
+# Reachability is NOT a weight — it's a multiplier (see scoring.py), because being
+# easy to contact is not itself an opportunity.
+OPPORTUNITY_WORST_AXIS_WEIGHT = 0.70
+OPPORTUNITY_NOISE_FLOOR = 10
 
-# Provisional cutoffs. These are calibrated against synthetic fixtures and MUST
-# be re-tuned once the first real sweep lands — the honest way to set them is to
-# look at the actual score distribution and at which leads you'd personally call.
+# Points at which an axis reads "clearly underserved". No real business trips
+# every signal at once, so scaling to the theoretical maximum compressed every
+# score into the bottom third of the range.
+GBP_SATURATION_POINTS = 45
+WEBSITE_SATURATION_POINTS = 55
+
+# Tiers rank the list; `qualification` (below) says what to do with a lead.
 TIER_CUTOFFS = [("A", 45), ("B", 33), ("C", 22), ("D", 0)]
+
+# Fit: is this a real, working business that could buy? Max 100.
+FIT_MAX = {"activity": 40, "reviews": 30, "website": 15, "rating": 10, "profile": 5}
+QUALIFY_MIN_FIT = 45
+FIT_SOLID_REVIEWS = 10  # enough reviews to count as a real customer base anywhere
+
+QUALIFICATION_LABELS = {
+    "qualified": "Qualified",
+    "call_first": "Qualified, call first",
+    "verify_first": "Check site first",
+    "low_fit": "Too early",
+    "no_gap": "Nothing to pitch",
+    "franchise": "Franchise",
+    "no_contact": "No contact route",
+}
 
 # Businesses we should not bother pitching.
 EXCLUDE_BUSINESS_STATUS = ["CLOSED_PERMANENTLY"]
@@ -452,18 +475,9 @@ VERTICAL_SITE_WORDS = {
 # ---------------------------------------------------------------------------
 # Review COUNT is a bad qualifier: one review could be a dormant 2019 listing or
 # a working business that never asks. Review RECENCY separates them.
-# ASYMMETRIC BY DESIGN. Google returns the 5 most RELEVANT reviews, not the 5
+# Google returns the 5 most RELEVANT reviews, not the 5
 # most recent, so this date is a lower bound: a recent review PROVES the
 # business is trading, while an old one only fails to prove it. Confirmed-active
-# therefore gets a real boost, and apparent-dormancy gets a mild discount rather
-# than the heavy penalty a reliable signal would justify. Treating a lower bound
-# as if it were exact would bury live businesses whose recent reviews simply
-# weren't in the sample.
-ACTIVITY_TIERS = [
-    (90,   1.00, "active"),
-    (365,  0.95, "steady"),
-    (730,  0.85, "quiet"),
-    (99999, 0.72, "stale"),
-]
-ACTIVITY_UNKNOWN_NO_REVIEWS = 0.62   # no reviews at all — genuinely ambiguous
-ACTIVITY_UNKNOWN_HAS_REVIEWS = 0.90  # has reviews, none sampled: assume alive
+# therefore earns full activity points in scoring.fit_score, and an old sample
+# only counts against a lead when nothing else (reviews, a live site) offsets it.
+ACTIVITY_TIERS = [(90, "active"), (365, "steady"), (730, "quiet"), (99999, "stale")]

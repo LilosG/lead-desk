@@ -15,45 +15,41 @@ Design principles:
    the raw observed value. That payload feeds both the cold email and the free
    40-signal GBP audit PDF that Lilos already sells as its lead magnet.
 
-4. Reachability is a MULTIPLIER, not an addend. This is the correction that
-   matters most. If reachability is just another weighted component, a
-   perfectly-optimized business with a good contact page collects "opportunity"
-   points for being easy to reach — which is nonsense. Reachability doesn't
-   create opportunity, it determines whether you can act on it. So:
+4. Reachability is a MULTIPLIER, not an addend. If reachability is just another
+   weighted component, a perfectly-optimized business with a good contact page
+   collects "opportunity" points for being easy to reach. It determines whether
+   you can act on an opportunity, not whether one exists.
 
-       opportunity = (gbp_gap + website_gap) / 2
-       total       = opportunity * reachability_multiplier
+5. A good lead needs BOTH fit and opportunity. Fit asks "is this a real, working
+   business that could buy?"; opportunity asks "is there a gap we can prove?".
+   They multiply (geometric mean), so a flawless business and a dead listing both
+   score low, and an established business with a weak website scores high:
 
-   A flawless business scores near zero no matter how reachable. An unreachable
-   business with every gap in the book gets heavily discounted, because a lead
-   you cannot contact is not a lead.
+       opportunity = 0.7 * worse axis + 0.3 * better axis, less a small noise floor
+       total       = sqrt(fit * opportunity) * reachability_multiplier
 
-5. Axes are normalized against their REALISTIC maximum, not against 100. The
-   GBP axis can only emit 77 raw points and the website axis 93, so dividing by
-   100 would silently compress every score and make the tier cutoffs unreachable.
+   Model v2 averaged the two gap axes and ignored fit, which graded an active
+   85-review business with a weak site Tier D and a dormant 2-review listing
+   above it.
+
+6. Qualification is a verdict, not a tier. Tier ranks the list; `qualification`
+   says what to do with a lead and why. Nothing is deleted: a lead that isn't
+   qualified stays in the list with the reason.
 """
 from __future__ import annotations
 
+import math
 import statistics
 from dataclasses import dataclass, field
 
 import config as C
+import site_signals as SS
 import verticals as V
 
-# Maximum raw points each axis can emit, used to normalize to 0-100.
-# Derived by summing the mutually-compatible signals in each scorer:
-#   GBP:     22 no_reviews + 10 rating_poor + 6 no_phone
-#          +  8 no_hours + 8 no_photos + 6 thin_categories + 3 temp_closed
-#          + 15 category_generic = 78
-#   ("no website linked on GBP" carries 0 points: the website axis already
-#    scores the missing site at 100, and counting it twice made no-website
-#    leads crowd out everything else.)
-#   WEBSITE:  8 no_ssl + 10 no_schema + 9 no_service + 8 no_city + 7 nap
-#          +  3 no_gbp_link + 7 no_title + 4 no_meta + 4 no_h1 + 5 thin
-#          + 12 psi_critical + 5 psi_seo + 5 template + 6 no_form = 93
-# If you add or reweight a signal, update these or scores drift silently.
-GBP_MAX_POINTS = 78
-WEBSITE_MAX_POINTS = 93
+# Raw points at which each axis reads "clearly underserved" (scores cap at 100).
+# Add or reweight a signal and these may need re-tuning: see pipeline/test_scoring.py.
+GBP_MAX_POINTS = C.GBP_SATURATION_POINTS
+WEBSITE_MAX_POINTS = C.WEBSITE_SATURATION_POINTS
 
 # The two dominant website outcomes bypass the itemized path and map straight
 # onto the top of the axis, because "no site" and "site is down" are strictly
@@ -462,6 +458,11 @@ def score_website(b: dict, w, base: Baseline) -> tuple[int | None, list]:
             "spot have no other way to reach out.",
             {"has_contact_form": False}))
 
+    for item in SS.findings(getattr(w, "site_signals", None), V.vertical_profile(b.get("vertical") or "")):
+        pts += item["points"]
+        ev.append(Evidence("website", item["signal"], item["severity"], item["points"],
+                           item["finding"], item["observed"]))
+
     return _normalize(pts, WEBSITE_MAX_POINTS), ev
 
 
@@ -523,6 +524,9 @@ class ScoredLead:
     activity: str = "unknown"
     labels: list = field(default_factory=list)
     market: str | None = None
+    fit_score: int = 0
+    qualification: str = "low_fit"
+    qualification_reasons: list = field(default_factory=list)
 
 
 def _headline(ev: list) -> str:
@@ -605,26 +609,88 @@ def score_deep(deep: dict | None) -> tuple[int, list]:
     return pts, ev
 
 
-def activity_multiplier(b: dict) -> tuple[float, str]:
-    """Discount by how dormant the listing looks.
-
-    This replaces review-count-as-qualifier, which conflated two opposite
-    prospects: a dead 2019 listing and a working business that never asks for
-    reviews both show "3 reviews". Recency separates them, and only one of the
-    two can buy anything.
-
-    Not a hard filter — a quiet listing attached to a real business is still
-    worth a call, just not the top of the queue.
-    """
+def activity_label(b: dict) -> str:
+    """How recently the listing shows life. A lower bound: see config.ACTIVITY_TIERS."""
     d = b.get("last_review_days")
     if d is None:
-        if (b.get("review_count") or 0) == 0:
-            return C.ACTIVITY_UNKNOWN_NO_REVIEWS, "no reviews"
-        return C.ACTIVITY_UNKNOWN_HAS_REVIEWS, "unknown"
-    for limit, mult, label in C.ACTIVITY_TIERS:
+        return "no reviews" if not (b.get("review_count") or 0) else "unknown"
+    for limit, label in C.ACTIVITY_TIERS:
         if d <= limit:
-            return mult, label
-    return C.ACTIVITY_TIERS[-1][1], C.ACTIVITY_TIERS[-1][2]
+            return label
+    return C.ACTIVITY_TIERS[-1][1]
+
+
+def _site_is_live(w) -> bool:
+    """A site that turned our crawler away still exists; only its contents are unknown."""
+    if w is None:
+        return False
+    return bool(getattr(w, "is_reachable", False)
+                or (getattr(w, "crawl_error", None) or "").startswith("blocked_"))
+
+
+def fit_score(b: dict, w, base: Baseline | None) -> tuple[int, list[str]]:
+    """0-100: is this a real, working business that could buy? Plus the reasons."""
+    reasons: list[str] = []
+    label = activity_label(b)
+    reviews = b.get("review_count") or 0
+    p25 = base.p25_reviews if base else 0
+    median = base.median_reviews if base else 0
+    p75 = base.p75_reviews if base else 0
+    at_median = bool(reviews) and reviews >= median
+
+    activity = {"active": 40, "steady": 34, "quiet": 20, "stale": 5,
+                "unknown": 24, "no reviews": 0}[label]
+    # Google returns the most relevant reviews, not the newest, so an old sample
+    # on a well-reviewed business with a working site proves nothing against it.
+    if label in {"quiet", "stale"} and at_median and _site_is_live(w):
+        activity = max(activity, 24)
+    if activity >= 34:
+        reasons.append("Recently active on Google")
+    elif label == "no reviews":
+        reasons.append("No reviews yet, so activity can't be confirmed")
+    elif activity <= 5:
+        reasons.append("No recent activity found")
+
+    if not reviews:
+        volume = 0
+    elif reviews >= p75:
+        volume = C.FIT_MAX["reviews"]
+    elif at_median:
+        volume = 25
+    elif reviews >= max(p25, C.FIT_SOLID_REVIEWS):
+        volume = 15
+    else:
+        volume = 5
+    if volume >= 25:
+        reasons.append(f"{reviews} reviews, at or above the local median of {median:.0f}")
+    elif reviews:
+        reasons.append(f"{reviews} reviews, below the local median of {median:.0f}")
+
+    site = C.FIT_MAX["website"] if _site_is_live(w) else 0
+    rating = float(b.get("rating") or 0)
+    stars = C.FIT_MAX["rating"] if rating >= 4.0 else 5 if rating >= 3.5 else 0
+    profile = C.FIT_MAX["profile"] if b.get("phone") and b.get("has_hours") else 0
+    return min(100, activity + volume + site + stars + profile), reasons
+
+
+def qualify(b: dict, w, fit: int, evidence: list, reach: int) -> tuple[str, list[str]]:
+    """The verdict on a lead, with plain reasons. Order is the order to fix them in."""
+    signals = {e.signal for e in evidence}
+    gaps = [e for e in evidence if e.category != "reachability" and e.points > 0]
+    emails = list(getattr(w, "emails_found", []) or []) if w else []
+    if reach == 0:
+        return "no_contact", ["No email, phone, form or social profile found"]
+    if b.get("is_franchise"):
+        return "franchise", ["National brand or franchise"]
+    if fit < C.QUALIFY_MIN_FIT:
+        return "low_fit", ["Not enough evidence yet that this is an active business"]
+    if "crawl_blocked" in signals and not emails:
+        return "verify_first", ["The site blocked our crawler, so it needs a quick look by hand"]
+    if not gaps:
+        return "no_gap", ["No clear gap to pitch: the profile and site look healthy"]
+    if not emails:
+        return "call_first", ["Good fit, but no email found: call them or add an email"]
+    return "qualified", [f"Good fit with {len(gaps)} provable gap{'s' if len(gaps) != 1 else ''}"]
 
 
 def reachability_multiplier(r: int) -> float:
@@ -692,27 +758,27 @@ def score_lead(b: dict, w, base: Baseline, deep: dict | None = None) -> ScoredLe
     s, ev_s = score_website(b, w, base)
     r, ev_r = score_reachability(b, w)
 
-    # Deep signals fold into the GBP axis, with the axis maximum widened to match
-    # so an enriched lead isn't scored against a narrower scale than it can fill.
+    # Deep signals only ever add to the GBP axis, so an un-enriched lead isn't
+    # penalised for missing data it was never eligible for.
     d_pts, ev_d = score_deep(deep)
-    if deep:
-        g = _normalize(
-            int(round(g_raw / 100 * GBP_MAX_POINTS)) + d_pts,
-            GBP_MAX_POINTS + DEEP_MAX_POINTS,
-        )
-    else:
-        g = g_raw
+    g = min(100, g_raw + _normalize(d_pts, GBP_MAX_POINTS))
     ev_g = ev_g + ev_d
 
     if s is None:
         # Website couldn't be audited (bot-blocked): rank on the profile alone
         # instead of treating the site as perfect.
-        opportunity = g
+        opportunity = float(g)
     else:
-        opportunity = g * C.WEIGHTS["gbp"] + s * C.WEIGHTS["website"]
-    act_mult, act_label = activity_multiplier(b)
+        worse, better = max(g, s), min(g, s)
+        w_axis = C.OPPORTUNITY_WORST_AXIS_WEIGHT
+        opportunity = worse * w_axis + better * (1 - w_axis)
+    # A nitpick or two isn't a sales opportunity: rescale so the noise floor is zero.
+    floor = C.OPPORTUNITY_NOISE_FLOOR
+    opportunity = max(0.0, opportunity - floor) * 100 / (100 - floor)
+    fit, fit_reasons = fit_score(b, w, base)
+    act_label = activity_label(b)
     franchise_mult = C.FRANCHISE_MULTIPLIER if b.get("is_franchise") else 1.0
-    total = round(opportunity * reachability_multiplier(r) * act_mult * franchise_mult)
+    total = round(math.sqrt(fit * opportunity) * reachability_multiplier(r) * franchise_mult)
 
     d = b.get("last_review_days")
     if act_label in ("active", "steady"):
@@ -739,6 +805,8 @@ def score_lead(b: dict, w, base: Baseline, deep: dict | None = None) -> ScoredLe
             break
 
     evidence = ev_g + ev_s + ev_r
+    verdict, verdict_reasons = qualify(b, w, fit, evidence, r)
+    labels = lead_labels(b, w, base, evidence, act_label, r)
     return ScoredLead(
         place_id=b["place_id"],
         total_score=int(total),
@@ -749,8 +817,11 @@ def score_lead(b: dict, w, base: Baseline, deep: dict | None = None) -> ScoredLe
         headline_gap=_headline(ev_g + ev_s),
         evidence=evidence,
         activity=act_label,
-        labels=lead_labels(b, w, base, evidence, act_label, r),
+        labels=labels,
         market=b.get("market"),
+        fit_score=fit,
+        qualification=verdict,
+        qualification_reasons=verdict_reasons + fit_reasons,
     )
 
 

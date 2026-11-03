@@ -1,233 +1,235 @@
 ---
 import AppLayout from '../layouts/AppLayout.astro';
+
+const stages = [
+  { key: 'to_prep', label: 'To prep', hint: 'Has an email, not started' },
+  { key: 'verify', label: 'Check site', hint: 'Site blocked our crawler' },
+  { key: 'call', label: 'Call list', hint: 'No email yet' },
+  { key: 'review', label: 'In review', hint: 'Draft being worked on' },
+  { key: 'attention', label: 'Needs attention', hint: 'Stopped, see why' },
+  { key: 'in_gmail', label: 'In Gmail', hint: 'Draft waiting to send' },
+  { key: 'contacted', label: 'Contacted', hint: 'Sent, awaiting reply' },
+  { key: 'replied', label: 'Replied', hint: 'They answered' },
+  { key: 'closed', label: 'Closed', hint: 'Archived' },
+];
 ---
 
 <AppLayout
   title="Outreach"
-  description="Human-reviewed outreach queue with suppression, verification, AI drafting, and Gmail draft-only delivery."
+  description="Every prospect, in one stage, with the next step. Nothing is sent from here."
 >
-  <div class="space-y-6">
-    <section class="grid gap-4 md:grid-cols-4">
-      <div class="rounded-lg border border-[var(--line)] bg-white p-5">
-        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Candidates</div>
-        <div id="metric-candidates" class="mt-2 text-3xl font-semibold">—</div>
+  <div class="space-y-4">
+    <nav id="stage-tabs" aria-label="Outreach stages" class="grid grid-cols-3 gap-2 sm:grid-cols-5 xl:grid-cols-9">
+      {stages.map((stage) => (
+        <button
+          type="button"
+          data-stage={stage.key}
+          class="rounded-lg border border-[var(--line)] bg-white px-3 py-2.5 text-left transition hover:border-[var(--accent)]"
+        >
+          <span class="block text-[11px] font-semibold text-[var(--muted)]">{stage.label}</span>
+          <span data-count={stage.key} class="mt-0.5 block text-xl font-semibold">—</span>
+          <span class="mt-0.5 hidden text-[10px] leading-3 text-[var(--muted)] xl:block">{stage.hint}</span>
+        </button>
+      ))}
+    </nav>
+
+    <section class="flex flex-wrap items-end gap-3 rounded-lg border border-[var(--line)] bg-white px-4 py-3">
+      <div class="min-w-[220px] flex-1">
+        <label for="filter-q" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Find a prospect</label>
+        <input id="filter-q" type="search" placeholder="Name, city, email or phone" class="w-full rounded-md border border-[var(--line)] px-3 py-1.5 text-sm" />
       </div>
-      <div class="rounded-lg border border-[var(--line)] bg-white p-5">
-        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Queued</div>
-        <div id="metric-queued" class="mt-2 text-3xl font-semibold">—</div>
+      <div>
+        <label for="filter-vertical" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Niche</label>
+        <select id="filter-vertical" class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-sm"><option value="">All niches</option></select>
       </div>
-      <div class="rounded-lg border border-[var(--line)] bg-white p-5">
-        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Draft ready</div>
-        <div id="metric-ready" class="mt-2 text-3xl font-semibold">—</div>
+      <div>
+        <label for="filter-market" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Market</label>
+        <select id="filter-market" class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-sm"><option value="">All markets</option></select>
       </div>
-      <div class="rounded-lg border border-[var(--line)] bg-white p-5">
-        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Contacted</div>
-        <div id="metric-contacted" class="mt-2 text-3xl font-semibold">—</div>
+      <label class="flex items-center gap-2 pb-1.5 text-sm"><input id="filter-qualified" type="checkbox" /> Qualified only</label>
+      <div class="ml-auto flex items-center gap-3 pb-1 text-xs text-[var(--muted)]">
+        <span id="gmail-status">Gmail —</span>
+        <button id="sync-gmail" type="button" class="rounded-md border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40">Check Gmail</button>
       </div>
     </section>
 
-    <section class="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-xs">
-      <span class="font-medium">Integrations</span>
-      <span id="openrouter-status" class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[var(--muted)]">OpenRouter —</span>
-      <span id="gmail-status" class="rounded-full bg-[var(--surface-muted)] px-2.5 py-1 text-[var(--muted)]">Gmail —</span>
-      <span class="ml-auto text-[var(--muted)]">Draft-only. Lead Desk has no email send endpoint.</span>
-    </section>
+    <div id="page-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"></div>
+    <div id="page-note" class="hidden rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-sm"></div>
 
-    <div id="outreach-error" class="hidden rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"></div>
-
-    <section class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
-      <div class="rounded-lg border border-[var(--line)] bg-white">
-        <div class="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
-          <div>
-            <div class="text-sm font-medium">Outreach candidates</div>
-            <div class="mt-1 text-xs text-[var(--muted)]">Established prospects with a reachable contact method.</div>
-          </div>
-          <button id="refresh-outreach" type="button" class="rounded-md border border-[var(--line)] px-3 py-2 text-xs font-medium">Refresh</button>
-        </div>
-        <div class="flex flex-wrap items-center gap-3 border-b border-[var(--line)] bg-[var(--surface-muted)] px-5 py-3 text-xs">
-          <label class="flex items-center gap-2"><input id="candidate-select-all" type="checkbox" /> Select all</label>
-          <span id="candidate-selected-count" class="text-[var(--muted)]">0 selected</span>
-          <button id="fast-track" type="button" disabled class="ml-auto rounded-md bg-[var(--dark)] px-3 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Audit + email draft + Gmail draft</button>
-        </div>
-        <div id="fast-track-progress" class="hidden border-b border-[var(--line)] px-5 py-3 text-xs leading-5"></div>
-        <div id="candidate-list" class="divide-y divide-[var(--line)]"></div>
-      </div>
-
-      <div class="space-y-6">
-        <section class="rounded-lg border border-[var(--line)] bg-white">
-          <div class="border-b border-[var(--line)] px-5 py-4">
-            <div class="text-sm font-medium">Active queue</div>
-            <div class="mt-1 text-xs text-[var(--muted)]">Generate, verify, review, then create a Gmail draft. Nothing is sent automatically.</div>
-          </div>
-          <div class="flex flex-wrap items-center gap-3 border-b border-[var(--line)] bg-[var(--surface-muted)] px-5 py-3 text-xs">
-            <label class="flex items-center gap-2"><input id="queue-select-all" type="checkbox" /> Select all</label>
-            <span id="queue-selected-count" class="text-[var(--muted)]">0 selected</span>
-            <select id="bulk-status" class="ml-auto rounded-md border border-[var(--line)] bg-white px-2 py-1.5">
+    <section class="overflow-hidden rounded-lg border border-[var(--line)] bg-white">
+      <div class="flex flex-wrap items-center gap-3 border-b border-[var(--line)] bg-[var(--surface-muted)] px-4 py-2.5 text-xs">
+        <label class="flex items-center gap-2"><input id="select-all" type="checkbox" /> Select all</label>
+        <span id="selected-count" class="text-[var(--muted)]">0 selected</span>
+        <div class="ml-auto flex flex-wrap items-center gap-2">
+          <button id="bulk-prep" type="button" class="hidden rounded-md bg-[var(--dark)] px-3 py-1.5 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Audit + email + Gmail draft</button>
+          <div id="bulk-status-group" class="hidden items-center gap-2">
+            <select id="bulk-status" class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5">
               <option value="contacted">Contacted</option>
               <option value="replied">Replied</option>
-              <option value="draft_ready">Draft ready</option>
               <option value="archived">Archived</option>
             </select>
-            <button id="bulk-status-apply" type="button" disabled class="rounded-md bg-[var(--dark)] px-3 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Set status</button>
+            <button id="bulk-apply" type="button" class="rounded-md bg-[var(--dark)] px-3 py-1.5 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Set status</button>
           </div>
-          <div id="bulk-status-result" class="hidden border-b border-[var(--line)] px-5 py-3 text-xs leading-5"></div>
-          <div id="queue-list" class="divide-y divide-[var(--line)]"></div>
-        </section>
+        </div>
+      </div>
+      <div id="bulk-result" class="hidden border-b border-[var(--line)] px-4 py-3 text-xs leading-5"></div>
 
-        <section id="editor-card" class="hidden rounded-lg border border-[var(--line)] bg-white p-5">
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <div id="editor-title" class="text-sm font-medium">Draft review</div>
-              <div id="editor-name" class="mt-1 text-xs text-[var(--muted)]"></div>
-            </div>
-            <span id="editor-channel" class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase"></span>
-          </div>
-
-          <div class="mt-4 grid gap-2 sm:grid-cols-2">
-            <button id="generate-draft" type="button" class="rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">
-              Generate verified draft
-            </button>
-            <button id="create-gmail-draft" type="button" class="rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">
-              Create Gmail draft
-            </button>
-          </div>
-          <p id="draft-action-note" class="mt-2 text-xs leading-5 text-[var(--muted)]"></p>
-
-          <form id="outreach-editor" class="mt-5 space-y-4">
-            <input id="editor-id" type="hidden" />
-            <input id="editor-version" type="hidden" />
-
-            <div>
-              <label for="editor-to" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">To</label>
-              <input id="editor-to" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
-            </div>
-
-            <div>
-              <label for="editor-subject" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Subject</label>
-              <input id="editor-subject" maxlength="300" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
-            </div>
-
-            <div>
-              <label for="editor-body" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Draft</label>
-              <textarea id="editor-body" rows="12" maxlength="20000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
-            </div>
-
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label for="editor-verification" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Claim verification</label>
-                <select id="editor-verification" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
-                  <option value="pending">Pending</option>
-                  <option value="verified">Verified</option>
-                  <option value="failed">Failed</option>
-                  <option value="not_required">Not required</option>
-                </select>
-              </div>
-              <div>
-                <label for="editor-status" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Status</label>
-                <select id="editor-status" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
-                  <option value="queued">Queued</option>
-                  <option value="researching">Researching</option>
-                  <option value="review_required">Review required</option>
-                  <option value="no_outreach_finding">No outreach finding</option>
-                  <option value="draft_ready">Draft ready</option>
-                  <option value="approved">Approved</option>
-                  <option value="contacted">Contacted</option>
-                  <option value="replied">Replied</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label for="editor-verification-note" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Verification note</label>
-              <textarea id="editor-verification-note" rows="3" maxlength="2000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
-            </div>
-
-            <div id="editor-meta" class="rounded-md bg-[var(--surface-muted)] px-3 py-2 text-xs leading-5 text-[var(--muted)]"></div>
-            <div id="editor-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
-            <button type="submit" class="w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white">Save review state</button>
-          </form>
-        </section>
+      <div class="overflow-x-auto">
+        <table class="min-w-full border-collapse text-sm">
+          <thead>
+            <tr class="border-b border-[var(--line)] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+              <th class="w-8 px-4 py-2.5"></th>
+              <th class="px-3 py-2.5">Prospect</th>
+              <th class="px-3 py-2.5">Contact</th>
+              <th class="px-3 py-2.5">Score</th>
+              <th class="px-3 py-2.5">Next step</th>
+              <th id="when-heading" class="px-3 py-2.5">Updated</th>
+              <th class="px-4 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody id="rows" class="divide-y divide-[var(--line)]"></tbody>
+        </table>
+      </div>
+      <div id="empty" class="hidden px-6 py-12 text-center text-sm text-[var(--muted)]">Nothing here with these filters.</div>
+      <div class="flex items-center justify-between border-t border-[var(--line)] px-4 py-2.5">
+        <div id="page-label" class="text-xs text-[var(--muted)]"></div>
+        <div class="flex gap-2">
+          <button id="prev" type="button" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+          <button id="next" type="button" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+        </div>
       </div>
     </section>
   </div>
 
+  <div id="drawer-scrim" class="fixed inset-0 z-40 hidden bg-black/30"></div>
+  <aside id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-name" class="fixed inset-y-0 right-0 z-50 hidden w-full max-w-xl overflow-y-auto bg-white shadow-2xl">
+    <div class="sticky top-0 flex items-start justify-between gap-4 border-b border-[var(--line)] bg-white px-5 py-4">
+      <div class="min-w-0">
+        <a id="drawer-name" class="block truncate text-base font-semibold hover:underline" href="#"></a>
+        <div id="drawer-next" class="mt-0.5 text-xs text-[var(--muted)]"></div>
+      </div>
+      <button id="drawer-close" type="button" aria-label="Close" class="rounded-md border border-[var(--line)] px-2.5 py-1 text-sm">✕</button>
+    </div>
+
+    <div class="space-y-4 p-5">
+      <div class="grid gap-2 sm:grid-cols-2">
+        <button id="draft-generate" type="button" class="rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">Generate draft</button>
+        <button id="draft-gmail" type="button" class="rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Create Gmail draft</button>
+      </div>
+      <a id="draft-open-gmail" target="_blank" rel="noreferrer" class="hidden rounded-md border border-[var(--line)] px-4 py-2.5 text-center text-sm font-medium">Open in Gmail</a>
+      <p id="draft-reason" class="hidden rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"></p>
+
+      <form id="draft-form" class="space-y-3">
+        <input id="draft-id" type="hidden" />
+        <input id="draft-version" type="hidden" />
+        <div>
+          <label for="draft-to" class="mb-1 block text-xs font-medium text-[var(--muted)]">To</label>
+          <input id="draft-to" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label for="draft-subject" class="mb-1 block text-xs font-medium text-[var(--muted)]">Subject</label>
+          <input id="draft-subject" maxlength="300" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label for="draft-body" class="mb-1 block text-xs font-medium text-[var(--muted)]">Email</label>
+          <textarea id="draft-body" rows="14" maxlength="20000" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label for="draft-status" class="mb-1 block text-xs font-medium text-[var(--muted)]">Status</label>
+            <select id="draft-status" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
+              <option value="queued">Queued</option>
+              <option value="researching">Researching</option>
+              <option value="review_required">In review</option>
+              <option value="no_outreach_finding">No finding</option>
+              <option value="draft_ready">Draft ready</option>
+              <option value="approved">Approved</option>
+              <option value="contacted">Contacted</option>
+              <option value="replied">Replied</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+          <div>
+            <label for="draft-verification" class="mb-1 block text-xs font-medium text-[var(--muted)]">Claim check</label>
+            <select id="draft-verification" class="w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm">
+              <option value="pending">Pending</option>
+              <option value="verified">Verified</option>
+              <option value="failed">Failed</option>
+              <option value="not_required">Not required</option>
+            </select>
+          </div>
+        </div>
+        <div id="draft-meta" class="text-xs leading-5 text-[var(--muted)]"></div>
+        <div id="draft-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
+        <button type="submit" class="w-full rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium">Save changes</button>
+      </form>
+    </div>
+  </aside>
+
   <script>
-    type Candidate = {
+    type Row = {
+      kind: 'queue' | 'candidate';
+      id: string | null;
       place_id: string;
+      stage: string;
+      status: string | null;
+      channel: string | null;
+      email: string | null;
+      phone: string | null;
       name: string | null;
       city: string | null;
       vertical: string | null;
-      total_score: number | null;
       tier: string | null;
+      total_score: number | null;
+      fit_score: number | null;
+      qualification: string | null;
       headline_gap: string | null;
-      phone: string | null;
-      email: string | null;
-      suppressed: boolean;
-      needs_manual_check: boolean;
-      already_queued: boolean;
+      gmail_draft_created_at: string | null;
+      gmail_message_id: string | null;
+      gmail_draft_left_at: string | null;
+      contacted_at: string | null;
+      updated_at: string;
+      next_step: string;
     };
 
-    type QueueItem = {
+    type Board = {
+      counts: Record<string, number>;
+      items: Row[];
+      pagination: { page: number; page_size: number; total: number; total_pages: number };
+      filters: { verticals: string[]; markets: string[] };
+    };
+
+    type Item = {
       id: string;
       place_id: string;
       name: string | null;
       city: string | null;
-      total_score: number | null;
-      tier: string | null;
-      channel: 'email' | 'phone' | 'form';
+      channel: string;
+      stage: string;
       status: string;
       to_address: string | null;
       subject: string | null;
       body: string | null;
-      claim_signal: string | null;
       verification_status: string;
       verification_note: string | null;
       generation_model: string | null;
-      generation_prompt_version: string | null;
       draft_generated_at: string | null;
       gmail_draft_id: string | null;
       gmail_message_id: string | null;
       gmail_draft_created_at: string | null;
-      suppressed: boolean;
-      needs_manual_check: boolean;
+      gmail_draft_left_at: string | null;
+      contacted_at: string | null;
       version: number;
+      next_step: string;
+      gmail_block_reason: string | null;
     };
 
-    type Integrations = {
-      openrouter_configured: boolean;
-      openrouter_model: string | null;
-      gmail_configured: boolean;
-      gmail_sender_email: string | null;
-      send_enabled: boolean;
-    };
-
-    let queueItems: QueueItem[] = [];
-    const selectedPlaces = new Set<string>();
-    const selectedItems = new Set<string>();
-
+    const SYNC_KEY = 'outreach-last-gmail-sync';
+    const SYNC_EVERY_MS = 120_000;
+    const PREP_STAGES = new Set(['to_prep', 'review', 'attention']);
+    const STATUS_STAGES = new Set(['review', 'attention', 'in_gmail', 'contacted', 'replied', 'call']);
     const STEP_LABELS: Record<string, string> = {
-      audit: 'audit PDF', queue: 'queue', draft: 'email draft', ready: 'draft ready', gmail_draft: 'Gmail draft',
-    };
-
-    function updateSelectionUi() {
-      const placeBoxes = [...document.querySelectorAll<HTMLInputElement>('[data-select-place]:not(:disabled)')];
-      const itemBoxes = [...document.querySelectorAll<HTMLInputElement>('[data-select-item]')];
-      [...selectedPlaces].forEach((id) => { if (!placeBoxes.some((b) => b.dataset.selectPlace === id)) selectedPlaces.delete(id); });
-      [...selectedItems].forEach((id) => { if (!itemBoxes.some((b) => b.dataset.selectItem === id)) selectedItems.delete(id); });
-      el('#candidate-selected-count').textContent = `${selectedPlaces.size} selected`;
-      el('#queue-selected-count').textContent = `${selectedItems.size} selected`;
-      el<HTMLButtonElement>('#fast-track').disabled = selectedPlaces.size === 0;
-      el<HTMLButtonElement>('#bulk-status-apply').disabled = selectedItems.size === 0;
-      el<HTMLInputElement>('#candidate-select-all').checked = placeBoxes.length > 0 && selectedPlaces.size === placeBoxes.length;
-      el<HTMLInputElement>('#queue-select-all').checked = itemBoxes.length > 0 && selectedItems.size === itemBoxes.length;
-    }
-    let integrations: Integrations = {
-      openrouter_configured: false,
-      openrouter_model: null,
-      gmail_configured: false,
-      gmail_sender_email: null,
-      send_enabled: false,
+      audit: 'audit', queue: 'queue', draft: 'email draft', ready: 'draft ready', gmail_draft: 'Gmail draft',
     };
 
     const el = <T extends HTMLElement>(selector: string): T => {
@@ -240,7 +242,11 @@ import AppLayout from '../layouts/AppLayout.astro';
       .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
-    const statusLabel = (status: string): string => status.replaceAll('_', ' ');
+    const shortDate = (value: string | null): string =>
+      value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—';
+
+    const gmailDraftUrl = (messageId: string | null): string =>
+      messageId ? `https://mail.google.com/mail/u/0/#drafts?compose=${encodeURIComponent(messageId)}` : 'https://mail.google.com/mail/u/0/#drafts';
 
     async function api(path: string, init?: RequestInit) {
       const response = await fetch(path, {
@@ -252,322 +258,422 @@ import AppLayout from '../layouts/AppLayout.astro';
       return body;
     }
 
-    function renderIntegrations(data: Integrations) {
-      integrations = data;
-      el('#openrouter-status').textContent = data.openrouter_configured
-        ? `OpenRouter · ${data.openrouter_model || 'configured'}`
-        : 'OpenRouter · not configured';
-      el('#gmail-status').textContent = data.gmail_configured
-        ? `Gmail · ${data.gmail_sender_email || 'configured'}`
-        : 'Gmail · not configured';
-    }
+    const params = new URLSearchParams(window.location.search);
+    const state = {
+      stage: params.get('stage') || 'to_prep',
+      q: params.get('q') || '',
+      vertical: params.get('vertical') || '',
+      market: params.get('market') || '',
+      qualifiedOnly: params.has('qualified') ? params.get('qualified') === 'true' : true,
+      page: Math.max(1, Number(params.get('page') || 1)),
+    };
+    let rows: Row[] = [];
+    const selected = new Set<string>();
+    let gmailConnected = false;
+    let searchTimer: number | undefined;
 
-    function renderCandidates(items: Candidate[]) {
-      el('#metric-candidates').textContent = String(items.length);
-      el('#candidate-list').innerHTML = items.length ? items.map((item) => {
-        const channel = item.email ? 'email' : item.phone ? 'phone' : null;
-        const blocked = item.suppressed || item.already_queued || !channel;
-        const warning = item.needs_manual_check ? '<span class="text-amber-700">manual check</span>' : '';
-        const selectable = Boolean(item.email) && !item.suppressed;
-        return `
-          <div class="p-5">
-            <div class="flex items-start justify-between gap-4">
-              <input type="checkbox" class="mt-1 shrink-0" data-select-place="${esc(item.place_id)}" data-name="${esc(item.name)}"
-                ${selectable ? '' : 'disabled'} ${selectedPlaces.has(item.place_id) ? 'checked' : ''} />
-              <div class="min-w-0 flex-1">
-                <a href="/prospects/${encodeURIComponent(item.place_id)}" class="font-medium hover:underline">${esc(item.name)}</a>
-                <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.city)} · ${esc(item.vertical)} · Tier ${esc(item.tier)} · Score ${esc(item.total_score)}</div>
-                <div class="mt-2 text-sm leading-5">${esc(item.headline_gap)}</div>
-                <div class="mt-2 flex gap-3 text-xs text-[var(--muted)]"><span>${esc(item.email || item.phone || 'No contact')}</span>${warning}</div>
-              </div>
-              <button
-                type="button"
-                data-queue-place="${esc(item.place_id)}"
-                data-queue-channel="${esc(channel)}"
-                ${blocked ? 'disabled' : ''}
-                class="shrink-0 rounded-md border border-[var(--line)] px-3 py-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
-              >${item.already_queued ? 'Queued' : item.suppressed ? 'Suppressed' : `Queue ${esc(channel)}`}</button>
-            </div>
-          </div>`;
-      }).join('') : '<div class="p-5 text-sm text-[var(--muted)]">No eligible candidates.</div>';
-
-      document.querySelectorAll<HTMLInputElement>('[data-select-place]').forEach((box) => {
-        box.addEventListener('change', () => {
-          const id = box.dataset.selectPlace || '';
-          if (box.checked) selectedPlaces.add(id); else selectedPlaces.delete(id);
-          updateSelectionUi();
-        });
-      });
-      updateSelectionUi();
-
-      document.querySelectorAll<HTMLButtonElement>('[data-queue-place]').forEach((button) => {
-        button.addEventListener('click', async () => {
-          const placeId = button.dataset.queuePlace;
-          const channel = button.dataset.queueChannel;
-          if (!placeId || !channel || channel === 'null') return;
-          button.disabled = true;
-          try {
-            await api(`/api/outreach/${encodeURIComponent(placeId)}`, {
-              method: 'POST', body: JSON.stringify({ channel }),
-            });
-            await loadAll();
-          } catch (error) {
-            showError(error);
-            button.disabled = false;
-          }
-        });
-      });
-    }
-
-    function renderQueue(items: QueueItem[]) {
-      queueItems = items;
-      el('#metric-queued').textContent = String(items.filter((i) => ['queued', 'researching', 'review_required'].includes(i.status)).length);
-      el('#metric-ready').textContent = String(items.filter((i) => i.status === 'draft_ready' || i.status === 'approved').length);
-      el('#metric-contacted').textContent = String(items.filter((i) => i.status === 'contacted' || i.status === 'replied').length);
-      el('#queue-list').innerHTML = items.length ? items.map((item) => `
-        <div data-queue-row class="flex items-start gap-3 px-5 hover:bg-[var(--surface-muted)]">
-        <input type="checkbox" class="mt-6 shrink-0" data-select-item="${esc(item.id)}" ${selectedItems.has(item.id) ? 'checked' : ''} />
-        <button type="button" data-edit-id="${esc(item.id)}" class="block w-full py-5 text-left">
-          <div class="flex items-center justify-between gap-3">
-            <div class="font-medium">${esc(item.name)}</div>
-            <span class="rounded-full bg-[var(--surface-muted)] px-2 py-1 text-[11px] font-medium uppercase">${esc(statusLabel(item.status))}</span>
-          </div>
-          <div class="mt-1 text-xs text-[var(--muted)]">${esc(item.channel)} · ${esc(item.to_address)} · verification ${esc(item.verification_status)}</div>
-          ${item.status === 'no_outreach_finding' ? '<div class="mt-1 text-xs font-medium text-amber-700">No approved client-facing finding after live verification</div>' : ''}
-          ${item.gmail_draft_id ? '<div class="mt-1 text-xs font-medium text-emerald-700">Gmail draft created</div>' : ''}
-        </button>
-        </div>`).join('') : '<div class="p-5 text-sm text-[var(--muted)]">Queue is empty.</div>';
-
-      document.querySelectorAll<HTMLButtonElement>('[data-edit-id]').forEach((button) => {
-        button.addEventListener('click', () => openEditor(button.dataset.editId || ''));
-      });
-      document.querySelectorAll<HTMLInputElement>('[data-select-item]').forEach((box) => {
-        box.addEventListener('change', () => {
-          const id = box.dataset.selectItem || '';
-          if (box.checked) selectedItems.add(id); else selectedItems.delete(id);
-          updateSelectionUi();
-        });
-      });
-      updateSelectionUi();
-    }
-
-    function openEditor(id: string) {
-      const item = queueItems.find((entry) => entry.id === id);
-      if (!item) return;
-      const noFinding = item.status === 'no_outreach_finding';
-      el('#editor-card').classList.remove('hidden');
-      el('#editor-title').textContent = noFinding ? 'Outreach verification' : 'Draft review';
-      el('#editor-name').textContent = [item.name, item.city].filter(Boolean).join(' · ');
-      el('#editor-channel').textContent = item.channel;
-      el<HTMLInputElement>('#editor-id').value = item.id;
-      el<HTMLInputElement>('#editor-version').value = String(item.version);
-      el<HTMLInputElement>('#editor-to').value = item.to_address || '';
-      el<HTMLInputElement>('#editor-subject').value = item.subject || '';
-      el<HTMLTextAreaElement>('#editor-body').value = item.body || '';
-      el<HTMLSelectElement>('#editor-verification').value = item.verification_status;
-      el<HTMLSelectElement>('#editor-status').value = item.status;
-      el<HTMLTextAreaElement>('#editor-verification-note').value = item.verification_note || '';
-      el('#editor-error').classList.add('hidden');
-
-      const generated = item.draft_generated_at
-        ? `Generated ${new Date(item.draft_generated_at).toLocaleString()}${item.generation_model ? ` · ${item.generation_model}` : ''}`
-        : 'No AI draft generated.';
-      const gmail = item.gmail_draft_created_at
-        ? `Gmail draft created ${new Date(item.gmail_draft_created_at).toLocaleString()}`
-        : 'No Gmail draft created.';
-      el('#editor-meta').textContent = `${generated} · ${gmail}`;
-
-      const generateButton = el<HTMLButtonElement>('#generate-draft');
-      generateButton.textContent = noFinding ? 'Re-check for outreach finding' : 'Generate verified draft';
-      generateButton.disabled = !integrations.openrouter_configured || item.channel !== 'email' || Boolean(item.gmail_draft_id);
-
-      const gmailButton = el<HTMLButtonElement>('#create-gmail-draft');
-      gmailButton.disabled = !integrations.gmail_configured
-        || item.channel !== 'email'
-        || Boolean(item.gmail_draft_id)
-        || !['draft_ready', 'approved'].includes(item.status)
-        || !['verified', 'not_required'].includes(item.verification_status)
-        || !item.subject
-        || !item.body;
-
-      el('#draft-action-note').textContent = item.gmail_draft_id
-        ? 'A Gmail draft already exists. Content is locked here to prevent divergence from Gmail.'
-        : item.channel !== 'email'
-          ? 'AI generation and Gmail draft creation are email-only. Phone leads remain in the call queue.'
-          : noFinding
-            ? 'Live verification found no approved client-facing issue to use in cold outreach. No email was generated. Re-check later if the prospect site changes.'
-            : 'Generate uses a conservative live claim verifier. Review the result, save it as Draft ready, then create the Gmail draft.';
-
-      const gmailLocked = Boolean(item.gmail_draft_id);
-      el<HTMLInputElement>('#editor-to').disabled = gmailLocked;
-      el<HTMLInputElement>('#editor-subject').disabled = gmailLocked || noFinding;
-      el<HTMLTextAreaElement>('#editor-body').disabled = gmailLocked || noFinding;
-      el('#editor-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    function editorError(error: unknown) {
-      const box = el('#editor-error');
-      box.textContent = error instanceof Error ? error.message : 'Outreach action failed.';
-      box.classList.remove('hidden');
-    }
+    const rowKey = (row: Row): string => row.id || row.place_id;
 
     function showError(error: unknown) {
-      const box = el('#outreach-error');
-      box.textContent = error instanceof Error ? error.message : 'Outreach request failed.';
+      const box = el('#page-error');
+      box.textContent = error instanceof Error ? error.message : 'Request failed.';
       box.classList.remove('hidden');
     }
 
-    async function loadAll() {
-      el('#outreach-error').classList.add('hidden');
-      const [integrationData, candidates, queue] = await Promise.all([
-        api('/api/outreach/integrations'),
-        api('/api/outreach/candidates?limit=100'),
-        api('/api/outreach'),
-      ]);
-      renderIntegrations(integrationData as Integrations);
-      renderCandidates(candidates.items as Candidate[]);
-      renderQueue(queue.items as QueueItem[]);
+    function showNote(text: string) {
+      const box = el('#page-note');
+      box.textContent = text;
+      box.classList.toggle('hidden', !text);
     }
 
-    el('#refresh-outreach').addEventListener('click', () => loadAll().catch(showError));
+    function queryString(): string {
+      const query = new URLSearchParams({ stage: state.stage, page: String(state.page) });
+      if (state.q) query.set('q', state.q);
+      if (state.vertical) query.set('vertical', state.vertical);
+      if (state.market) query.set('market', state.market);
+      query.set('qualified', String(state.qualifiedOnly));
+      return query.toString();
+    }
 
-    el<HTMLButtonElement>('#generate-draft').addEventListener('click', async () => {
-      const itemId = el<HTMLInputElement>('#editor-id').value;
-      const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
-      const button = el<HTMLButtonElement>('#generate-draft');
+    function renderTabs(counts: Record<string, number>) {
+      document.querySelectorAll<HTMLElement>('[data-count]').forEach((node) => {
+        node.textContent = String(counts[node.dataset.count || ''] ?? 0);
+      });
+      document.querySelectorAll<HTMLButtonElement>('[data-stage]').forEach((button) => {
+        const active = button.dataset.stage === state.stage;
+        button.classList.toggle('border-[var(--dark)]', active);
+        button.classList.toggle('ring-1', active);
+        button.classList.toggle('ring-[var(--dark)]', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+    }
+
+    function renderOptions(select: HTMLSelectElement, values: string[], current: string, format: (v: string) => string) {
+      const first = select.options[0]?.outerHTML ?? '';
+      select.innerHTML = first + values.map((v) => `<option value="${esc(v)}">${esc(format(v))}</option>`).join('');
+      select.value = current;
+    }
+
+    function whenFor(row: Row): string {
+      if (state.stage === 'in_gmail') return shortDate(row.gmail_draft_created_at);
+      if (state.stage === 'contacted') {
+        return shortDate(row.contacted_at) + (row.gmail_draft_left_at ? ' · left Gmail' : '');
+      }
+      return shortDate(row.updated_at);
+    }
+
+    function actionFor(row: Row): string {
+      if (row.stage === 'to_prep') return `<button type="button" data-prep="${esc(row.place_id)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Prep</button>`;
+      if (row.stage === 'verify') return `<button type="button" data-site-ok="${esc(row.place_id)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Site is OK</button>`;
+      if (row.kind === 'candidate') return `<a href="/prospects/${encodeURIComponent(row.place_id)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Open</a>`;
+      if (row.stage === 'in_gmail') return `<a href="${esc(gmailDraftUrl(row.gmail_message_id))}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Open in Gmail</a>`;
+      return '';
+    }
+
+    function renderRows() {
+      const body = el('#rows');
+      body.innerHTML = rows.map((row) => `
+        <tr class="${row.kind === 'queue' ? 'cursor-pointer ' : ''}align-top hover:bg-[var(--surface-muted)]/50" ${row.id ? `data-open="${esc(row.id)}"` : ''}>
+          <td class="px-4 py-3"><input type="checkbox" data-select="${esc(rowKey(row))}" aria-label="Select ${esc(row.name)}" ${selected.has(rowKey(row)) ? 'checked' : ''} /></td>
+          <td class="max-w-xs px-3 py-3">
+            <a href="/prospects/${encodeURIComponent(row.place_id)}" class="font-medium hover:underline">${esc(row.name)}</a>
+            <div class="mt-0.5 text-xs text-[var(--muted)]">${esc([row.city, row.vertical?.replaceAll('_', ' ')].filter(Boolean).join(' · '))}</div>
+          </td>
+          <td class="px-3 py-3 text-xs">${esc(row.email || row.phone || '—')}</td>
+          <td class="whitespace-nowrap px-3 py-3 text-xs"><span class="font-semibold">${esc(row.tier ?? '—')}</span> · ${esc(row.total_score ?? '—')}</td>
+          <td class="max-w-sm px-3 py-3 text-xs leading-5">${esc(row.next_step)}</td>
+          <td class="whitespace-nowrap px-3 py-3 text-xs text-[var(--muted)]">${esc(whenFor(row))}</td>
+          <td class="whitespace-nowrap px-4 py-3 text-right">${actionFor(row)}</td>
+        </tr>`).join('');
+      el('#empty').classList.toggle('hidden', rows.length > 0);
+      el('#when-heading').textContent = state.stage === 'in_gmail' ? 'Draft created'
+        : state.stage === 'contacted' ? 'Contacted' : 'Updated';
+    }
+
+    function renderSelection() {
+      el('#selected-count').textContent = `${selected.size} selected`;
+      const canPrep = PREP_STAGES.has(state.stage);
+      const canStatus = STATUS_STAGES.has(state.stage);
+      el('#bulk-prep').classList.toggle('hidden', !canPrep);
+      el('#bulk-status-group').classList.toggle('hidden', !canStatus);
+      el('#bulk-status-group').classList.toggle('flex', canStatus);
+      el<HTMLButtonElement>('#bulk-prep').disabled = selected.size === 0;
+      el<HTMLButtonElement>('#bulk-apply').disabled = selected.size === 0
+        || !rows.some((r) => r.id && selected.has(rowKey(r)));
+      el<HTMLInputElement>('#select-all').checked = rows.length > 0 && rows.every((r) => selected.has(rowKey(r)));
+    }
+
+    async function loadBoard() {
+      el('#page-error').classList.add('hidden');
+      history.replaceState(null, '', `/outreach?${queryString()}`);
+      const query = new URLSearchParams({
+        stage: state.stage,
+        page: String(state.page),
+        qualified_only: String(state.qualifiedOnly),
+      });
+      if (state.q) query.set('q', state.q);
+      if (state.vertical) query.set('vertical', state.vertical);
+      if (state.market) query.set('market', state.market);
+      const data = await api(`/api/outreach/board?${query}`) as Board;
+      rows = data.items;
+      [...selected].forEach((key) => { if (!rows.some((r) => rowKey(r) === key)) selected.delete(key); });
+      renderTabs(data.counts);
+      renderRows();
+      renderSelection();
+      renderOptions(el<HTMLSelectElement>('#filter-vertical'), data.filters.verticals, state.vertical, (v) => v.replaceAll('_', ' '));
+      renderOptions(el<HTMLSelectElement>('#filter-market'), data.filters.markets, state.market, (v) => v.replace(/, USA$/, ''));
+      el<HTMLInputElement>('#filter-qualified').disabled = state.stage !== 'to_prep';
+      el('#page-label').textContent = `${data.pagination.total.toLocaleString()} in this stage · page ${data.pagination.page} of ${Math.max(data.pagination.total_pages, 1)}`;
+      el<HTMLButtonElement>('#prev').disabled = data.pagination.page <= 1;
+      el<HTMLButtonElement>('#next').disabled = data.pagination.page >= data.pagination.total_pages;
+    }
+
+    async function syncGmail(manual: boolean) {
+      if (!gmailConnected) return;
+      const button = el<HTMLButtonElement>('#sync-gmail');
       button.disabled = true;
-      el('#editor-error').classList.add('hidden');
       try {
-        await api(`/api/outreach/items/${encodeURIComponent(itemId)}/generate`, {
-          method: 'POST',
-          body: JSON.stringify({ expected_version: expectedVersion }),
-        });
-        await loadAll();
-        openEditor(itemId);
+        const result = await api('/api/outreach/gmail/sync', { method: 'POST' });
+        sessionStorage.setItem(SYNC_KEY, String(Date.now()));
+        if (result.moved_to_contacted) {
+          showNote(`${result.moved_to_contacted} draft${result.moved_to_contacted === 1 ? ' has' : 's have'} left Gmail (sent or deleted), so ${result.moved_to_contacted === 1 ? 'it moved' : 'they moved'} to Contacted.`);
+          await loadBoard();
+        } else if (manual) {
+          showNote(`Checked ${result.checked} draft${result.checked === 1 ? '' : 's'}. Nothing has left Gmail.`);
+        }
       } catch (error) {
-        editorError(error);
+        if (manual) showError(error);
+      } finally {
         button.disabled = false;
       }
-    });
+    }
 
-    el<HTMLButtonElement>('#create-gmail-draft').addEventListener('click', async () => {
-      const itemId = el<HTMLInputElement>('#editor-id').value;
-      const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
-      const button = el<HTMLButtonElement>('#create-gmail-draft');
-      button.disabled = true;
-      el('#editor-error').classList.add('hidden');
-      try {
-        await api(`/api/outreach/items/${encodeURIComponent(itemId)}/gmail-draft`, {
-          method: 'POST',
-          body: JSON.stringify({ expected_version: expectedVersion }),
-        });
-        await loadAll();
-        openEditor(itemId);
-      } catch (error) {
-        editorError(error);
-        button.disabled = false;
-      }
-    });
+    function closeDrawer() {
+      el('#drawer').classList.add('hidden');
+      el('#drawer-scrim').classList.add('hidden');
+    }
 
-    el<HTMLFormElement>('#outreach-editor').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const itemId = el<HTMLInputElement>('#editor-id').value;
-      const expectedVersion = Number(el<HTMLInputElement>('#editor-version').value);
-      try {
-        await api(`/api/outreach/items/${encodeURIComponent(itemId)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            expected_version: expectedVersion,
-            to_address: el<HTMLInputElement>('#editor-to').value || null,
-            subject: el<HTMLInputElement>('#editor-subject').value || null,
-            body: el<HTMLTextAreaElement>('#editor-body').value || null,
-            verification_status: el<HTMLSelectElement>('#editor-verification').value,
-            verification_note: el<HTMLTextAreaElement>('#editor-verification-note').value || null,
-            status: el<HTMLSelectElement>('#editor-status').value,
-          }),
-        });
-        await loadAll();
-        openEditor(itemId);
-      } catch (error) {
-        editorError(error);
-      }
-    });
-
-    el<HTMLInputElement>('#candidate-select-all').addEventListener('change', (event) => {
-      const on = (event.target as HTMLInputElement).checked;
-      document.querySelectorAll<HTMLInputElement>('[data-select-place]:not(:disabled)').forEach((box) => {
-        box.checked = on;
-        const id = box.dataset.selectPlace || '';
-        if (on) selectedPlaces.add(id); else selectedPlaces.delete(id);
-      });
-      updateSelectionUi();
-    });
-
-    el<HTMLInputElement>('#queue-select-all').addEventListener('change', (event) => {
-      const on = (event.target as HTMLInputElement).checked;
-      document.querySelectorAll<HTMLInputElement>('[data-select-item]').forEach((box) => {
-        if (box.closest('[data-queue-row]')?.classList.contains('hidden')) return;
-        box.checked = on;
-        const id = box.dataset.selectItem || '';
-        if (on) selectedItems.add(id); else selectedItems.delete(id);
-      });
-      updateSelectionUi();
-    });
-
-    el<HTMLButtonElement>('#fast-track').addEventListener('click', async () => {
-      const ids = [...selectedPlaces];
-      if (!ids.length) return;
-      const button = el<HTMLButtonElement>('#fast-track');
-      const box = el('#fast-track-progress');
-      button.disabled = true;
+    function drawerError(error: unknown) {
+      const box = el('#draft-error');
+      box.textContent = error instanceof Error ? error.message : 'That didn\'t work.';
       box.classList.remove('hidden');
-      const names = new Map([...document.querySelectorAll<HTMLInputElement>('[data-select-place]')]
-        .map((b) => [b.dataset.selectPlace || '', b.dataset.name || b.dataset.selectPlace || '']));
+    }
+
+    function renderDrawer(item: Item) {
+      const name = el<HTMLAnchorElement>('#drawer-name');
+      name.textContent = item.name || 'Prospect';
+      name.href = `/prospects/${encodeURIComponent(item.place_id)}`;
+      el('#drawer-next').textContent = `Next: ${item.next_step}`;
+      el<HTMLInputElement>('#draft-id').value = item.id;
+      el<HTMLInputElement>('#draft-version').value = String(item.version);
+      el<HTMLInputElement>('#draft-to').value = item.to_address || '';
+      el<HTMLInputElement>('#draft-subject').value = item.subject || '';
+      el<HTMLTextAreaElement>('#draft-body').value = item.body || '';
+      el<HTMLSelectElement>('#draft-status').value = item.status;
+      el<HTMLSelectElement>('#draft-verification').value = item.verification_status;
+      el('#draft-error').classList.add('hidden');
+
+      const generate = el<HTMLButtonElement>('#draft-generate');
+      generate.textContent = item.body ? 'Regenerate draft' : 'Generate draft';
+      generate.disabled = item.channel !== 'email' || !['review', 'attention', 'in_gmail'].includes(item.stage);
+
+      const gmail = el<HTMLButtonElement>('#draft-gmail');
+      gmail.disabled = Boolean(item.gmail_block_reason);
+      gmail.textContent = item.gmail_draft_id ? 'Gmail draft created' : 'Create Gmail draft';
+
+      const open = el<HTMLAnchorElement>('#draft-open-gmail');
+      open.classList.toggle('hidden', !item.gmail_draft_id || item.stage !== 'in_gmail');
+      open.classList.toggle('block', Boolean(item.gmail_draft_id) && item.stage === 'in_gmail');
+      open.href = gmailDraftUrl(item.gmail_message_id);
+
+      const reason = el('#draft-reason');
+      const showReason = Boolean(item.gmail_block_reason) && !item.gmail_draft_id;
+      reason.textContent = item.gmail_block_reason || '';
+      reason.classList.toggle('hidden', !showReason);
+
+      el('#draft-meta').textContent = [
+        item.draft_generated_at ? `Drafted ${new Date(item.draft_generated_at).toLocaleString()}` : '',
+        item.gmail_draft_created_at ? `Gmail draft ${new Date(item.gmail_draft_created_at).toLocaleString()}` : '',
+        item.gmail_draft_left_at ? 'Left Gmail drafts (sent or deleted)' : '',
+        item.contacted_at ? `Contacted ${new Date(item.contacted_at).toLocaleDateString()}` : '',
+        item.verification_note || '',
+      ].filter(Boolean).join(' · ');
+    }
+
+    async function openDrawer(id: string) {
+      try {
+        const item = await api(`/api/outreach/items/${encodeURIComponent(id)}`) as Item;
+        renderDrawer(item);
+        el('#drawer').classList.remove('hidden');
+        el('#drawer-scrim').classList.remove('hidden');
+      } catch (error) {
+        showError(error);
+      }
+    }
+
+    async function refreshDrawer(id: string) {
+      renderDrawer(await api(`/api/outreach/items/${encodeURIComponent(id)}`) as Item);
+      await loadBoard();
+    }
+
+    async function prepare(placeIds: string[]) {
+      const box = el('#bulk-result');
+      box.className = 'border-b border-[var(--line)] px-4 py-3 text-xs leading-5';
+      const names = new Map(rows.map((r) => [r.place_id, r.name || r.place_id]));
       const lines: string[] = [];
       let done = 0;
-      for (const placeId of ids) {
-        box.innerHTML = `Working on ${done + 1} of ${ids.length}: ${esc(names.get(placeId))}…<br>${lines.join('<br>')}`;
+      for (const placeId of placeIds) {
+        box.innerHTML = `Working on ${done + 1} of ${placeIds.length}: ${esc(names.get(placeId))}… Keep this page open.<br>${lines.join('<br>')}`;
         try {
-          const r = await api(`/api/outreach/fast-track/${encodeURIComponent(placeId)}`, {
+          const result = await api(`/api/outreach/fast-track/${encodeURIComponent(placeId)}`, {
             method: 'POST', body: JSON.stringify({ gmail: true }),
           });
-          lines.push(r.ok
-            ? `<span class="text-emerald-700">✓ ${esc(names.get(placeId))}: Gmail draft ready</span>`
-            : `<span class="text-red-700">✗ ${esc(names.get(placeId))}: stopped at ${esc(STEP_LABELS[r.failed_step] || r.failed_step)}: ${esc(r.detail)}</span>`);
-          if (r.ok) selectedPlaces.delete(placeId);
+          lines.push(result.ok
+            ? `<span class="text-emerald-700">✓ ${esc(names.get(placeId))}: in Gmail</span>`
+            : `<span class="text-red-700">✗ ${esc(names.get(placeId))}: stopped at ${esc(STEP_LABELS[result.failed_step] || result.failed_step)}: ${esc(result.detail)}</span>`);
+          if (result.ok) selected.delete(placeId);
         } catch (error) {
           lines.push(`<span class="text-red-700">✗ ${esc(names.get(placeId))}: ${esc(error instanceof Error ? error.message : error)}</span>`);
         }
         done += 1;
       }
-      box.innerHTML = `Finished ${done} of ${ids.length}. Review the drafts in Gmail before sending.<br>${lines.join('<br>')}`;
-      await loadAll().catch(showError);
+      box.innerHTML = `Finished ${done} of ${placeIds.length}. Review the drafts in Gmail before sending.<br>${lines.join('<br>')}`;
+      await loadBoard();
+    }
+
+    el('#stage-tabs').addEventListener('click', (event) => {
+      const button = (event.target as Element).closest<HTMLButtonElement>('[data-stage]');
+      if (!button?.dataset.stage) return;
+      state.stage = button.dataset.stage;
+      state.page = 1;
+      selected.clear();
+      el('#bulk-result').classList.add('hidden');
+      loadBoard().catch(showError);
     });
 
-    el<HTMLButtonElement>('#bulk-status-apply').addEventListener('click', async () => {
-      const ids = [...selectedItems];
+    el<HTMLInputElement>('#filter-q').addEventListener('input', (event) => {
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => {
+        state.q = (event.target as HTMLInputElement).value.trim();
+        state.page = 1;
+        loadBoard().catch(showError);
+      }, 250);
+    });
+    el<HTMLSelectElement>('#filter-vertical').addEventListener('change', (event) => {
+      state.vertical = (event.target as HTMLSelectElement).value;
+      state.page = 1;
+      loadBoard().catch(showError);
+    });
+    el<HTMLSelectElement>('#filter-market').addEventListener('change', (event) => {
+      state.market = (event.target as HTMLSelectElement).value;
+      state.page = 1;
+      loadBoard().catch(showError);
+    });
+    el<HTMLInputElement>('#filter-qualified').addEventListener('change', (event) => {
+      state.qualifiedOnly = (event.target as HTMLInputElement).checked;
+      state.page = 1;
+      loadBoard().catch(showError);
+    });
+
+    el('#rows').addEventListener('change', (event) => {
+      const box = event.target as HTMLInputElement;
+      const key = box.dataset.select;
+      if (!key) return;
+      if (box.checked) selected.add(key); else selected.delete(key);
+      renderSelection();
+    });
+
+    el('#rows').addEventListener('click', (event) => {
+      const target = event.target as Element;
+      if (target.closest('[data-select]') || target.closest('a')) return;
+      const prep = target.closest<HTMLButtonElement>('[data-prep]');
+      if (prep?.dataset.prep) {
+        prep.disabled = true;
+        prepare([prep.dataset.prep]).catch(showError);
+        return;
+      }
+      const siteOk = target.closest<HTMLButtonElement>('[data-site-ok]');
+      if (siteOk?.dataset.siteOk) {
+        siteOk.disabled = true;
+        api(`/api/prospects/${encodeURIComponent(siteOk.dataset.siteOk)}/contact`, {
+          method: 'POST', body: JSON.stringify({ site_checked: true }),
+        }).then(loadBoard).catch(showError);
+        return;
+      }
+      const row = target.closest<HTMLElement>('[data-open]');
+      if (row?.dataset.open) openDrawer(row.dataset.open);
+    });
+
+    el<HTMLInputElement>('#select-all').addEventListener('change', (event) => {
+      const on = (event.target as HTMLInputElement).checked;
+      rows.forEach((row) => { if (on) selected.add(rowKey(row)); else selected.delete(rowKey(row)); });
+      renderRows();
+      renderSelection();
+    });
+
+    el<HTMLButtonElement>('#bulk-prep').addEventListener('click', () => {
+      const placeIds = rows.filter((r) => selected.has(rowKey(r))).map((r) => r.place_id);
+      if (placeIds.length) prepare(placeIds).catch(showError);
+    });
+
+    el<HTMLButtonElement>('#bulk-apply').addEventListener('click', async () => {
+      const ids = rows.filter((r) => r.id && selected.has(rowKey(r))).map((r) => r.id as string);
       if (!ids.length) return;
       const status = el<HTMLSelectElement>('#bulk-status').value;
-      const button = el<HTMLButtonElement>('#bulk-status-apply');
-      const box = el('#bulk-status-result');
-      button.disabled = true;
+      const box = el('#bulk-result');
       try {
-        const r = await api('/api/outreach/bulk/status', {
-          method: 'POST', body: JSON.stringify({ ids, status }),
-        });
-        const failed = (r.results as { id: string; ok: boolean; detail?: string }[]).filter((x) => !x.ok);
-        box.className = `border-b border-[var(--line)] px-5 py-3 text-xs leading-5 ${failed.length ? 'text-red-700' : 'text-emerald-700'}`;
-        box.innerHTML = `Updated ${r.updated} of ${ids.length} to ${esc(statusLabel(status))}.`
-          + (failed.length ? '<br>' + failed.map((x) => `${esc(queueItems.find((q) => q.id === x.id)?.name || x.id)}: ${esc(x.detail)}`).join('<br>') : '');
-        selectedItems.clear();
-        await loadAll();
+        const result = await api('/api/outreach/bulk/status', { method: 'POST', body: JSON.stringify({ ids, status }) });
+        const failed = (result.results as { id: string; ok: boolean; detail?: string }[]).filter((r) => !r.ok);
+        box.className = `border-b border-[var(--line)] px-4 py-3 text-xs leading-5 ${failed.length ? 'text-red-700' : 'text-emerald-700'}`;
+        box.innerHTML = `Updated ${result.updated} of ${ids.length}.`
+          + (failed.length ? '<br>' + failed.map((f) => `${esc(rows.find((r) => r.id === f.id)?.name || f.id)}: ${esc(f.detail)}`).join('<br>') : '');
+        selected.clear();
+        await loadBoard();
       } catch (error) {
         showError(error);
-      } finally {
-        updateSelectionUi();
       }
     });
 
-    loadAll().catch(showError);
+    el('#sync-gmail').addEventListener('click', () => { syncGmail(true); });
+    el<HTMLButtonElement>('#prev').addEventListener('click', () => { state.page -= 1; loadBoard().catch(showError); });
+    el<HTMLButtonElement>('#next').addEventListener('click', () => { state.page += 1; loadBoard().catch(showError); });
+    el('#drawer-close').addEventListener('click', closeDrawer);
+    el('#drawer-scrim').addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDrawer(); });
+
+    const draftId = (): string => el<HTMLInputElement>('#draft-id').value;
+    const draftVersion = (): number => Number(el<HTMLInputElement>('#draft-version').value);
+
+    el<HTMLButtonElement>('#draft-generate').addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      el('#draft-error').classList.add('hidden');
+      try {
+        await api(`/api/outreach/items/${encodeURIComponent(draftId())}/regenerate-synced`, {
+          method: 'POST', body: JSON.stringify({ expected_version: draftVersion() }),
+        });
+        await refreshDrawer(draftId());
+      } catch (error) {
+        drawerError(error);
+        button.disabled = false;
+      }
+    });
+
+    el<HTMLButtonElement>('#draft-gmail').addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      el('#draft-error').classList.add('hidden');
+      try {
+        await api(`/api/outreach/items/${encodeURIComponent(draftId())}/review-gmail-draft`, {
+          method: 'POST',
+          body: JSON.stringify({
+            expected_version: draftVersion(),
+            to_address: el<HTMLInputElement>('#draft-to').value,
+            subject: el<HTMLInputElement>('#draft-subject').value,
+            body: el<HTMLTextAreaElement>('#draft-body').value,
+          }),
+        });
+        await refreshDrawer(draftId());
+      } catch (error) {
+        drawerError(error);
+        button.disabled = false;
+      }
+    });
+
+    el<HTMLFormElement>('#draft-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      el('#draft-error').classList.add('hidden');
+      try {
+        await api(`/api/outreach/items/${encodeURIComponent(draftId())}/save-synced`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            expected_version: draftVersion(),
+            to_address: el<HTMLInputElement>('#draft-to').value || null,
+            subject: el<HTMLInputElement>('#draft-subject').value || null,
+            body: el<HTMLTextAreaElement>('#draft-body').value || null,
+            status: el<HTMLSelectElement>('#draft-status').value,
+            verification_status: el<HTMLSelectElement>('#draft-verification').value,
+          }),
+        });
+        await refreshDrawer(draftId());
+      } catch (error) {
+        drawerError(error);
+      }
+    });
+
+    async function init() {
+      el<HTMLInputElement>('#filter-q').value = state.q;
+      el<HTMLInputElement>('#filter-qualified').checked = state.qualifiedOnly;
+      const integrations = await api('/api/outreach/integrations');
+      gmailConnected = Boolean(integrations.gmail_configured);
+      el('#gmail-status').textContent = gmailConnected ? `Gmail · ${integrations.gmail_sender_email || 'connected'}` : 'Gmail not connected';
+      el<HTMLButtonElement>('#sync-gmail').disabled = !gmailConnected;
+      await loadBoard();
+      let lastSync = 0;
+      try { lastSync = Number(sessionStorage.getItem(SYNC_KEY) || 0); } catch { lastSync = 0; }
+      if (Date.now() - lastSync > SYNC_EVERY_MS) await syncGmail(false);
+    }
+
+    init().catch(showError);
   </script>
 </AppLayout>

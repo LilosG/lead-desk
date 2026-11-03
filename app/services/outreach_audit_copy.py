@@ -21,11 +21,12 @@ from typing import Any
 
 # Order in which a finding makes the strongest opening line.
 LEAD_PRIORITY = [
-    "website_not_on_gbp", "broken_profile_link", "no_website", "psi_mobile_critical", "no_reviews",
-    "reviews_bottom_quartile", "no_ssl", "psi_mobile_poor", "reviews_below_median",
-    "no_review_replies", "no_service_pages", "no_hours", "no_photos",
-    "no_services_listed", "no_title", "no_city_pages", "no_localbusiness_schema",
-    "no_business_description", "no_gbp_link",
+    "noindex_homepage", "website_not_on_gbp", "broken_profile_link", "no_website",
+    "ai_crawlers_blocked", "psi_mobile_critical", "no_reviews",
+    "reviews_bottom_quartile", "no_ssl", "js_only_content", "psi_mobile_poor", "reviews_below_median",
+    "no_review_replies", "no_service_pages", "no_service_city_pages", "no_hours", "no_photos",
+    "no_services_listed", "no_title", "title_missing_location", "no_click_to_call",
+    "no_city_pages", "no_localbusiness_schema", "no_business_description", "no_gbp_link",
 ]
 
 _LEGAL_SUFFIX = re.compile(
@@ -65,6 +66,14 @@ EMAIL_PHRASES = {
     "nap_mismatch": "the phone number on your site vs. Google",
     "no_service_pages": "dedicated service pages",
     "no_city_pages": "pages for the areas you serve",
+    "noindex_homepage": "a setting that's hiding your homepage from search engines",
+    "ai_crawlers_blocked": "a setting that's blocking AI search tools from your site",
+    "js_only_content": "page text that AI search tools can't read",
+    "no_service_city_pages": "pages for your services in each town you serve",
+    "thin_service_pages": "how little your service pages say",
+    "title_missing_location": "getting your town into your homepage title",
+    "no_click_to_call": "making your phone number tappable on mobile",
+    "homepage_unclear": "saying what you do and where at the top of your homepage",
 }
 
 # For these, the report's own niche wording ("treatment pages") is better.

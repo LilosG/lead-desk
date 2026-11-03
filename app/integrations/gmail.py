@@ -213,6 +213,38 @@ class GmailDraftClient:
             message_id=str(message_id) if message_id else None,
         )
 
+    def list_draft_ids(self) -> set[str]:
+        """Every draft id currently in the mailbox. gmail.compose allows this."""
+        access_token = self._access_token()
+        self._assert_sender_account(access_token)
+        ids: set[str] = set()
+        page_token: str | None = None
+        while True:
+            params: dict[str, str | int] = {"maxResults": 500}
+            if page_token:
+                params["pageToken"] = page_token
+            try:
+                response = requests.get(
+                    GMAIL_DRAFTS_URL,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    params=params,
+                    timeout=self.timeout_seconds,
+                )
+            except requests.RequestException as exc:
+                raise GmailDraftError("Gmail draft list request failed") from exc
+            if not response.ok:
+                raise GmailDraftError(
+                    f"Gmail draft list returned {response.status_code}: {response.text[:500]}"
+                )
+            try:
+                data = response.json()
+                ids.update(str(d["id"]) for d in data.get("drafts") or [])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise GmailDraftError("Gmail returned an invalid draft list") from exc
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                return ids
+
     def find_draft_by_message_id(self, message_id_header: str) -> GmailDraftResult | None:
         """Find a previously-created draft by its RFC 5322 Message-ID."""
         access_token = self._access_token()

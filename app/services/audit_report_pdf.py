@@ -4,8 +4,10 @@ Layout, built for a business owner who opens the attachment once:
   page 1  dark cover band, an at-a-glance scorecard (Google profile, Reviews,
           Website, Mobile speed), the short version, two charts (reviews vs.
           local competitors, mobile speed meter) and the top three fixes;
-  page 2  action-plan checklist, local comparison with bars, what's working;
-  page 3+ one card per item with the key number called out, then next step.
+  page 2+ local benchmark, how the homepage looks in Google, content gaps,
+          AI search readiness and how the site is built;
+  then    action-plan checklist, what's working, and one card per item with the
+          key number called out, then next step.
 
 Older snapshots (no impact / measurements) still render; missing pieces are
 skipped rather than guessed.
@@ -393,6 +395,14 @@ def _scorecard(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     else:
         tiles.append({"area": "MOBILE SPEED", "status": "Not tested", "tone": "grey",
                       "detail": "Speed test didn't run"})
+
+    # AI search
+    ai = snapshot.get("ai_readiness") or {}
+    if ai.get("total"):
+        share = ai["passed"] / ai["total"]
+        tone = "green" if share == 1 else "amber" if share >= 0.6 else "red"
+        tiles.append({"area": "AI SEARCH", "status": f"{ai['passed']} of {ai['total']} ready",
+                      "detail": "Can AI tools read your site?", "tone": tone})
     return tiles
 
 
@@ -439,7 +449,8 @@ def _tiles_table(tiles: list[dict[str, str]], st: dict[str, ParagraphStyle]) -> 
             [
                 [Paragraph(_text(tile["area"]), st["tile_area"])],
                 [Paragraph(_text(tile["status"]), ParagraphStyle(
-                    f"ts{i}", parent=st["tile_status"], textColor=fg))],
+                    f"ts{i}", parent=st["tile_status"], textColor=fg,
+                    fontSize=11 if len(tiles) > 4 else 12.5, leading=13 if len(tiles) > 4 else 14.5))],
                 [Paragraph(_text(tile.get("detail") or ""), st["tile_detail"])],
             ],
             colWidths=[w],
@@ -447,8 +458,8 @@ def _tiles_table(tiles: list[dict[str, str]], st: dict[str, ParagraphStyle]) -> 
         inner.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), SURFACE),
             ("LINEABOVE", (0, 0), (-1, 0), 3.5, fg),
-            ("LEFTPADDING", (0, 0), (-1, -1), 9),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7 if len(tiles) > 4 else 9),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4 if len(tiles) > 4 else 6),
             ("TOPPADDING", (0, 0), (-1, 0), 9),
             ("TOPPADDING", (0, 1), (-1, -1), 1),
             ("BOTTOMPADDING", (0, -1), (-1, -1), 10),
@@ -957,6 +968,95 @@ def _gaps_section(snapshot: dict[str, Any], st: dict[str, ParagraphStyle]) -> li
     ]), Spacer(1, 18)]
 
 
+AI_STATUS = {"pass": ("Ready", "green"), "fail": ("Fix", "red"),
+             "review": ("Review", "amber"), "not_checked": ("Not checked", "grey")}
+
+
+def _ai_section(snapshot: dict[str, Any], st: dict[str, ParagraphStyle]) -> list[Flowable]:
+    ai = snapshot.get("ai_readiness") or {}
+    checks = ai.get("checks") or []
+    if not checks:
+        return []
+    rows = []
+    for check in checks:
+        word, tone = AI_STATUS.get(check.get("status"), AI_STATUS["not_checked"])
+        rows.append([
+            [Paragraph(_text(check.get("label")), st["row_title"]),
+             Paragraph(_text(check.get("detail")), st["row_text"])],
+            _pill(word, tone, st["body"]),
+        ])
+    t = Table(rows, colWidths=[CONTENT_W - 1.1 * inch, 1.1 * inch])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.5, LINE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+    ]))
+    return [KeepTogether([
+        *_section("Is your site ready for AI search?", "AI search", st),
+        Paragraph(
+            "ChatGPT, Google's AI Overviews and similar tools answer questions using what they can "
+            "read on the web. These checks show whether they can read and understand your site. "
+            "They don't show whether you're mentioned today, and no one can guarantee that.",
+            st["muted"]),
+        Spacer(1, 6),
+        t,
+    ]), Spacer(1, 18)]
+
+
+def _structure_section(snapshot: dict[str, Any], st: dict[str, ParagraphStyle]) -> list[Flowable]:
+    site = snapshot.get("site_structure") or {}
+    if not site:
+        return []
+
+    def stat(value: Any, label: str) -> list[Flowable]:
+        return [Paragraph(_text(value), st["stat"]), Paragraph(_text(label), st["stat_label"])]
+
+    stats = [stat(site.get("offering_pages") or 0, "service pages"),
+             stat(site.get("location_pages") or 0, "location pages"),
+             stat(site.get("service_city_pages") or 0, "service + town pages")]
+    if site.get("total_pages"):
+        stats.insert(0, stat(site["total_pages"], "pages in your sitemap"))
+    width = CONTENT_W / len(stats)
+    numbers = Table([stats], colWidths=[width] * len(stats))
+    numbers.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), SURFACE),
+        ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    parts: list[Flowable] = [
+        *_section("How your site is built", "Site structure", st),
+        Paragraph("Local searches are often for one service in one town. These counts show how many "
+                  "pages you have for that.", st["muted"]),
+        Spacer(1, 6),
+        numbers,
+    ]
+    examples = site.get("examples") or []
+    if examples:
+        parts += [Spacer(1, 5), Paragraph(
+            "Examples we found: " + ", ".join(_text(e) for e in examples), st["small"])]
+    samples = site.get("samples") or []
+    if samples:
+        rows = [[Paragraph(h, st["label"]) for h in ("PAGE WE READ", "WORDS", "NAMES YOUR TOWN")]]
+        for page in samples:
+            names = bool(page.get("names_location"))
+            rows.append([
+                Paragraph(_text(page.get("path")), st["row_text"]),
+                Paragraph(f"{int(page.get('words') or 0):,}", st["body"]),
+                _pill("Yes" if names else "No", "green" if names else "amber", st["body"]),
+            ])
+        t = Table(rows, colWidths=[CONTENT_W - 2.1 * inch, 0.9 * inch, 1.2 * inch], repeatRows=1)
+        t.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.5, LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("ALIGN", (2, 0), (2, -1), "RIGHT"),
+        ]))
+        parts += [Spacer(1, 8), t]
+    return [KeepTogether(parts), Spacer(1, 18)]
+
+
 # ---------------------------------------------------------------- render
 
 def render_audit_report_pdf(report: dict) -> bytes:
@@ -1059,6 +1159,8 @@ def render_audit_report_pdf(report: dict) -> bytes:
     story += _benchmark_section(snapshot, st)
     story += _snippet_section(snapshot, st)
     story += _gaps_section(snapshot, st)
+    story += _ai_section(snapshot, st)
+    story += _structure_section(snapshot, st)
 
     # Action plan --------------------------------------------------------
     if findings:

@@ -20,7 +20,8 @@ import verticals as V
 
 
 JSONB_COLUMNS = {
-    "hours_json", "raw_places_payload", "social_profiles", "raw_psi_payload", "observed"
+    "hours_json", "raw_places_payload", "social_profiles", "raw_psi_payload", "observed",
+    "site_signals", "discovery_stats",
 }
 
 
@@ -179,11 +180,11 @@ class PostgresStore:
                 )
 
     def start_run(self, geo_label: str, verticals: list, grid_points: int,
-                  dry_run: bool = False, notes: str = "") -> str:
+                  dry_run: bool = False, notes: str = "", kind: str = "sweep") -> str:
         rows = self.insert("runs", [{
             "geo_label": geo_label, "verticals": verticals,
             "grid_points": grid_points, "dry_run": dry_run, "notes": notes,
-            "status": "running", "stage": "discovery",
+            "status": "running", "stage": "discovery", "kind": kind,
         }], returning=True)
         return str(rows[0]["id"])
 
@@ -202,13 +203,14 @@ class PostgresStore:
             "psi_finished_at",
             "notes",
             "status",
+            "discovery_stats",
         }
 
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"unsupported run fields: {sorted(unknown)}")
 
-        values = {k: v for k, v in fields.items() if v is not None}
+        values = {k: self._adapt_value(k, v) for k, v in fields.items() if v is not None}
         if not values:
             return
 
@@ -403,6 +405,9 @@ class PostgresStore:
             "tier": s.tier, "headline_gap": s.headline_gap,
             "labels": list(getattr(s, "labels", []) or []),
             "market": getattr(s, "market", None),
+            "fit_score": s.fit_score,
+            "qualification": s.qualification,
+            "qualification_reasons": list(s.qualification_reasons),
         } for s in scored]
 
         inserted = self.insert("scores", score_rows, returning=True)

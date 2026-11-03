@@ -58,12 +58,17 @@ def fast_track(
         return {"place_id": place_id, "ok": False, "failed_step": step, "detail": detail,
                 "steps": steps, "item_id": (item or {}).get("id")}
 
+    # Picking up a lead that stopped partway keeps its draft (and any edits).
+    existing = outreach.repository.find_email_item(place_id)
+    resuming = bool(existing and existing.get("body"))
+
     # 1. Fresh audit report (the email is written from it and attaches it).
-    created = audits.create_default_reports([place_id])
-    result = created[0] if created else {"status": "skipped", "detail": "no result"}
-    if result.get("status") != "created":
-        return stop("audit", result.get("detail") or "no reportable findings for an audit")
-    steps.append("audit")
+    if not resuming:
+        created = audits.create_default_reports([place_id])
+        result = created[0] if created else {"status": "skipped", "detail": "no result"}
+        if result.get("status") != "created":
+            return stop("audit", result.get("detail") or "no reportable findings for an audit")
+        steps.append("audit")
 
     # 2. Queue (idempotent: returns the existing queue item if there is one).
     try:
@@ -81,20 +86,22 @@ def fast_track(
                 "detail": "Gmail draft already existed"}
 
     # 3. Generate the draft from the new audit.
-    try:
-        item = outreach.generate_draft(item["id"], expected_version=item["version"]) or item
-    except _FAILURES as exc:
-        return stop("draft", str(exc), item)
-    if item.get("status") == "no_outreach_finding" or not item.get("body"):
-        return stop("draft", "no finding strong enough to write an email about", item)
-    steps.append("draft")
+    if not resuming:
+        try:
+            item = outreach.generate_draft(item["id"], expected_version=item["version"]) or item
+        except _FAILURES as exc:
+            return stop("draft", str(exc), item)
+        if item.get("status") == "no_outreach_finding" or not item.get("body"):
+            return stop("draft", "no finding strong enough to write an email about", item)
+        steps.append("draft")
 
     # 4. Mark it ready.
-    try:
-        item = outreach.update_item(item["id"], changes={"status": "draft_ready"},
-                                    expected_version=item["version"]) or item
-    except _FAILURES as exc:
-        return stop("ready", str(exc), item)
+    if item.get("status") not in {"draft_ready", "approved"}:
+        try:
+            item = outreach.update_item(item["id"], changes={"status": "draft_ready"},
+                                        expected_version=item["version"]) or item
+        except _FAILURES as exc:
+            return stop("ready", str(exc), item)
     steps.append("ready")
 
     # 5. Put it in Gmail as a draft (never sent).
