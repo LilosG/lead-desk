@@ -48,6 +48,22 @@ def main() -> int:
     assert paged["pageToken"] == "next-token"
     assert ledger.search_calls == 2
 
+    # Google returns short pages with more still to come: 15 places then 11
+    # must not end the search.
+    short = [{"places": [{"id": "a"}] * 15, "nextPageToken": "t2"},
+             {"places": [{"id": "b"}] * 11, "nextPageToken": "t3"},
+             {"places": [{"id": "c"}] * 10}]
+    short_calls: list[dict] = []
+
+    def short_post(payload: dict) -> dict:
+        short_calls.append(payload)
+        return short.pop(0)
+
+    client._post = short_post  # type: ignore[method-assign]
+    with patch("discover.time.sleep", return_value=None):
+        assert len(list(client.text_search("electrician in Tucson"))) == 36
+    assert len(short_calls) == 3
+
     print("PASS Places paging repeats original request parameters")
     return 0
 
