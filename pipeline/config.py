@@ -68,7 +68,8 @@ COST_PER_1K = {
 }
 FREE_TIER_MONTHLY = {"essentials": 10_000, "pro": 5_000, "enterprise": 1_000}
 
-MAX_PAGES_PER_QUERY = 3      # up to 20 results a page, often fewer; Google stops at 60
+MAX_PAGES_PER_QUERY = 6      # pages run short, so reaching 60 can take more than 3
+GOOGLE_RESULT_CAP   = 60     # most places Google returns for one query
 RESULTS_PER_PAGE    = 20
 
 # ---------------------------------------------------------------------------

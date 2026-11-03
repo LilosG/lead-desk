@@ -484,7 +484,7 @@ def _search_area(
     if budget is not None and client.ledger.search_calls >= budget:
         return []
     places = [p for p in client.text_search(query, point, rectangle=rectangle) if p.get("id")]
-    cap = C.RESULTS_PER_PAGE * C.MAX_PAGES_PER_QUERY
+    cap = C.GOOGLE_RESULT_CAP
     if (
         not C.SPLIT_SATURATED_QUERIES
         or client.dry_run
