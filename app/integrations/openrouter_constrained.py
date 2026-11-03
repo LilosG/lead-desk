@@ -51,21 +51,19 @@ _FALLBACK_SUBJECTS = (
 # finding, so the frame only adds the attachment line and the close. The PDF
 # is attached to the Gmail draft automatically (OutreachService.audit_attachments).
 _FRAMES = (
-    "{claim}\n\nI've attached the audit with the details and what to fix first.\n\n{closing}",
-    "{claim}\n\nThe attached audit has the details, in the order I'd tackle them.\n\n{closing}",
-    "{claim}\n\nEverything is in the attached audit, with how to fix each one.\n\n{closing}",
-    "{claim}\n\nI put the details in a short audit, attached.\n\n{closing}",
+    "{claim}\n\nI run Lilos Growth, a local SEO and website agency. The attached audit shows what to fix first, and it's yours to keep.\n\n{closing}",
+    "{claim}\n\nI run Lilos Growth, a local SEO and website agency. The audit's attached, in the order I'd tackle it. It's yours either way.\n\n{closing}",
+    "{claim}\n\nI'm with Lilos Growth, a local SEO and website agency. The attached audit shows how to fix each item, so your team can use it as is.\n\n{closing}",
 )
 
-# Questions get replies; statements get read and archived. No meeting asks
-# with a fixed length, no "want me to send" (the audit is already attached).
+# Questions get replies; statements get read and archived. Each one is easy to
+# answer in a word. No meeting asks with a fixed length, no "want me to send"
+# (the audit is already attached).
 _CLOSINGS = (
     "Is this something you're already working on?",
-    "Is getting found on Google a priority for you right now?",
-    "Would a quick call to walk through it be useful?",
     "Is this on your list for the next few months, or not a focus right now?",
-    "Happy to walk you through it if that's useful. Is this on your radar?",
-    "If any of it is useful, just reply and I'll walk you through it.",
+    "Is getting more calls from Google a priority right now?",
+    "Would it help if I walked you through it?",
 )
 
 

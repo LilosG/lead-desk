@@ -12,7 +12,7 @@ CLAIM = CLIENT_FACING_CLAIMS["no_localbusiness_schema"]
 
 
 def test_prompt_version_advances_for_human_copy_architecture():
-    assert PROMPT_VERSION == "outreach-v11"
+    assert PROMPT_VERSION == "outreach-v12"
 
 
 def test_similarity_threshold_is_strict_enough_for_batch_diversity():

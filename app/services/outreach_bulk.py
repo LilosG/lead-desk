@@ -60,7 +60,7 @@ def fast_track(
 
     # Picking up a lead that stopped partway keeps its draft (and any edits).
     existing = outreach.repository.find_email_item(place_id)
-    resuming = bool(existing and existing.get("body"))
+    resuming = bool(existing and existing.get("body") and existing.get("claim_signal") == "audit_report")
 
     # 1. Fresh audit report (the email is written from it and attaches it).
     if not resuming:

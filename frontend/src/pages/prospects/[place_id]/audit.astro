@@ -100,7 +100,7 @@ const { place_id } = Astro.params;
         headers: { Accept: 'application/json' },
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+      if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : `API returned ${response.status}`);
 
       businessName.textContent = body.business_name;
       const options = body.options as Option[];
@@ -146,7 +146,7 @@ const { place_id } = Astro.params;
           body: JSON.stringify({ selected_signals: selected }),
         });
         const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+        if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : `API returned ${response.status}`);
         viewPdf.href = `/api/audit-reports/${encodeURIComponent(body.id)}/pdf`;
         successBox.classList.remove('hidden');
       } catch (error) {

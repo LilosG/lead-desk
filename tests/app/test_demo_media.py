@@ -114,7 +114,7 @@ def test_prompt_follows_the_niche_not_home_services():
         {"name": "Glow", "city": "Scottsdale", "state": "AZ", "primary_type": "spa", "vertical": "med_spa"},
         role="hero", direction=None,
     )
-    assert "treatment room" in prompt and "Scottsdale, AZ" in prompt
+    assert "treatment suite" in prompt and "Scottsdale, AZ" in prompt
 
 
 def test_demo_media_rejects_invalid_role_before_provider_call(tmp_path):

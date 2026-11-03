@@ -93,7 +93,8 @@ def test_fast_track_does_not_duplicate_an_existing_gmail_draft():
 def test_fast_track_resumes_without_replacing_an_existing_draft():
     outreach = FakeOutreach()
     outreach.repository.items["q1"] = {"id": "q1", "place_id": "p1", "status": "review_required",
-                                       "version": 3, "body": "Edited by hand", "gmail_draft_id": None}
+                                       "version": 3, "body": "Edited by hand", "gmail_draft_id": None,
+                                       "claim_signal": "audit_report"}
     audits = FakeAudits()
     result = fast_track(outreach, audits, "p1")
     assert result["ok"] is True

@@ -20,7 +20,8 @@ class OutreachGmailRepository:
                     select q.id::text as id, q.place_id, q.gmail_draft_id
                     from outreach_queue q
                     where q.gmail_draft_id is not null
-                      and q.status in ('draft_ready', 'approved')
+                      and q.channel = 'email'
+                      and q.status not in ('contacted', 'replied', 'archived', 'suppressed')
                       and q.gmail_draft_created_at < %s
                       and not exists (
                           select 1 from gmail_draft_operations o
@@ -46,7 +47,7 @@ class OutreachGmailRepository:
                             updated_at = now()
                         where id = %s::uuid
                           and gmail_draft_id = %s
-                          and status in ('draft_ready', 'approved')
+                          and status not in ('contacted', 'replied', 'archived', 'suppressed')
                         returning place_id
                         """,
                         (item_id, draft_id),

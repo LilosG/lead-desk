@@ -14,6 +14,7 @@ def ready_item(**changes):
     return {
         "channel": "email", "to_address": "a@b.co", "subject": "S", "body": "B",
         "verification_status": "not_required", "gmail_draft_id": None,
+        "claim_signal": "audit_report",
         "gmail_draft_pending": False, "suppressed": False, **changes,
     }
 
@@ -82,3 +83,9 @@ def test_board_endpoint_returns_every_stage_count(client):
 
 def test_board_rejects_an_unknown_stage(client):
     assert client.get("/api/outreach/board?stage=nope").status_code == 422
+
+
+def test_gmail_is_blocked_when_a_draft_has_no_audit_behind_it():
+    item = ready_item(claim_signal="no_localbusiness_schema")
+    assert "Regenerate draft" in gmail_block_reason(item, gmail_connected=True)
+    assert gmail_block_reason(ready_item(claim_signal="audit_report"), gmail_connected=True) is None

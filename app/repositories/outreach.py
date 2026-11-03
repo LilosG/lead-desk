@@ -899,7 +899,7 @@ class OutreachRepository:
 
     def find_email_item(self, place_id: str) -> dict[str, Any] | None:
         query = """
-            select id::text as id, status, body, gmail_draft_id, version
+            select id::text as id, status, body, claim_signal, gmail_draft_id, version
             from outreach_queue
             where place_id = %s and channel = 'email'
         """
