@@ -97,12 +97,16 @@ def set_manual_website(place_id: str, url: str, dsn: str | None = None,
         raise WebsiteError("prospect not found")
 
     findings = E.crawl_site({**business, "website_url": url})
-    if not findings.is_reachable:
+    # A bot filter turning the crawler away doesn't change that this is their
+    # site: keep the link, and scoring treats its contents as unknown.
+    blocked = (findings.crawl_error or "").startswith("blocked_")
+    if not findings.is_reachable and not blocked:
         raise WebsiteError(
             f"couldn't load {url} ({findings.crawl_error or findings.http_status}); "
             "check the address and try again"
         )
     findings.site_source = "manual"
+    findings.resolved_url = findings.resolved_url or url
     if with_psi:
         try:
             E.apply_psi(findings, E.run_psi(findings.resolved_url or url, C.GOOGLE_API_KEY))
@@ -115,4 +119,5 @@ def set_manual_website(place_id: str, url: str, dsn: str | None = None,
         "website_url": findings.resolved_url or url,
         "mobile_speed": findings.psi_performance,
         "title": findings.title,
+        "blocked": blocked,
     }

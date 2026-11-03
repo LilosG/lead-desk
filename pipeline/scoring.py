@@ -291,6 +291,13 @@ def score_gbp(b: dict, base: Baseline) -> tuple[int, list]:
 # ---------------------------------------------------------------------------
 # Website gaps — 40% of score
 # ---------------------------------------------------------------------------
+def _unlisted_site(name: str, w) -> Evidence:
+    return Evidence("gbp", "website_not_on_gbp", "high", UNLISTED_SITE_POINTS,
+        f"{name} has a website ({w.resolved_url}), but it isn't linked on their Google "
+        f"profile, so people on Google Maps can't get to it.",
+        {"found_url": w.resolved_url})
+
+
 def score_website(b: dict, w, base: Baseline) -> tuple[int | None, list]:
     """Website gap axis. Returns None when the site could not be audited."""
     ev: list = []
@@ -317,6 +324,8 @@ def score_website(b: dict, w, base: Baseline) -> tuple[int | None, list]:
                 "Their site blocked automated access, so it could not be audited. "
                 "Needs a manual look before outreach — do not claim it is down.",
                 {"http_status": w.http_status, "error": w.crawl_error}))
+            if getattr(w, "site_source", "gbp") == "manual":
+                ev.append(_unlisted_site(name, w))
             # Score on profile signals alone rather than guessing about the
             # website. None (not 0) so the lead isn't halved for being blocked.
             return None, ev
@@ -340,10 +349,7 @@ def score_website(b: dict, w, base: Baseline) -> tuple[int | None, list]:
         # The business HAS a site; Google's profile just doesn't link to it.
         # Never call this "no website". It's a strong, accurate opener.
         pts += UNLISTED_SITE_POINTS
-        ev.append(Evidence("gbp", "website_not_on_gbp", "high", UNLISTED_SITE_POINTS,
-            f"{name} has a website ({w.resolved_url}), but it isn't linked on their Google "
-            f"profile, so people on Google Maps can't get to it.",
-            {"found_url": w.resolved_url}))
+        ev.append(_unlisted_site(name, w))
 
     if not w.has_ssl:
         pts += 8
@@ -684,7 +690,9 @@ def qualify(b: dict, w, fit: int, evidence: list, reach: int) -> tuple[str, list
         return "franchise", ["National brand or franchise"]
     if fit < C.QUALIFY_MIN_FIT:
         return "low_fit", ["Not enough evidence yet that this is an active business"]
-    if "crawl_blocked" in signals and not emails:
+    # A site linked by hand has already had its look from a person.
+    linked_by_hand = getattr(w, "site_source", "gbp") == "manual"
+    if "crawl_blocked" in signals and not emails and not linked_by_hand:
         return "verify_first", ["The site blocked our crawler, so it needs a quick look by hand"]
     if not gaps:
         return "no_gap", ["No clear gap to pitch: the profile and site look healthy"]

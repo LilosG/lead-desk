@@ -631,3 +631,12 @@ def test_generic_link_labels_are_not_treated_as_services():
 
     row = {"offering_titles": ["Learn More ›", "Panel Upgrades", "View More →"]}
     assert offering_titles(row) == ["Panel Upgrades"]
+
+
+def test_a_bot_filter_is_not_reported_as_the_site_being_unreachable():
+    from app.services.audit_reports import _audit_coverage
+
+    blocked = _audit_coverage({}, {"is_reachable": False, "crawl_error": "blocked_403"})
+    down = _audit_coverage({}, {"is_reachable": False, "crawl_error": "http_500"})
+    assert "Website availability" not in {item["label"] for item in blocked}
+    assert "Website availability" in {item["label"] for item in down}

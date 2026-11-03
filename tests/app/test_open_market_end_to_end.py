@@ -241,6 +241,38 @@ def test_set_website_by_hand_rescores_and_audits_the_site(client, seeded_run, mo
     assert snapshot["business"]["site_on_google"] is False
 
 
+def test_a_site_that_blocks_crawlers_can_still_be_linked_by_hand(client, seeded_run, monkeypatch):
+    import enrich as E
+
+    def blocked_crawl(business, session=None):
+        return E.SiteFindings(place_id=business["place_id"], http_status=403,
+                              crawl_error="blocked_403",
+                              resolved_url=business["website_url"])
+
+    monkeypatch.setattr(E, "crawl_site", blocked_crawl)
+    monkeypatch.setattr("threading.Thread.start", lambda self: None)  # no background run in tests
+
+    response = client.post("/api/prospects/e2e-franchise/website",
+                           json={"url": "https://tucson-site.example"})
+    assert response.status_code == 200, response.text
+    assert response.json()["blocked"] is True
+
+    detail = client.get("/api/prospects/e2e-franchise").json()
+    signals = {f["signal"] for f in detail["findings"]}
+    assert {"crawl_blocked", "website_not_on_gbp"} <= signals
+    assert "no_website" not in signals and "site_down" not in signals
+    assert detail["website_audit"]["site_source"] == "manual"
+
+
+def test_a_dead_address_is_still_refused(client, seeded_run, monkeypatch):
+    import enrich as E
+
+    monkeypatch.setattr(E, "crawl_site", lambda business, session=None: E.SiteFindings(
+        place_id=business["place_id"], crawl_error="dns_failure"))
+    response = client.post("/api/prospects/e2e-franchise/website", json={"url": "https://gone.example"})
+    assert response.status_code == 422
+
+
 def test_an_email_added_by_hand_comes_first_and_regrades_the_lead(client, seeded_run):
     """A hand-found email outranks the crawl and survives into outreach."""
     with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:

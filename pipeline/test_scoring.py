@@ -306,6 +306,13 @@ checks.append(("blocked site with a good profile is verify_first, with a reason"
                S.score_lead(biz("blk", "Blocked Electric", review_count=85, photo_count=2),
                             SiteFindings(place_id="blk", crawl_error="blocked_403", http_status=403),
                             base).qualification == "verify_first"))
+hand_set = S.score_lead(biz("hnd", "Linked Electric", review_count=85, photo_count=2, website_url=None),
+                        SiteFindings(place_id="hnd", crawl_error="blocked_403", http_status=403,
+                                     site_source="manual", resolved_url="https://linked.example"), base)
+checks.append(("a blocked site linked by hand doesn't wait for another manual check",
+               hand_set.qualification == "call_first"))
+checks.append(("a blocked site linked by hand still reports the Google gap",
+               any(e.signal == "website_not_on_gbp" for e in hand_set.evidence)))
 checks.append(("franchise verdict wins over fit",
                S.score_lead(biz("frq", "Mr Rooter", review_count=200, is_franchise=True),
                             site("frq", has_localbusiness_schema=False), base).qualification == "franchise"))
