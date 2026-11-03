@@ -4,6 +4,21 @@ from uuid import UUID
 from psycopg_pool import ConnectionPool
 
 
+# A sweep merges into the shared lead file, so every earlier market is scored
+# with it. Run figures cover only the markets that sweep actually searched.
+IN_SWEPT_MARKETS = """
+    (
+        s.market is null
+        or not exists (
+            select 1 from sweep_jobs sj
+            where sj.run_id = {run_id} and cardinality(sj.cities) > 0
+        )
+        or s.market in (
+            select unnest(sj.cities) from sweep_jobs sj where sj.run_id = {run_id}
+        )
+    )
+"""
+
 RUN_SELECT = """
     select
         r.id,
@@ -50,6 +65,7 @@ RUN_SELECT = """
     from runs r
     left join scores s
       on s.run_id = r.id
+     and """ + IN_SWEPT_MARKETS.format(run_id="r.id") + """
 """
 
 
@@ -150,10 +166,11 @@ class RunRepository:
                            count(*) as count
                     from scores s
                     join v_latest_score latest on latest.place_id = s.place_id
-                    where s.run_id = %s
+                    where s.run_id = %(run_id)s
+                      and """ + IN_SWEPT_MARKETS.format(run_id="%(run_id)s") + """
                     group by 1
                     """,
-                    (run_id,),
+                    {"run_id": run_id},
                 )
                 verdicts = {r["qualification"]: r["count"] for r in cur.fetchall()}
                 cur.execute(
@@ -165,9 +182,10 @@ class RunRepository:
                         count(*) filter (where cardinality(coalesce(w.emails_found, '{}'::text[])) > 0) as with_email
                     from scores s
                     join website_enrichment w on w.place_id = s.place_id
-                    where s.run_id = %s
+                    where s.run_id = %(run_id)s
+                      and """ + IN_SWEPT_MARKETS.format(run_id="%(run_id)s") + """
                     """,
-                    (run_id,),
+                    {"run_id": run_id},
                 )
                 crawl = cur.fetchone()
         return {

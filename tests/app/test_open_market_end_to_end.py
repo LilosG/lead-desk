@@ -273,6 +273,32 @@ def test_a_dead_address_is_still_refused(client, seeded_run, monkeypatch):
     assert response.status_code == 422
 
 
+def test_run_figures_cover_only_the_markets_that_sweep_searched(client, seeded_run):
+    """Earlier markets are re-scored by a merged sweep but aren't its results."""
+    with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:
+        run_id = conn.execute(
+            "select run_id from scores where place_id = 'e2e-franchise' "
+            "order by scored_at limit 1"
+        ).fetchone()["run_id"]
+        counts = conn.execute(
+            "select count(*) as everything, count(*) filter (where market = %s) as swept "
+            "from scores where run_id = %s", (AUSTIN, run_id),
+        ).fetchone()
+        job = conn.execute(
+            "insert into sweep_jobs (run_id, verticals, cities) values (%s, %s, %s) returning id",
+            (run_id, ["dentist"], [AUSTIN]),
+        ).fetchone()["id"]
+        conn.commit()
+    assert 0 < counts["swept"] < counts["everything"]
+    try:
+        assert client.get(f"/api/runs/{run_id}").json()["businesses_scored"] == counts["swept"]
+        assert client.get(f"/api/runs/{run_id}/funnel").json()["total"] == counts["swept"]
+    finally:
+        with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+            conn.execute("delete from sweep_jobs where id = %s", (job,))
+            conn.commit()
+
+
 def test_an_email_added_by_hand_comes_first_and_regrades_the_lead(client, seeded_run):
     """A hand-found email outranks the crawl and survives into outreach."""
     with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as conn:

@@ -172,8 +172,10 @@ class PlacesClient:
             for p in places:
                 yield p
 
+            # Google's pages are often short (15, 11, 10), so only a missing
+            # token means the results have run out.
             token = data.get("nextPageToken")
-            if not token or len(places) < C.RESULTS_PER_PAGE:
+            if not token:
                 return
             payload = dict(base_payload, pageToken=token)
             time.sleep(0.6)
