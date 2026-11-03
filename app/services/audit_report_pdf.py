@@ -1013,7 +1013,8 @@ def _structure_section(snapshot: dict[str, Any], st: dict[str, ParagraphStyle]) 
     def stat(value: Any, label: str) -> list[Flowable]:
         return [Paragraph(_text(value), st["stat"]), Paragraph(_text(label), st["stat_label"])]
 
-    stats = [stat(site.get("offering_pages") or 0, "service pages"),
+    stats = [stat(site.get("offering_pages") or 0,
+                  "service page" if site.get("offering_pages") == 1 else "service pages"),
              stat(site.get("location_pages") or 0, "location pages"),
              stat(site.get("service_city_pages") or 0, "service + town pages")]
     if site.get("total_pages"):

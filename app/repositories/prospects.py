@@ -264,6 +264,15 @@ class ProspectRepository:
                 cur.execute(query, (place_id,))
                 return cur.fetchone()
 
+    def get_google_reviews(self, place_id: str) -> list[dict[str, Any]]:
+        """The reviews Google returned for this business in its last sweep."""
+        query = "select raw_places_payload -> 'reviews' as reviews from businesses where place_id = %s"
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (place_id,))
+                row = cur.fetchone()
+        return (row or {}).get("reviews") or []
+
     def get_website_audit(self, place_id: str) -> dict[str, Any] | None:
         query = """
             select

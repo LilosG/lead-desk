@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from app.services.demo_site_renderer_v3 import render_demo_site_v3
-from app.services.demo_sites import DemoSiteService
+from app.services.demo_sites import DemoSiteService, showcase_reviews
 
 
 class FakeProspectRepository:
@@ -174,3 +174,56 @@ def test_demo_options_prefill_services_and_areas():
     defaults = service.options_for_prospect("spa-place")["defaults"]
     assert defaults["services"] == ["Botox", "Dermal Fillers", "HydraFacial"]
     assert defaults["service_areas"] == ["Scottsdale"]
+
+
+PALETTE = {"ink": "#102033", "accent": "#f0b22c", "surface": "#f4f6f7"}
+
+
+def _google_review(name, rating, text, when="2026-08-14T17:02:11Z"):
+    return {
+        "rating": rating,
+        "text": {"text": text},
+        "publishTime": when,
+        "googleMapsUri": "https://www.google.com/maps/reviews/data=abc",
+        "authorAttribution": {
+            "displayName": name,
+            "uri": "https://www.google.com/maps/contrib/1",
+            "photoUri": "https://lh3.googleusercontent.com/a/1",
+        },
+    }
+
+
+def test_showcase_keeps_the_best_real_reviews_with_their_attribution():
+    picked = showcase_reviews([
+        _google_review("Low Rating", 2, "This was a disappointing visit from start to finish."),
+        _google_review("Too Short", 5, "Great!"),
+        _google_review("Older Five", 5, "Showed up on time and fixed the panel the same day.", "2025-01-01T00:00:00Z"),
+        _google_review("Newer Five", 5, "Honest pricing and clean work, would hire them again."),
+        _google_review("Four Star", 4, "Good work overall, the crew was friendly and careful."),
+        _google_review("No Text", 5, ""),
+    ])
+    assert [r["author"] for r in picked] == ["Newer Five", "Older Five", "Four Star"]
+    assert picked[0]["date"] == "August 2026"
+    assert picked[0]["author_url"] == "https://www.google.com/maps/contrib/1"
+
+
+def test_reviews_render_escaped_attributed_and_in_the_nav():
+    source = {"name": "Volt Electric", "city": "Vista", "state": "CA", "rating": 4.8, "review_count": 13,
+              "google_maps_uri": "https://maps.google.com/?cid=1",
+              "reviews": [{"author": "Ann <b>Lee</b>", "rating": 5, "text": "A <script>tag</script> and more " * 20,
+                           "date": "August 2026", "url": "https://www.google.com/maps/reviews/1"}]}
+    html = render_demo_site_v3(source=source, content={}, brand={"palette": PALETTE})
+    assert 'href="#reviews"' in html and 'id="reviews"' in html
+    assert "Ann &lt;b&gt;Lee&lt;/b&gt;" in html
+    assert "<script>tag" not in html
+    assert "Posted on Google" in html and "August 2026" in html
+    assert "Read all 13 on Google" in html
+    assert "…" in html
+
+
+def test_without_review_text_the_page_keeps_only_the_rating():
+    source = {"name": "Volt Electric", "city": "Vista", "state": "CA", "rating": 4.8, "review_count": 13}
+    html = render_demo_site_v3(source=source, content={}, brand={"palette": PALETTE})
+    assert 'href="#reviews"' not in html
+    assert 'class="review-card"' not in html
+    assert "rating-panel" in html

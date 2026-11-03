@@ -159,9 +159,11 @@ def _anchor_title(text: str) -> str | None:
     t = " ".join((text or "").split())
     if not t or len(t) > 40 or len(t.split()) > 6:
         return None
-    low = t.lower()
+    # Labels often carry an arrow or chevron ("Learn More ›").
+    low = " ".join(re.sub(r"[^a-z0-9 ]", " ", t.lower()).split())
     if low in {"services", "our services", "all services", "learn more", "read more",
-               "view all", "home", "menu", "more"}:
+               "view all", "view more", "see more", "find out more", "click here",
+               "get started", "details", "view details", "home", "menu", "more"}:
         return None
     return t
 

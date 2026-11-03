@@ -58,6 +58,42 @@ def star_string(rating: float | None) -> str:
     return "★" * full + "☆" * (5 - full)
 
 
+def _excerpt(text: str, limit: int = 280) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip(" ,.;:-") + "…"
+
+
+def _review_cards(reviews: list[dict[str, Any]]) -> list[str]:
+    """Real reviews, each credited to its author and linked back to Google."""
+    cards = []
+    for review in reviews:
+        author_raw = str(review.get("author") or "")
+        if not author_raw:
+            continue
+        author = _safe(author_raw)
+        rating = int(review.get("rating") or 5)
+        photo = (
+            f'<img src="{_safe(review["author_photo"])}" alt="" loading="lazy" referrerpolicy="no-referrer" />'
+            if review.get("author_photo") else ""
+        )
+        name = (
+            f'<a href="{_safe(review["author_url"])}" target="_blank" rel="noopener">{author}</a>'
+            if review.get("author_url") else author
+        )
+        source = (
+            f'<a href="{_safe(review["url"])}" target="_blank" rel="noopener">Posted on Google</a>'
+            if review.get("url") else "Posted on Google"
+        )
+        date = f'{_safe(review["date"])} · ' if review.get("date") else ""
+        cards.append(
+            f'''<article class="review-card"><div class="review-stars" aria-label="{rating} out of 5">{star_string(rating)}</div>
+            <p>{_safe(_excerpt(str(review.get("text") or "")))}</p>
+            <footer><span class="review-avatar">{_safe(author_raw[:1].upper())}{photo}</span><span class="review-meta"><strong>{name}</strong><small>{date}{source}</small></span></footer></article>'''
+        )
+    return cards
+
+
 def _safe(value: object) -> str:
     return escape(str(value or ""), quote=True)
 
@@ -193,7 +229,26 @@ def render_demo_site_v3(
         if maps_url else ""
     )
     reputation_section = ""
-    if rating is not None and review_count is not None:
+    review_cards = _review_cards(source.get("reviews") or [])
+    if review_cards and rating is not None and review_count is not None:
+        all_reviews = (
+            f'<a class="text-link" href="{maps_url}" target="_blank" rel="noopener">Read all {int(review_count):,} on Google →</a>'
+            if maps_url else ""
+        )
+        reputation_section = f'''<section class="reputation" id="reviews">
+          <div class="wrap">
+            <div class="reviews-head">
+              <div>
+                <div class="section-kicker">Google reviews</div>
+                <h2>What {copy["audience"]} say about {business_name}.</h2>
+              </div>
+              <div class="reviews-summary"><strong>{float(rating):.1f}</strong><div><div class="stars" aria-label="{float(rating):.1f} out of 5">{stars}</div><span>{int(review_count):,} Google reviews</span></div></div>
+            </div>
+            <div class="review-grid" style="--cols:{len(review_cards)}">{"".join(review_cards)}</div>
+            <p class="reviews-more">{all_reviews}</p>
+          </div>
+        </section>'''
+    elif rating is not None and review_count is not None:
         reputation_section = f'''<section class="reputation">
           <div class="wrap reputation-grid">
             <div>
@@ -206,6 +261,7 @@ def render_demo_site_v3(
           </div>
         </section>'''
 
+    reviews_nav = '<a href="#reviews">Reviews</a>' if review_cards else ""
     why_cards = []
     if reputation_text:
         why_cards.append(("★", f"Rated on Google", f"{reputation_text}, from real {copy['audience']}."))
@@ -277,8 +333,8 @@ def render_demo_site_v3(
   <style>
     :root{{--ink:{palette['ink']};--accent:{palette['accent']};--surface:{palette['surface']};--paper:#fff;--muted:#647078;--line:#dfe4e7;--dark:#0b1720}}
     *{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:#fff;line-height:1.55}}a{{color:inherit;text-decoration:none}}img{{display:block;max-width:100%}}.wrap{{width:min(1180px,calc(100% - 40px));margin:0 auto}}
-    .concept{{background:#08121a;color:#bac5ca;text-align:center;font-size:11px;padding:7px 14px}}
-    header{{position:absolute;z-index:10;left:0;right:0;color:#fff;padding:24px 0}}.nav{{display:flex;align-items:center;justify-content:space-between;gap:24px}}.brand{{font-size:21px;font-weight:850;letter-spacing:-.035em}}.nav-links{{display:flex;align-items:center;gap:24px;font-size:13px}}.nav-links a{{opacity:.85}}.nav-call{{border:1px solid #ffffff42;padding:9px 13px;border-radius:8px;font-weight:800;background:#ffffff0d;opacity:1!important}}
+    .concept{{background:#08121a;color:#bac5ca;text-align:center;font-size:12px;padding:8px 14px}}
+    header{{position:absolute;z-index:10;left:0;right:0;color:#fff;padding:24px 0}}.nav{{display:flex;align-items:center;justify-content:space-between;gap:24px}}.brand{{font-size:26px;font-weight:850;letter-spacing:-.035em;line-height:1.15}}.nav-links{{display:flex;align-items:center;gap:30px;font-size:17px;font-weight:600;white-space:nowrap}}.nav-links a{{opacity:.92}}.nav-call{{border:0;padding:13px 20px;border-radius:9px;font-size:17px;font-weight:800;background:var(--accent);color:#101820;opacity:1!important}}
     .hero{{position:relative;min-height:720px;overflow:hidden;background:linear-gradient(120deg,var(--ink) 0%,#1b3346 72%,#3e4c55 100%);color:#fff;display:grid;align-items:end;padding:158px 0 80px}}.hero-photo{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}.hero.has-photo:after{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,17,28,.82),rgba(8,25,39,.58) 45%,rgba(8,25,39,.08) 80%)}}.hero.has-photo h1,.hero.has-photo .hero-copy{{text-shadow:0 1px 18px rgba(0,0,0,.45)}}.hero:not(.has-photo):after{{content:"";position:absolute;inset:0;background:radial-gradient(circle at 82% 24%,color-mix(in srgb,var(--accent) 32%,transparent),transparent 25%)}}.hero-grid{{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.55fr);gap:58px;align-items:end}}.eyebrow,.section-kicker{{font-size:11px;font-weight:850;letter-spacing:.17em;text-transform:uppercase;color:var(--accent)}}h1{{font-size:clamp(48px,6.5vw,82px);line-height:.98;letter-spacing:-.055em;margin:15px 0 22px;max-width:850px}}.hero-copy{{font-size:18px;line-height:1.7;color:#e4eaee;max-width:680px;margin:0}}.actions{{display:flex;gap:11px;flex-wrap:wrap;margin-top:29px}}.button{{display:inline-flex;align-items:center;justify-content:center;padding:13px 18px;border-radius:8px;font-weight:850;font-size:14px}}.button-primary{{background:var(--accent);color:#101820}}.button-secondary{{border:1px solid #ffffff55;background:#ffffff0c}}.proof-card{{border:1px solid #ffffff2d;background:#ffffff12;backdrop-filter:blur(12px);padding:23px;border-radius:14px}}.stars{{color:var(--accent);letter-spacing:.08em}}.proof-card strong{{display:block;font-size:20px;margin-top:8px}}.proof-card span{{display:block;color:#cbd4d9;font-size:12px;margin-top:4px}}
     .trust-bar{{position:relative;z-index:4;margin-top:-28px}}.trust-grid{{display:grid;grid-template-columns:1.25fr .75fr .75fr .85fr;background:#fff;border:1px solid var(--line);box-shadow:0 18px 45px #10203012}}.trust-cell{{padding:22px 25px;border-left:1px solid var(--line)}}.trust-cell:first-child{{border-left:0}}.trust-cell strong{{display:block;font-size:18px;letter-spacing:-.02em}}.trust-cell span{{font-size:12px;color:var(--muted)}}
     section{{padding:82px 0}}.section-head{{display:flex;align-items:end;justify-content:space-between;gap:36px;margin-bottom:34px}}.section-head h2,.about-copy h2,.why h2,.process h2,.reputation h2,.areas h2,.faq h2,.contact h2{{font-size:clamp(36px,4.3vw,54px);line-height:1.02;letter-spacing:-.047em;margin:8px 0 0}}.section-head p{{max-width:480px;margin:0;color:var(--muted)}}
@@ -288,18 +344,20 @@ def render_demo_site_v3(
     .process-grid{{display:grid;grid-template-columns:.8fr 1.2fr;gap:60px;align-items:start}}.steps{{display:grid;gap:0;border-top:1px solid var(--line)}}.step{{display:grid;grid-template-columns:56px 1fr;gap:18px;padding:24px 0;border-bottom:1px solid var(--line)}}.step-number{{font-weight:850;color:#9a6c13}}.step h3{{margin:0 0 6px;font-size:20px}}.step p{{margin:0;color:var(--muted);font-size:13px}}
     .mid-cta{{padding:0 0 82px}}.mid-cta-card{{display:flex;align-items:center;justify-content:space-between;gap:32px;padding:34px 38px;border-radius:16px;background:var(--ink);color:#fff}}.mid-cta-card strong{{display:block;font-size:28px;line-height:1.1;letter-spacing:-.035em}}.mid-cta-card span{{display:block;color:#cbd4d9;margin-top:7px;font-size:13px}}.mid-cta-card .button{{background:var(--accent);color:#101820;white-space:nowrap}}
     .reputation{{position:relative;overflow:hidden;background:var(--surface)}}.reputation-grid{{display:grid;grid-template-columns:1.15fr .85fr;gap:58px;align-items:center}}.reputation p{{font-size:16px;color:var(--muted);max-width:700px}}.rating-panel{{background:#fff;border:1px solid var(--line);padding:38px;border-radius:16px;text-align:center;box-shadow:0 24px 60px #10203014}}.big-rating{{font-size:78px;line-height:1;font-weight:900;letter-spacing:-.06em}}.rating-panel strong,.rating-panel span{{display:block}}.rating-panel strong{{margin-top:12px;font-size:17px}}.rating-panel span{{font-size:12px;color:var(--muted);margin-top:5px}}
+    .reviews-head{{display:flex;align-items:end;justify-content:space-between;gap:40px;margin-bottom:34px}}.reviews-summary{{display:flex;align-items:center;gap:14px;flex:none}}.reviews-summary strong{{font-size:58px;line-height:1;font-weight:900;letter-spacing:-.05em}}.reviews-summary span{{font-size:13px;color:var(--muted)}}.reviews-summary .stars{{color:#f5a623;font-size:19px;letter-spacing:.06em}}.review-grid{{display:grid;grid-template-columns:repeat(var(--cols,3),minmax(0,1fr));gap:16px}}.review-card{{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px;display:flex;flex-direction:column;box-shadow:0 14px 34px #10203010}}.review-stars{{color:#f5a623;font-size:18px;letter-spacing:.06em}}.review-card p{{flex:1;margin:14px 0 22px;font-size:15px;line-height:1.65;color:var(--ink)}}.review-card footer{{display:flex;align-items:center;gap:12px;border-top:1px solid var(--line);padding-top:16px}}.review-avatar{{position:relative;flex:none;width:42px;height:42px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:var(--ink);color:#fff;font-weight:800}}.review-avatar img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}.review-meta{{min-width:0}}.review-meta strong{{display:block;font-size:14px}}.review-meta small{{display:block;margin-top:2px;font-size:12px;color:var(--muted)}}.review-meta small a{{text-decoration:underline}}.reviews-more{{margin:26px 0 0}}
     .photo-band{{padding:0;height:430px;overflow:hidden;background:#dfe5e8}}.photo-band img{{width:100%;height:100%;object-fit:cover}}
     .areas{{background:#0d1a24;color:#fff}}.areas-grid{{display:grid;grid-template-columns:.82fr 1.18fr;gap:60px;align-items:center}}.areas p{{color:#bdc7cc}}.areas ul{{display:flex;flex-wrap:wrap;gap:10px;list-style:none;padding:0;margin:0}}.areas li{{border:1px solid #ffffff24;background:#ffffff0b;padding:10px 14px;border-radius:999px;font-size:13px}}
     .faq-grid{{display:grid;grid-template-columns:.72fr 1.28fr;gap:60px;align-items:start}}.faq p{{color:var(--muted)}}details{{border-top:1px solid var(--line);padding:18px 0}}details:last-child{{border-bottom:1px solid var(--line)}}summary{{cursor:pointer;font-weight:800;font-size:16px;list-style:none;display:flex;justify-content:space-between;gap:20px}}summary:after{{content:"+";color:#9a6c13}}details[open] summary:after{{content:"–"}}details p{{margin:10px 36px 0 0!important;font-size:13px}}
     .contact{{background:var(--accent);padding:68px 0}}.contact-grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:60px;align-items:center}}.contact h2{{max-width:760px}}.contact p{{max-width:650px;margin:14px 0 0;color:#27323a}}.contact-card{{background:#0d1a24;color:#fff;padding:28px;border-radius:14px}}.contact-card span{{display:block;color:#b9c4ca;font-size:12px}}.contact-card strong{{display:block;font-size:25px;margin:6px 0 18px}}.contact-card .button{{width:100%;background:#fff;color:#0d1a24}}
     .text-link{{color:var(--ink);font-weight:800;border-bottom:2px solid var(--accent)}}
     .site-footer{{background:var(--dark);color:#c6d0d5;padding:64px 0 28px;font-size:14px}}.footer-top{{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:40px}}.footer-brand strong{{display:block;color:#fff;font-size:20px;letter-spacing:-.02em}}.footer-brand p{{margin:8px 0 0}}.footer-rating{{color:#fff}}.footer-phone{{display:inline-block;margin-top:14px;color:#fff;font-size:20px;font-weight:800}}.site-footer h4{{margin:0 0 14px;color:#fff;font-size:12px;letter-spacing:.14em;text-transform:uppercase}}.site-footer ul{{list-style:none;margin:0;padding:0;display:grid;gap:9px}}.footer-base{{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-top:44px;padding-top:22px;border-top:1px solid #ffffff1f;font-size:12px;color:#93a1a9}}.mobile-call{{display:none;position:fixed;z-index:30;left:12px;right:12px;bottom:12px;background:var(--accent);color:#111820;padding:14px;border-radius:10px;text-align:center;font-weight:850;box-shadow:0 18px 45px #0005}}
-    @media(max-width:840px){{.wrap{{width:min(100% - 28px,1180px)}}.nav-links a:not(.nav-call){{display:none}}.hero{{min-height:650px;padding:125px 0 58px}}.hero-grid,.about-grid,.process-grid,.reputation-grid,.areas-grid,.faq-grid,.contact-grid{{grid-template-columns:1fr;gap:32px}}.hero-grid{{gap:28px}}.proof-card{{max-width:360px}}.hero.has-photo:after{{background:linear-gradient(180deg,rgba(6,18,30,.5),rgba(6,18,30,.82) 70%)}}.trust-grid{{grid-template-columns:1fr 1fr}}.trust-cell:nth-child(3){{border-left:0;border-top:1px solid var(--line)}}.trust-cell:nth-child(4){{border-top:1px solid var(--line)}}section{{padding:64px 0}}.section-head{{display:block}}.section-head p{{margin-top:16px}}.service-grid,.why-grid{{grid-template-columns:1fr}}.footer-top{{grid-template-columns:1fr 1fr;gap:32px}}.footer-brand{{grid-column:1/-1}}.about-points{{grid-template-columns:1fr}}.about-photo{{height:360px}}.mid-cta-card{{display:block;padding:28px}}.mid-cta-card .button{{margin-top:22px;width:100%}}.photo-band{{height:300px}}.mobile-call{{display:block}}.site-footer{{padding-bottom:96px}}.site-footer .button{{white-space:nowrap}}}}
+    @media(max-width:1080px){{.nav-links a:not(.nav-call){{display:none}}}}
+    @media(max-width:840px){{.brand{{font-size:20px}}.nav-call{{font-size:15px;padding:11px 14px}}.reviews-head{{display:block}}.reviews-summary{{margin-top:20px}}.review-grid{{grid-template-columns:1fr}}.wrap{{width:min(100% - 28px,1180px)}}.nav-links a:not(.nav-call){{display:none}}.hero{{min-height:650px;padding:125px 0 58px}}.hero-grid,.about-grid,.process-grid,.reputation-grid,.areas-grid,.faq-grid,.contact-grid{{grid-template-columns:1fr;gap:32px}}.hero-grid{{gap:28px}}.proof-card{{max-width:360px}}.hero.has-photo:after{{background:linear-gradient(180deg,rgba(6,18,30,.5),rgba(6,18,30,.82) 70%)}}.trust-grid{{grid-template-columns:1fr 1fr}}.trust-cell:nth-child(3){{border-left:0;border-top:1px solid var(--line)}}.trust-cell:nth-child(4){{border-top:1px solid var(--line)}}section{{padding:64px 0}}.section-head{{display:block}}.section-head p{{margin-top:16px}}.service-grid,.why-grid{{grid-template-columns:1fr}}.footer-top{{grid-template-columns:1fr 1fr;gap:32px}}.footer-brand{{grid-column:1/-1}}.about-points{{grid-template-columns:1fr}}.about-photo{{height:360px}}.mid-cta-card{{display:block;padding:28px}}.mid-cta-card .button{{margin-top:22px;width:100%}}.photo-band{{height:300px}}.mobile-call{{display:block}}.site-footer{{padding-bottom:96px}}.site-footer .button{{white-space:nowrap}}}}
   </style>
 </head>
 <body>
   <div class="concept">Concept website prepared by Lilos Growth for demonstration purposes. Not affiliated with or endorsed by {business_name}.</div>
-  <header><div class="wrap nav"><div class="brand">{business_name}</div><nav class="nav-links"><a href="#services">{_safe(unit.capitalize())}s</a><a href="#about">About</a><a href="#areas">Areas served</a><a href="#faq">FAQ</a><a class="nav-call" href="{call_href}">{call_label}</a></nav></div></header>
+  <header><div class="wrap nav"><div class="brand">{business_name}</div><nav class="nav-links"><a href="#services">{_safe(unit.capitalize())}s</a><a href="#about">About</a>{reviews_nav}<a href="#areas">Areas served</a><a href="#faq">FAQ</a><a class="nav-call" href="{call_href}">{call_label}</a></nav></div></header>
   <main>
     <section class="{hero_class}">{hero_photo}<div class="wrap hero-grid"><div><div class="eyebrow">{category} · {location}</div><h1>{headline}</h1><p class="hero-copy">{subheadline}</p><div class="actions"><a class="button button-primary" href="{call_href}">{call_label}</a><a class="button button-secondary" href="#services">View {_safe(unit)}s</a></div></div>{proof_card}</div></section>
     <div class="trust-bar"><div class="wrap trust-grid"><div class="trust-cell"><strong>{business_name}</strong><span>{category} serving {area_names}</span></div><div class="trust-cell">{rating_stat}</div><div class="trust-cell">{review_stat}</div><div class="trust-cell"><strong>{len(service_areas[:8])}</strong><span>Areas served</span></div></div></div>

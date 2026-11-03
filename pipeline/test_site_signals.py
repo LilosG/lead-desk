@@ -102,6 +102,11 @@ checks.append(("unknown checks aren't counted against the site",
 checks.append(("readiness counts match its rows",
                ready["passed"] == sum(1 for c in ready["checks"] if c["status"] == "pass")))
 
+one_page = SS._service_page_check({"has_service_pages": True, "offering_page_count": 1})
+checks.append(("one catch-all page isn't ready for each service", one_page == ("review", "Only 1 found")))
+checks.append(("several service pages pass",
+               SS._service_page_check({"has_service_pages": True, "offering_page_count": 5})[0] == "pass"))
+
 # Emails hidden from scrapers but shown to visitors.
 cf = "".join(f"{b:02x}" for b in [0x42] + [c ^ 0x42 for c in b"joe@vistadrain.com"])
 html = f'<a href="/cdn-cgi/l/email-protection#{cf}">email</a><p>sales [at] vistadrain [dot] com</p>'

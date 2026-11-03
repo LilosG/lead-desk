@@ -592,3 +592,42 @@ def test_every_depth_signal_has_report_wording():
     from pipeline import site_signals
 
     assert all(report_policy_for(signal) for signal in site_signals.SIGNALS)
+
+
+# --- every section of a report tells the same story ----------------------------
+
+def test_review_finding_uses_the_median_this_report_shows():
+    from app.services.audit_reports import _review_finding_at_report_median as restate
+
+    comparison = {"median_reviews": 25, "market": "Carlsbad, CA", "niche": "electrician"}
+    observed = {"reviews": 15, "median": 17, "market": "the area"}
+    assert restate("reviews_below_median", observed, comparison)["median"] == 25
+    assert restate("reviews_below_median", {"reviews": 30, "median": 40}, comparison) is None
+    assert restate("reviews_below_median", observed, None) == observed
+
+
+def test_a_page_found_by_the_latest_crawl_clears_no_service_pages():
+    from app.services.audit_reports import _merge_site_findings, _with_latest_offerings
+
+    audit = _with_latest_offerings({"has_service_pages": False, "offering_page_count": 0,
+                                    "site_signals": {"offering_paths": 1}})
+    assert audit["has_service_pages"] is True and audit["offering_page_count"] == 1
+    merged = _merge_site_findings([{"signal": "no_service_pages"}], audit, {"vertical": "electrician"})
+    assert "no_service_pages" not in {f["signal"] for f in merged}
+
+
+def test_report_date_is_the_latest_time_the_site_was_read():
+    from datetime import datetime, timezone
+    from app.services.audit_reports import _checked_on
+
+    swept = datetime(2026, 9, 13, tzinfo=timezone.utc)
+    audit = {"checked_at": swept, "site_signals": {"checked_at": "2026-11-03T20:00:00+00:00"}}
+    assert _checked_on(audit, {}).date().isoformat() == "2026-11-03"
+    assert _checked_on({"checked_at": swept}, {}) == swept
+
+
+def test_generic_link_labels_are_not_treated_as_services():
+    from app.services.audit_benchmarks import offering_titles
+
+    row = {"offering_titles": ["Learn More ›", "Panel Upgrades", "View More →"]}
+    assert offering_titles(row) == ["Panel Upgrades"]
