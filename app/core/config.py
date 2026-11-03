@@ -12,6 +12,7 @@ APPROVED_OPENROUTER_MODELS = {
 }
 
 APPROVED_DEMO_IMAGE_MODELS = {
+    "google/gemini-3.1-flash-image",
     "google/gemini-2.5-flash-image",
     "bytedance-seed/seedream-5-0-flash",
     "bytedance-seed/seedream-4.5",
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
         alias="DEMO_SITE_BASE_URL",
     )
     demo_image_model: str = Field(
-        default="google/gemini-2.5-flash-image",
+        default="google/gemini-3.1-flash-image",
         alias="DEMO_IMAGE_MODEL",
     )
     integration_encryption_key: str | None = Field(

@@ -249,7 +249,7 @@ def test_generation_uses_one_coherent_note_and_verified_claim_slot():
     assert "no thanks" in repo.generated["body"]
     assert "If you'd rather not hear from me" in repo.generated["body"]
     assert repo.generated["generation_model"] == "test/model"
-    assert repo.generated["prompt_version"] == "outreach-v11"
+    assert repo.generated["prompt_version"] == "outreach-v12"
 
 
 def test_generation_adds_public_google_evidence_but_not_internal_scores():

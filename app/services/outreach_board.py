@@ -74,6 +74,8 @@ def gmail_block_reason(item: dict[str, Any], *, gmail_connected: bool) -> str | 
         return "There's no draft yet. Click Generate draft first."
     if item.get("verification_status") not in {"verified", "not_required"}:
         return "The claim in this draft failed verification. Regenerate the draft."
+    if item.get("claim_signal") != "audit_report":
+        return "This draft has no audit behind it. Click Regenerate draft to build one and attach it."
     return None
 
 

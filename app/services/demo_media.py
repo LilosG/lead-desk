@@ -16,21 +16,21 @@ from app.repositories.prospects import ProspectRepository
 from pipeline import verticals as vertical_config
 
 
-PROMPT_VERSION = "demo-media-v2"
+PROMPT_VERSION = "demo-media-v3"
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_IMAGE_WIDTH = 2000
 WEBP_QUALITY = 82
 # Places and tools rather than people: AI faces read as fake, and a generated
 # "owner" would misrepresent the business.
 NICHE_SCENES = {
-    "home_service": "a well-kept home or job site with the real tools and materials of a {category}",
-    "medical_aesthetic": "a calm, modern, spotless treatment room with soft natural light",
-    "dental": "a bright, modern, welcoming dental office",
-    "real_estate": "an inviting home exterior on an attractive residential street",
-    "legal": "a warm, professional law office with a desk, books and natural light",
-    "wellness_health": "a calm, modern treatment room with natural light",
-    "auto": "a clean, organized auto repair bay with professional equipment",
-    "generic_local_business": "the inside of a welcoming, well-run {category}",
+    "home_service": "a beautiful, well-kept home with the real tools and work of a {category} in the foreground",
+    "medical_aesthetic": "a serene, high-end treatment suite with soft textures, plants and natural light",
+    "dental": "a bright, modern, design-led dental studio with warm wood and natural light",
+    "real_estate": "a striking, inviting home exterior with a lit entry and landscaped approach",
+    "legal": "a refined law office with warm wood, leather, books and city light through the windows",
+    "wellness_health": "a calm, modern treatment studio with natural materials and soft daylight",
+    "auto": "a spotless, well-lit auto repair bay with a car on the lift and professional equipment",
+    "generic_local_business": "the welcoming, beautifully kept interior of a {category}",
 }
 VALID_ROLES = {"hero", "work", "secondary"}
 ROLE_ASPECT_RATIO = {
@@ -112,11 +112,15 @@ class DemoMediaService:
     ) -> bytes:
         """OpenRouter generates images through chat completions.
 
-        Google's models take image and text output; image-only models such as
-        Seedream reject that and need ["image"], so that's the second attempt.
+        Google's models take image and text output and newer ones take a size;
+        image-only models such as Seedream reject those, so each attempt asks for less.
         """
+        config = {"aspect_ratio": aspect_ratio}
+        attempts = [(["image", "text"], config), (["image"], config)]
+        if model.startswith("google/gemini-3"):
+            attempts.insert(0, (["image", "text"], {**config, "image_size": "2K"}))
         response = None
-        for modalities in (["image", "text"], ["image"]):
+        for modalities, image_config in attempts:
             try:
                 response = requests.post(
                     OPENROUTER_CHAT_URL,
@@ -128,7 +132,7 @@ class DemoMediaService:
                         "model": model,
                         "messages": [{"role": "user", "content": prompt}],
                         "modalities": modalities,
-                        "image_config": {"aspect_ratio": aspect_ratio},
+                        "image_config": image_config,
                     },
                     timeout=120,
                 )
@@ -175,11 +179,11 @@ class DemoMediaService:
         scene = NICHE_SCENES.get(profile, NICHE_SCENES["generic_local_business"]).format(category=category)
         role_direction = {
             "hero": (
-                f"Wide homepage hero photograph of {scene}. Main subject on the right half, "
-                "calm darker space on the left where text will sit."
+                f"Wide cinematic hero photograph of {scene}, main subject in the right two-thirds "
+                "of the frame, golden-hour light, real depth with a clear foreground and background."
             ),
-            "work": f"Medium photograph showing the detail and craft of {scene}.",
-            "secondary": f"Wide supporting photograph of {scene}, from a different angle than the hero.",
+            "work": f"Close, detailed photograph showing the craft of {scene}, shallow depth of field.",
+            "secondary": f"Wide photograph of {scene}, from a different angle than a typical hero shot.",
         }[role]
         place = f" Fits the look of {location}." if location else ""
         optional = f" Additional art direction: {direction.strip()}" if direction and direction.strip() else ""
@@ -188,5 +192,8 @@ class DemoMediaService:
             "Do not place any business name, logo, signage, text, phone number, badge, license "
             "number, watermark, or branded vehicle graphics in the image. Do not show identifiable "
             "faces, and do not imply that any person shown is the real owner or an employee. "
-            f"Natural light, professional DSLR realism, restrained color grading, no stock-photo poses.{optional}"
+            "Premium editorial commercial photography, shot on a full-frame camera with a 35mm lens, "
+            "tack sharp, rich natural color, no stock-photo poses. The photograph fills the whole frame "
+            "edge to edge: no black bars, borders, gradients, vignettes, panels or darkened areas, "
+            f"because the website adds its own overlay.{optional}"
         )

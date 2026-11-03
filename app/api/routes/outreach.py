@@ -41,6 +41,15 @@ class OutreachReviewGmailRequest(BaseModel):
     body: str = Field(min_length=1, max_length=20000)
 
 
+def build_default_audit(place_id: str) -> None:
+    from app.api.routes.audit_reports import get_service as get_audit_service
+
+    result = get_audit_service().create_default_reports([place_id])
+    if not result or result[0].get("status") != "created":
+        detail = (result[0].get("detail") if result else None) or "nothing reportable"
+        raise OutreachBlocked(f"couldn't build an audit for this lead: {detail}")
+
+
 def get_service() -> OutreachService:
     settings = get_settings()
     generator = None
@@ -73,6 +82,7 @@ def get_service() -> OutreachService:
         gmail=gmail,
         generation_model=settings.openrouter_model if generator else None,
         gmail_sender_email=settings.gmail_sender_email if gmail else None,
+        audit_builder=build_default_audit,
     )
 
 

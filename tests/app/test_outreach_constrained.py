@@ -46,7 +46,7 @@ def test_model_selects_structure_but_never_writes_recipient_prose(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":1,"greeting":0,"frame":3,"closing":5}'
+                    "content": '{"subject":1,"greeting":0,"frame":2,"closing":3}'
                 }
             }]
         })
@@ -80,7 +80,7 @@ def test_same_model_tuple_is_decorrelated_per_business(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":3,"greeting":1,"frame":3,"closing":5}'
+                    "content": '{"subject":3,"greeting":1,"frame":2,"closing":3}'
                 }
             }]
         })
@@ -111,7 +111,7 @@ def test_mastercraft_and_sal_do_not_share_same_structure(monkeypatch):
         return FakeResponse({
             "choices": [{
                 "message": {
-                    "content": '{"subject":3,"greeting":1,"frame":3,"closing":5}'
+                    "content": '{"subject":3,"greeting":1,"frame":2,"closing":3}'
                 }
             }]
         })

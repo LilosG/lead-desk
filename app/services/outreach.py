@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
 from uuid import UUID, uuid4
 
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
@@ -7,13 +9,20 @@ from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRoute
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
 from app.repositories.outreach import OutreachOperationLocked, OutreachRepository
 from app.repositories.outreach_evidence import OutreachEvidenceRepository
-from app.services.outreach_audit_copy import audit_email_paragraph, clean_business_name
+from app.services.outreach_audit_copy import (
+    audit_email_paragraph,
+    clean_business_name,
+    contact_first_name,
+    personal_greeting,
+)
 from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
-PROMPT_VERSION = "outreach-v11"
+PROMPT_VERSION = "outreach-v12"
+# Reports older than this version lack the checks the email and PDF now rely on.
+CURRENT_AUDIT_VERSION = 8
 MAX_DRAFT_ATTEMPTS = 3
 # Signature plus a working opt-out. The postal line is optional and comes from
 # OUTREACH_POSTAL_ADDRESS (e.g. a PO box or virtual mailbox); CAN-SPAM expects
@@ -58,6 +67,7 @@ class OutreachService:
         verifier: OutreachClaimVerifier | None = None,
         generation_model: str | None = None,
         gmail_sender_email: str | None = None,
+        audit_builder: Callable[[str], Any] | None = None,
     ) -> None:
         self.repository = repository
         self.evidence_repository = evidence_repository
@@ -66,6 +76,8 @@ class OutreachService:
         self.verifier = verifier or OutreachClaimVerifier()
         self.generation_model = generation_model
         self.gmail_sender_email = gmail_sender_email
+        # Callable(place_id) that builds a default audit report.
+        self.audit_builder = audit_builder
 
     def integration_status(self) -> dict:
         return {
@@ -240,6 +252,15 @@ class OutreachService:
         safe = "".join(ch for ch in name if ch.isalnum() or ch in " &-").strip() or "Audit"
         return [(f"{safe} - Local Visibility Audit.pdf", render_audit_report_pdf(report))]
 
+    def ensure_current_audit(self, context: dict) -> dict:
+        """Every email is written from, and attaches, a current audit report."""
+        snapshot = context.get("audit_snapshot")
+        version = snapshot.get("report_version", 0) if isinstance(snapshot, dict) else 0
+        if self.audit_builder is None or version >= CURRENT_AUDIT_VERSION:
+            return context
+        self.audit_builder(context["place_id"])
+        return self.repository.draft_context(context["id"]) or context
+
     def _resolve_draft_grounding(
         self,
         context: dict,
@@ -307,6 +328,7 @@ class OutreachService:
             raise OutreachBlocked(
                 "AI draft generation is currently available for email only"
             )
+        context = self.ensure_current_audit(context)
 
         current = self.repository.get_item(item_id)
         if current is None:
@@ -347,7 +369,10 @@ class OutreachService:
             except OpenRouterError as exc:
                 raise OutreachIntegrationUnavailable(str(exc)) from exc
 
-            note = candidate.body.strip()
+            note = personal_greeting(
+                candidate.body.strip(),
+                contact_first_name(context.get("to_address"), context.get("name")),
+            )
             if visible_claim:
                 if note.count(CLAIM_TOKEN) != 1:
                     raise OutreachIntegrationUnavailable(
@@ -442,6 +467,11 @@ class OutreachService:
             raise OutreachBlocked(
                 f"couldn't build the audit PDF to attach ({exc}); rebuild the audit report and try again"
             ) from exc
+
+        if "audit" in current["body"].lower() and not attachments:
+            raise OutreachBlocked(
+                "this draft mentions an attached audit but has none; regenerate the draft first"
+            )
 
         message_id_header = f"<{uuid4()}@lead-desk.lilosgrowth.com>"
         try:

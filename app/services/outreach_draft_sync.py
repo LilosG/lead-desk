@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from app.integrations.gmail import GmailDraftError
-from app.services.outreach_audit_copy import clean_business_name
+from app.services.outreach_audit_copy import (
+    clean_business_name,
+    contact_first_name,
+    personal_greeting,
+)
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterError
 from app.repositories.outreach_gmail import OutreachGmailRepository
 from app.services.outreach import (
@@ -162,6 +166,7 @@ class OutreachDraftSyncService:
         if self.repository.is_suppressed(context["to_address"]):
             raise OutreachBlocked("email address is suppressed")
 
+        context = self.outreach.ensure_current_audit(context)
         business_name = clean_business_name(context.get("name"))
         visible_claim, claim_signal, verification_status, verification_note = (
             self.outreach._resolve_draft_grounding(
@@ -189,7 +194,10 @@ class OutreachDraftSyncService:
             except OpenRouterError as exc:
                 raise OutreachIntegrationUnavailable(str(exc)) from exc
 
-            note = candidate.body.strip()
+            note = personal_greeting(
+                candidate.body.strip(),
+                contact_first_name(context.get("to_address"), context.get("name")),
+            )
             if visible_claim:
                 if note.count(CLAIM_TOKEN) != 1:
                     raise OutreachIntegrationUnavailable(

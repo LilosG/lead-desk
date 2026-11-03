@@ -86,7 +86,7 @@ def test_email_leads_with_the_local_benchmark():
     assert "scored 23/100 on Google's speed test and took about 14 seconds" in paragraph
     assert "The typical one there scores 50/100." in paragraph
     assert "22 of them also have their own Botox & Dysport page; your site doesn't." in paragraph
-    assert "5.0-star rating is strong" in paragraph
+    assert "star rating is strong" not in paragraph  # one supporting fact keeps it short
     assert len(paragraph.split()) < 90
 
 
@@ -119,3 +119,26 @@ def test_weak_finding_does_not_lead_when_competitors_have_pages_it_lacks():
     assert "location pages" not in paragraph
     assert "The clearest gap: 10 of them have their own Weight Loss page" in paragraph
     assert "60% of them also take bookings online" in paragraph
+
+
+def test_greeting_uses_a_first_name_only_when_it_is_certainly_one():
+    from app.services.outreach_audit_copy import contact_first_name, personal_greeting
+
+    assert contact_first_name("corey@lcvhandyman.com") == "Corey"
+    assert contact_first_name("aaron.smith@five.com") == "Aaron"
+    assert contact_first_name("info@dave.com", "Dave's Electric") == "Dave"
+    assert contact_first_name("info@five.com", "Five Point Electric") is None
+    assert contact_first_name("jsmith@five.com") is None
+    assert personal_greeting("Hi there,\n\nBody", "Corey") == "Hi Corey,\n\nBody"
+    assert personal_greeting("Hello,\n\nBody", None) == "Hello,\n\nBody"
+
+
+def test_published_mockup_is_offered_in_the_email():
+    from app.services.outreach_audit_copy import audit_email_paragraph
+
+    snapshot = {
+        "findings": [{"signal": "no_ssl", "phrase": "x"}],
+        "next_step": {"demo_url": "https://demo.lilosgrowth.com/acme/"},
+    }
+    paragraph, _ = audit_email_paragraph(snapshot, "Acme Plumbing")
+    assert "https://demo.lilosgrowth.com/acme/" in paragraph

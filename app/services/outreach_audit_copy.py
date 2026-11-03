@@ -90,6 +90,58 @@ def _email_phrase(item: dict[str, Any]) -> str:
     return (item.get("phrase") or "").strip()
 
 
+# Common US first names. A greeting uses a name only when it's certainly a name:
+# "Hi Aaron," lands, and "Hi Jsmith," ends the conversation.
+_FIRST_NAMES = frozenset("""
+aaron adam adrian alan albert alex alexander alexis alicia alan allison alyssa amanda amber amy
+ana andre andrea andrew andy angela anna anne anthony antonio april ashley austin barbara ben
+benjamin beth betty bill billy blake bob bobby bonnie brad bradley brandon brenda brent brett
+brian brittany bruce bryan caleb cameron carl carla carlos carol caroline carrie casey catherine
+chad charles charlie chelsea cheryl chris christian christina christine christopher cindy claire
+clark cody colin connor corey cory courtney craig crystal curtis cynthia dale damian dan dana
+daniel danielle danny darren dave david dawn dean deborah debbie denise dennis derek diana diane
+diego dominic don donald donna doug douglas drew dustin dylan eddie edward elena elizabeth ellen
+emily emma eric erica erik erin ethan eugene evan evelyn frank fred gabriel gary gavin george
+gerald gina glenn gloria grant greg gregory hannah harold harry heather hector helen henry holly
+howard ian isaac ivan jack jackie jacob jake james jamie jan jane janet jason javier jay jean
+jeff jeffrey jen jenna jennifer jenny jeremy jerry jesse jessica jesus jill jim jimmy joan joe
+joel john johnny jon jonathan jordan jorge jose joseph josh joshua joy juan judy julia julie
+justin karen kate katherine kathleen kathy katie keith kelly ken kenneth kevin kim kimberly
+kristen kristin kurt kyle lance larry laura lauren lawrence leah lee leo leon linda lindsay lisa
+logan lori louis lucas luis luke lynn marc marcus margaret maria marie marilyn mario mark marshall
+martin marty mary mason matt matthew maria max megan melanie melissa michael michelle miguel mike
+mitch mitchell molly monica morgan nancy natalie nathan neil nicholas nick nicole noah nolan norman
+oscar owen pam pamela patricia patrick paul paula pedro peter phil philip phillip rachel ralph
+randy ray raymond rebecca reed renee ricardo richard rick ricky rob robert roberto robin rod rodney
+roger ron ronald rosa ross roy ruben russell ruth ryan sam samantha samuel sandra sara sarah scott
+sean sergio seth shane shannon sharon shawn sheila shelly sherry sonia sophia spencer stacy stan
+stephanie stephen steve steven stuart susan suzanne tammy tanya tara taylor ted teresa terry
+theresa thomas tiffany tim timothy tina todd tom tommy tony tracy travis trevor troy tyler valerie
+vanessa vicki victor victoria vincent virginia walter wayne wendy wesley william willie zach
+zachary
+""".split())
+_GREETING_LINE = re.compile(r"^(?:Hi there|Hi|Hello),?[ \t]*$", re.MULTILINE)
+
+
+def contact_first_name(email: str | None, business_name: str | None = None) -> str | None:
+    """A first name we can trust, from the address or an owner-named business."""
+    local = (email or "").split("@")[0].lower()
+    first = re.split(r"[._\-+]", local)[0]
+    if first in _FIRST_NAMES:
+        return first.capitalize()
+    owner = re.match(r"^([A-Za-z]+)['’]s\b", (business_name or "").strip())
+    if owner and owner.group(1).lower() in _FIRST_NAMES:
+        return owner.group(1).capitalize()
+    return None
+
+
+def personal_greeting(note: str, first_name: str | None) -> str:
+    """Put the contact's name on the greeting line, when we know it."""
+    if not first_name:
+        return note
+    return _GREETING_LINE.sub(f"Hi {first_name},", note, count=1)
+
+
 def _short_market(market: str | None) -> str | None:
     if not market or market == "the area":
         return None
@@ -367,7 +419,8 @@ def _benchmark_email(snapshot: dict[str, Any], name: str,
     business = snapshot.get("business") if isinstance(snapshot.get("business"), dict) else {}
     try:
         rating, count = float(business.get("rating")), int(business.get("review_count") or 0)
-        if rating >= 4.7 and count >= 10:
+        # One supporting fact is enough: under 100 words is what gets read.
+        if rating >= 4.7 and count >= 10 and not support:
             parts.append(f"Your {rating:.1f}-star rating is strong, so this is about being found, "
                          "not your reputation.")
     except (TypeError, ValueError):
@@ -393,10 +446,15 @@ def audit_email_paragraph(snapshot: dict[str, Any], business_name: str) -> tuple
         findings,
         key=lambda f: LEAD_PRIORITY.index(f["signal"]) if f["signal"] in LEAD_PRIORITY else 99,
     )
+    demo_url = (snapshot.get("next_step") or {}).get("demo_url")
+    demo_line = (
+        f"\n\nI also mocked up what a new homepage could look like for you: {demo_url}"
+        if demo_url else ""
+    )
     benchmarked = _benchmark_email(snapshot, name, ordered_for_bench)
     if benchmarked:
         paragraph, subject = benchmarked
-        return paragraph, subject[:70]
+        return paragraph + demo_line, subject[:70]
 
     ordered = sorted(
         findings,
@@ -434,4 +492,4 @@ def audit_email_paragraph(snapshot: dict[str, Any], business_name: str) -> tuple
     elif others:
         opening += f"\n\nThere's one other thing worth fixing too: {others[0]}."
 
-    return opening, subject[:60]
+    return opening + demo_line, subject[:60]

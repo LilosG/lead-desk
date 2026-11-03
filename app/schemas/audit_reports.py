@@ -4,6 +4,10 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+# Every finding the audit can report, so "select all" always works.
+MAX_REPORT_FINDINGS = 60
+
+
 class AuditReportOption(BaseModel):
     signal: str
     title: str
@@ -20,7 +24,7 @@ class AuditReportOptionsResponse(BaseModel):
 
 
 class AuditReportCreateRequest(BaseModel):
-    selected_signals: list[str] = Field(min_length=1, max_length=12)
+    selected_signals: list[str] = Field(min_length=1, max_length=MAX_REPORT_FINDINGS)
 
 
 class AuditReportSummary(BaseModel):
