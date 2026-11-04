@@ -181,7 +181,7 @@ def test_the_ev_email_says_only_what_is_verified(outreach):
     item = outreach.repository.get_item(result["item_id"])
 
     assert item["subject"] == "Oro Valley EV permits"
-    assert item["body"].startswith("Hi there,\n\nI saw you install EV chargers. Oro Valley asks for a site plan")
+    assert item["body"].startswith("Hi there,\n\nOro Valley wants a site plan, one-line diagram and load calculation on EV jobs. Since camp-title Electric does EV installs")
     assert OVERVIEW in item["body"]
     assert "no thanks" in item["body"]
     assert item["claim_signal"] == "ev_permit_offer"
@@ -221,7 +221,7 @@ def test_regenerating_a_synced_ev_draft_updates_gmail_without_ai(pool, outreach)
     ).regenerate(item["id"], expected_version=item["version"])
 
     assert updated["claim_signal"] == "ev_permit_offer"
-    assert "I saw you install EV chargers" in updated["body"]
+    assert "drafts the full permit packet" in updated["body"]
     assert Gmail.calls[0]["attachments"] is None
 
 
@@ -337,7 +337,7 @@ def test_ev_evidence_uses_every_source_on_file():
 def test_unknown_cities_get_no_permit_claim():
     written = write_email({"place_id": "p", "city": "Boise", "state": "ID", "name": "Sparks"}, OVERVIEW)
     assert "Boise" not in written["body"]
-    assert "can take a lot of office time" in written["body"]
+    assert written["body"].startswith("Hi there,\n\nSince Sparks does EV installs")
     assert written["subject"] == "Boise EV permits"
 
 

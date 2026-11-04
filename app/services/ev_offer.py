@@ -10,17 +10,19 @@ import re
 from typing import Any
 
 from app.campaigns import permit_city
-from app.services.outreach_audit_copy import contact_first_name
+from app.services.outreach_audit_copy import clean_business_name, contact_first_name
 
-PROMPT_VERSION = "ev-offer-v1"
+PROMPT_VERSION = "ev-offer-v2"
 _EV_WORDS = re.compile(
     r"\b(ev|evs|electric vehicles?|tesla)\b.{0,30}charg|charg.{0,30}\b(ev|evs|electric vehicles?)\b|\bevse\b",
     re.I,
 )
 _CLOSES = (
-    "Send me a recent EV job and I'll build the full packet for free, so you can see if it's worth using.",
-    "If you send me one recent EV install, I'll build the full packet for free so you can judge it yourself.",
-    "Want to see it on a real job? Send me a recent EV install and I'll build the packet for free.",
+    "Want me to build one from a recent job of yours? It's free, so you can see the result "
+    "before deciding anything.",
+    "Want to see it on one of your own jobs? I'll build the first packet for free.",
+    "Would a free packet from one of your recent jobs be useful? You'd see exactly what you'd "
+    "get before deciding anything.",
 )
 
 
@@ -46,18 +48,21 @@ def write_email(context: dict[str, Any], overview_url: str) -> dict[str, str]:
     rules = permit_city(city, state)
     first_name = contact_first_name(context.get("to_address"), context.get("name"))
     greeting = f"Hi {first_name}," if first_name else "Hi there,"
+    business = clean_business_name(context.get("name"))
     if rules and rules.get("asks_for"):
-        opener = (f"I saw you install EV chargers. {city} asks for {rules['asks_for']} on these "
-                  "jobs, which is a lot of office time for one install.")
+        opener = (f"{city} wants {rules['asks_for']} on EV jobs. Since {business} does EV installs, "
+                  "someone on your team is likely retyping the same job details into each one.")
         note = f"Grounded in {city}'s published checklist: {rules['source']}"
     else:
-        opener = "I saw you install EV chargers. The permit paperwork can take a lot of office time for one install."
+        opener = (f"Since {business} does EV installs, someone on your team is likely retyping the "
+                  "same job details into every permit form and document.")
         note = "No city-specific permit claim was made."
     body = (
         f"{greeting}\n\n{opener}\n\n"
-        "The information is the same every time, but someone still has to retype it into every "
-        "form and document. I build systems that do that part, so your team only reviews and submits.\n\n"
-        f"{_variant(context['place_id'], _CLOSES)} Here's a sample: {overview_url}"
+        "I build a system for electrical companies that takes the job details once and drafts the "
+        "full permit packet, ready for your team to review and submit.\n\n"
+        f"{_variant(context['place_id'], _CLOSES)}\n\n"
+        f"Here's how it works, with a sample packet: {overview_url}"
     )
     subject = f"{city} EV permits" if city else "EV permit paperwork"
     return {"subject": subject, "body": body, "note": note}
