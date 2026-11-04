@@ -107,6 +107,15 @@ def recrawl_stalled(dsn: str) -> int:
     return sum(1 for f in results if f.crawl_error != "blocked_crawl_hang")
 
 
+def read_site(business: dict[str, Any]) -> E.SiteFindings | None:
+    """Crawl one site. A failure costs that site, not the rest of the batch."""
+    try:
+        return E.crawl_business(business)
+    except Exception as exc:
+        print(f"skipped {business.get('name')}: {exc}"[:200], flush=True)
+        return None
+
+
 def refresh_ev_signal(dsn: str, niche: str) -> int:
     """Re-read one niche's sites and record only whether they offer EV work.
 
@@ -129,8 +138,9 @@ def refresh_ev_signal(dsn: str, niche: str) -> int:
         return 0
     print(f"re-reading {len(businesses)} {niche} sites...", flush=True)
     with ProcessPoolExecutor(max_workers=C.CRAWL_MAX_CONCURRENT) as pool:
-        results = list(pool.map(E.crawl_business, [dict(b) for b in businesses]))
-    readable = [f for f in results if f.is_reachable and "ev_service" in (f.site_signals or {})]
+        results = list(pool.map(read_site, [dict(b) for b in businesses]))
+    readable = [f for f in results
+                if f and f.is_reachable and "ev_service" in (f.site_signals or {})]
     with psycopg.connect(dsn) as conn:
         for found in readable:
             conn.execute(
