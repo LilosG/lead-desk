@@ -506,7 +506,10 @@ def _sitemap_paths(session, base: str, robots_cache: dict) -> list[str] | None:
     host = urlparse.urlparse(base).netloc.replace("www.", "")
     paths = []
     for u in locs[:SITEMAP_MAX_URLS]:
-        parsed = urlparse.urlparse(u)
+        try:
+            parsed = urlparse.urlparse(u)
+        except ValueError:
+            continue
         if parsed.netloc.replace("www.", "") == host:
             paths.append(parsed.path.lower())
     return paths
@@ -514,6 +517,19 @@ def _sitemap_paths(session, base: str, robots_cache: dict) -> list[str] | None:
 
 def _bare_host(netloc: str) -> str:
     return netloc.lower().removeprefix("www.")
+
+
+def _resolve_link(base: str, href: str) -> tuple[str, urlparse.ParseResult] | None:
+    """A link's full URL and its parts, or None if the link is malformed.
+
+    Sites do publish broken links, such as an unfilled template placeholder in
+    the host. One of those shouldn't cost the rest of the page.
+    """
+    try:
+        full = urlparse.urljoin(base, href)
+        return full, urlparse.urlparse(full)
+    except ValueError:
+        return None
 
 
 def crawl_site(business: dict, session: requests.Session | None = None,
@@ -628,12 +644,15 @@ def crawl_site(business: dict, session: requests.Session | None = None,
         href = a["href"].split("#")[0].strip()
         if not href or href.startswith(("mailto:", "tel:", "javascript:")):
             continue
-        full = urlparse.urljoin(base, href)
+        link = _resolve_link(base, href)
+        if link is None:
+            continue
+        full, target = link
         # www and bare hosts are the same site; comparing them literally dropped
         # every absolute internal link on sites that mix the two.
-        if _bare_host(urlparse.urlparse(full).netloc) != _bare_host(parsed.netloc):
+        if _bare_host(target.netloc) != _bare_host(parsed.netloc):
             continue
-        path = urlparse.urlparse(full).path.lower()
+        path = target.path.lower()
         anchor = a.get_text(" ", strip=True)
         anchor_slug = _slug(anchor)
         if path not in ("", "/") and (
