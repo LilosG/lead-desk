@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from app.schemas.audit_reports import REPORT_VERSION
 from app.services.audit_report_pdf import render_audit_report_pdf
 from app.services.audit_reports import AuditReportError, AuditReportService
 
@@ -148,7 +149,7 @@ def test_snapshot_excludes_internal_scores_and_raw_findings():
     assert "total_score" not in serialized
     assert "tier" not in serialized
     assert "internal raw finding" not in serialized
-    assert snapshot["report_version"] == 8
+    assert snapshot["report_version"] == REPORT_VERSION
     assert snapshot["business"]["review_count"] == 87
     assert snapshot["findings"][0]["signal"] == "no_localbusiness_schema"
     # No evidence line that only repeats "what we found".
@@ -640,3 +641,52 @@ def test_a_bot_filter_is_not_reported_as_the_site_being_unreachable():
     down = _audit_coverage({}, {"is_reachable": False, "crawl_error": "http_500"})
     assert "Website availability" not in {item["label"] for item in blocked}
     assert "Website availability" in {item["label"] for item in down}
+
+
+# --- "What I'd do first" --------------------------------------------------------
+
+def _finding(signal, **data):
+    return {"signal": signal, "data": data}
+
+
+def test_moves_turn_related_findings_into_one_move_with_real_numbers():
+    from app.services.audit_moves import top_moves
+
+    moves = top_moves(
+        [_finding("reviews_bottom_quartile", reviews=31, median=191), _finding("no_ssl"),
+         _finding("thin_service_pages"), _finding("service_pages_missing_location"),
+         _finding("no_click_to_call")],
+        gaps={"sample_size": 11, "gaps": [{"label": "Electrical Panel Upgrade", "count": 9}]},
+        city="Las Vegas", last_review_days=228,
+    )
+    assert len(moves) == 3
+    assert moves[0]["move"].startswith("Build a dedicated page for Electrical Panel Upgrade")
+    assert "9 of the 11" in moves[0]["why"] and "Las Vegas" in moves[0]["why"]
+    assert "31 reviews" in moves[1]["why"] and "191" in moves[1]["why"] and "228 days" in moves[1]["why"]
+    assert "Not secure" in moves[2]["move"]
+
+
+def test_a_broken_foundation_comes_before_everything_else():
+    from app.services.audit_moves import top_moves
+
+    moves = top_moves([_finding("no_reviews"), _finding("no_website")],
+                      gaps=None, city=None, last_review_days=None)
+    assert [m["move"] for m in moves] == [
+        "Get a real website connected to your Google profile.", "Get your first Google reviews.",
+    ]
+
+
+def test_moves_never_repeat_and_skip_findings_without_written_advice():
+    from app.services.audit_moves import top_moves
+
+    moves = top_moves([_finding("title_missing_location"), _finding("homepage_unclear"),
+                       _finding("no_analytics")], gaps=None, city=None, last_review_days=None)
+    assert len(moves) == 1
+
+
+def test_moves_replace_the_old_box_on_page_one():
+    from app.services.audit_report_pdf import _moves_section, _styles
+
+    flowables = _moves_section([{"move": "Do this", "why": "Because"}], _styles())
+    assert any("What I&#x27;d do first" in str(getattr(f, "text", "")) or "What I'd do first" in str(getattr(f, "text", ""))
+               for f in flowables)

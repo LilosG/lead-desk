@@ -9,6 +9,7 @@ from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRoute
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
 from app.repositories.outreach import OutreachOperationLocked, OutreachRepository
 from app.repositories.outreach_evidence import OutreachEvidenceRepository
+from app.schemas.audit_reports import REPORT_VERSION
 from app.services.outreach_audit_copy import (
     audit_email_paragraph,
     clean_business_name,
@@ -22,7 +23,7 @@ from app.services.outreach_verification import OutreachClaimVerifier
 
 PROMPT_VERSION = "outreach-v12"
 # Reports older than this version lack the checks the email and PDF now rely on.
-CURRENT_AUDIT_VERSION = 9
+CURRENT_AUDIT_VERSION = REPORT_VERSION
 MAX_DRAFT_ATTEMPTS = 3
 # Signature plus a working opt-out. The postal line is optional and comes from
 # OUTREACH_POSTAL_ADDRESS (e.g. a PO box or virtual mailbox); CAN-SPAM expects

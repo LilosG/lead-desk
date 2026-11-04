@@ -10,7 +10,9 @@ from app.services.audit_report_policy import (
     observed_summary,
     report_policy_for,
 )
+from app.schemas.audit_reports import REPORT_VERSION
 from app.services import audit_benchmarks
+from app.services.audit_moves import top_moves
 from app.services.outreach_audit_copy import clean_business_name
 from pipeline import site_signals as signal_rules
 from pipeline import verticals as vertical_config
@@ -414,12 +416,6 @@ def _executive_summary(
     if phrases:
         high = sum(1 for item in findings if item.get("impact") == "high")
         if bench:
-            first = [
-                (item.get("phrase") or item.get("title") or "").strip()
-                for item in sorted(findings, key=_finding_order)
-                if item.get("impact") == "high"
-            ][:2] or phrases[:1]
-            parts.append(f"Start with {_join(first)}; the action plan lists everything in order.")
             return " ".join(parts)
         lead = (
             f"The biggest opportunities are {_join(phrases)}."
@@ -714,7 +710,7 @@ class AuditReportService:
         snapshot = _json_safe(
             {
                 "report_kind": "local_visibility_audit",
-                "report_version": 8,
+                "report_version": REPORT_VERSION,
                 "business": {
                     "name": business_name,
                     "location": location or None,
@@ -756,6 +752,10 @@ class AuditReportService:
                     item for item in coverage
                     if item.get("status") == "confirmed"
                 ],
+                "top_moves": top_moves(
+                    report_findings, gaps=gaps, city=prospect.get("city"),
+                    last_review_days=prospect.get("last_review_days"),
+                ),
                 "findings": report_findings,
                 "market_comparison": comparison,
                 "next_step": next_step(self._published_demo_url(place_id)),

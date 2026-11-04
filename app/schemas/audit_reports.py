@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 
 # Every finding the audit can report, so "select all" always works.
 MAX_REPORT_FINDINGS = 60
+# Raised when reports change, so outreach rebuilds older ones before attaching.
+REPORT_VERSION = 9
 
 
 class AuditReportOption(BaseModel):

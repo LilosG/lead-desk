@@ -557,6 +557,29 @@ def _number_badge(n: int, st: dict[str, ParagraphStyle], tone: Any = GOLD) -> Ta
     return t
 
 
+def _moves_section(moves: list[dict[str, str]], st: dict[str, ParagraphStyle]) -> list[Flowable]:
+    rows = [
+        [_number_badge(i, st),
+         [Paragraph(_text(m.get("move")), st["row_title"]), Spacer(1, 2),
+          Paragraph(_text(m.get("why")), st["body"])]]
+        for i, m in enumerate(moves, start=1)
+    ]
+    t = Table(rows, colWidths=[0.5 * inch, CONTENT_W - 0.5 * inch])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.5, LINE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    return [
+        *_section("What I'd do first", "Start here", st),
+        t, Spacer(1, 4),
+        Paragraph("The rest of this report is the full picture. If you'd like to talk any of it "
+                  "through, I'm happy to.", st["muted"]),
+        Spacer(1, 14),
+    ]
+
+
 def _top_fixes(findings: list[dict[str, Any]], st: dict[str, ParagraphStyle]) -> Table:
     rows = []
     for i, f in enumerate(findings[:3], start=1):
@@ -1141,6 +1164,10 @@ def render_audit_report_pdf(report: dict) -> bytes:
     story += [Paragraph("AT A GLANCE", st["kicker"]), Spacer(1, 2),
               _tiles_table(_scorecard(snapshot), st), Spacer(1, 14)]
 
+    moves = snapshot.get("top_moves") or []
+    if moves:
+        story += _moves_section(moves, st)
+
     summary = snapshot.get("executive_summary")
     if summary:
         story += [Paragraph("THE SHORT VERSION", st["kicker"]),
@@ -1150,7 +1177,7 @@ def render_audit_report_pdf(report: dict) -> bytes:
     if charts:
         story += [charts, Spacer(1, 14)]
 
-    if findings:
+    if findings and not moves:
         story += [CondPageBreak(1.6 * inch),
                   *_section("Fix these first", "Priorities", st),
                   _top_fixes(findings, st)]
