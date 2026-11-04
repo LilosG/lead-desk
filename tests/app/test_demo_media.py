@@ -141,3 +141,27 @@ def test_demo_media_requires_existing_prospect(tmp_path):
             root=tmp_path,
             base_url="https://demo.example.test",
         )
+
+
+def test_each_trade_gets_its_own_scene_and_direction_overrides_it():
+    electrician = DemoMediaService._prompt(
+        {"primary_type": "electrician", "vertical": "electrician", "city": "Tucson", "state": "AZ"},
+        role="hero", direction=None,
+    )
+    plumber = DemoMediaService._prompt(
+        {"primary_type": "plumber", "vertical": "plumber"}, role="hero", direction=None,
+    )
+    assert "electrical panel" in electrician and "Tucson, AZ" in electrician
+    assert "copper pipework" in plumber and "electrical panel" not in plumber
+
+    directed = DemoMediaService._prompt(
+        {"primary_type": "plumber", "vertical": "plumber"}, role="hero", direction="water heater in a garage",
+    )
+    assert "takes priority over the scene described above: water heater in a garage" in directed
+
+
+def test_a_niche_without_its_own_scene_keeps_the_general_one():
+    prompt = DemoMediaService._prompt(
+        {"primary_type": "dentist", "vertical": "dentist"}, role="hero", direction=None,
+    )
+    assert "dental studio" in prompt
