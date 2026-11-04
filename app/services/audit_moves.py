@@ -21,7 +21,18 @@ def _data(by_signal: dict[str, dict], *signals: str) -> dict[str, Any]:
     return {}
 
 
-def _service_pages(found: dict, gaps: dict | None, city: str) -> tuple[str, str] | None:
+def _page_count_line(counts: dict[str, Any], label: str) -> str:
+    """Their service page count against the best nearby, when that gap is real."""
+    yours, best = counts.get("yours"), counts.get("best")
+    if yours is None or not best or best <= yours:
+        return ""
+    noun = label[:-1] if yours == 1 else label
+    return f"You have {yours} {noun}, and the best competitor nearby has {best}. "
+
+
+def _service_pages(
+    found: dict, gaps: dict | None, city: str, counts: dict[str, Any], label: str,
+) -> tuple[str, str] | None:
     top = (gaps or {}).get("gaps") or []
     if top:
         where = f" in {city}" if city else ""
@@ -31,17 +42,49 @@ def _service_pages(found: dict, gaps: dict | None, city: str) -> tuple[str, str]
             f"a page for this. Someone searching for that job{where} needs a page about that job, "
             "and right now that search goes to them.",
         )
-    if "no_service_pages" in found:
+    numbers = _page_count_line(counts, label)
+    if "no_service_pages" in found or (
+        {"thin_service_pages", "service_pages_missing_location"} & set(found)
+        and (counts.get("yours") or 0) <= 1
+    ):
         return (
             "Give each of your main services its own page.",
-            "Right now a search for one specific job has no page on your site to land on, so "
+            numbers + "A search for one specific job needs a page about that job to land on, or "
             "Google has little reason to show you for it.",
         )
     if {"thin_service_pages", "service_pages_missing_location"} & set(found):
         return (
-            "Build out your service pages so each one can win its search.",
-            "They're too light to answer what someone wants to know before they call, and they "
-            "give Google little to work with for searches in your area.",
+            f"Build out your {label} so each one can win its search.",
+            numbers + "They're too light to answer what someone wants to know before they call, "
+            "and they give Google little to work with for searches in your area.",
+        )
+    return None
+
+
+def _town_pages(found: dict, town_pages: dict[str, Any]) -> tuple[str, str] | None:
+    if "no_city_pages" not in found:
+        return None
+    having, total = town_pages.get("having"), town_pages.get("total")
+    opening = f"{having} of the {total} nearby competitors we checked have them. " if having else ""
+    return (
+        "Add pages for the towns you serve.",
+        opening + "Searches that name a nearby town need a page written for that town, and you "
+        "don't have one yet.",
+    )
+
+
+def _homepage(found: dict, city: str) -> tuple[str, str] | None:
+    if "homepage_unclear" in found:
+        return (
+            "Say what you do and where at the top of your homepage.",
+            "The opening of your homepage doesn't plainly say it. Visitors decide in seconds, and "
+            "Google looks for the same clear signal.",
+        )
+    if "title_missing_location" in found and city:
+        return (
+            f"Name {city} in your homepage title.",
+            "It's one of the clearest signals of where you work, and it matches what people type "
+            "when they search.",
         )
     return None
 
@@ -101,19 +144,10 @@ _SIMPLE_AFTER_REVIEWS = [
      "Browsers show it before people see anything about your business. It's usually a small "
      "fix, and it removes an easy reason to leave."),
 ]
-_SIMPLE_LAST = [
-    ("no_city_pages", "Add pages for the towns you serve.",
-     "Searches that name a nearby town need a page written for that town, and you don't have "
-     "one yet."),
+_SIMPLE_AFTER_HOMEPAGE = [
     ("no_service_city_pages", "Add pages for your main services in your main towns.",
      "Many local searches name a service and a town together, and you have no page that "
      "answers both."),
-    ("title_missing_location", "Say what you do and where at the top of your homepage.",
-     "Visitors decide in seconds, and Google looks for the same clear signal. Neither is getting "
-     "it right now."),
-    ("homepage_unclear", "Say what you do and where at the top of your homepage.",
-     "Visitors decide in seconds, and Google looks for the same clear signal. Neither is getting "
-     "it right now."),
     ("no_contact_form", "Give people a way to reach you without calling.",
      "Many people won't call, especially after hours. Without a form or booking option, they "
      "move on to someone who has one."),
@@ -146,12 +180,22 @@ _SIMPLE_LAST = [
 ]
 
 
+def already_competitive(findings: list[dict[str, Any]], benchmarks: dict[str, Any] | None) -> bool:
+    """On par or ahead of every local measure, with nothing seriously wrong."""
+    if not benchmarks or benchmarks.get("behind"):
+        return False
+    return not any(f.get("impact") == "high" for f in findings)
+
+
 def top_moves(
     findings: list[dict[str, Any]],
     *,
     gaps: dict[str, Any] | None,
     city: str | None,
     last_review_days: int | None,
+    page_counts: dict[str, Any] | None = None,
+    town_pages: dict[str, Any] | None = None,
+    offering_label: str = "service pages",
 ) -> list[dict[str, str]]:
     found = {f["signal"]: f for f in findings if f.get("signal")}
 
@@ -160,11 +204,13 @@ def top_moves(
 
     candidates = [
         *simple(_SIMPLE_BEFORE_PAGES),
-        _service_pages(found, gaps, city or ""),
+        _service_pages(found, gaps, city or "", page_counts or {}, offering_label),
         _reviews(found, last_review_days),
         *simple(_SIMPLE_AFTER_REVIEWS),
         _speed(found),
-        *simple(_SIMPLE_LAST),
+        _town_pages(found, town_pages or {}),
+        _homepage(found, city or ""),
+        *simple(_SIMPLE_AFTER_HOMEPAGE),
     ]
     moves: list[dict[str, str]] = []
     for candidate in candidates:

@@ -690,3 +690,53 @@ def test_moves_replace_the_old_box_on_page_one():
     flowables = _moves_section([{"move": "Do this", "why": "Because"}], _styles())
     assert any("What I&#x27;d do first" in str(getattr(f, "text", "")) or "What I'd do first" in str(getattr(f, "text", ""))
                for f in flowables)
+
+
+def test_moves_use_their_own_numbers_when_no_competitor_page_gap_exists():
+    from app.services.audit_moves import top_moves
+
+    moves = top_moves(
+        [_finding("thin_service_pages"), _finding("no_city_pages"), _finding("title_missing_location")],
+        gaps=None, city="Carlsbad", last_review_days=98,
+        page_counts={"yours": 1, "best": 7}, town_pages={"having": 4, "total": 11},
+    )
+    assert moves[0]["move"] == "Give each of your main services its own page."
+    assert "You have 1 service page, and the best competitor nearby has 7." in moves[0]["why"]
+    assert moves[1]["why"].startswith("4 of the 11 nearby competitors")
+    assert moves[2]["move"] == "Name Carlsbad in your homepage title."
+
+
+def test_no_numbers_are_claimed_when_the_business_is_not_behind():
+    from app.services.audit_moves import top_moves
+
+    moves = top_moves([_finding("thin_service_pages")], gaps=None, city="Carlsbad",
+                      last_review_days=None, page_counts={"yours": 8, "best": 7})
+    assert "best competitor" not in moves[0]["why"]
+
+
+def test_a_clear_homepage_problem_replaces_the_smaller_title_move():
+    from app.services.audit_moves import top_moves
+
+    moves = top_moves([_finding("homepage_unclear"), _finding("title_missing_location")],
+                      gaps=None, city="Carlsbad", last_review_days=None)
+    assert [m["move"] for m in moves] == ["Say what you do and where at the top of your homepage."]
+
+
+def test_strong_businesses_are_told_so():
+    from app.services.audit_moves import already_competitive
+
+    assert already_competitive([{"impact": "medium"}], {"behind": 0}) is True
+    assert already_competitive([{"impact": "medium"}], {"behind": 1}) is False
+    assert already_competitive([{"impact": "high"}], {"behind": 0}) is False
+    assert already_competitive([{"impact": "medium"}], None) is False
+
+
+def test_a_well_written_search_result_gets_no_template_suggestion():
+    from app.services.audit_benchmarks import search_snippet
+
+    prospect = {"website_url": "https://x.example", "city": "Carlsbad", "state": "CA", "vertical": "electrician"}
+    good = {"is_reachable": True, "title": "Lumiere Electric | Electrical & Lighting for Homes",
+            "meta_description": "Licensed electrical and lighting contractor serving San Diego County homes."}
+    weak = {"is_reachable": True, "title": "Home", "meta_description": ""}
+    assert search_snippet(prospect, good, "Lumiere Electric")["worth_suggesting"] is False
+    assert search_snippet(prospect, weak, "Lumiere Electric")["worth_suggesting"] is True

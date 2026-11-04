@@ -174,6 +174,9 @@ def benchmarks(
     }
 
 
+MIN_GOOD_TITLE = 25
+MIN_GOOD_DESCRIPTION = 50
+_PLACEHOLDER_TITLES = {"home", "homepage", "welcome", "untitled"}
 _LINK_LABELS = {"services", "our services", "all services", "learn more", "read more",
                 "view all", "view more", "see more", "find out more", "click here",
                 "get started", "details", "view details", "home", "menu", "more"}
@@ -298,10 +301,37 @@ def search_snippet(
     description = _fit(pieces, 158)
 
     url = audit.get("resolved_url") or prospect.get("website_url") or ""
+    current_title = (audit.get("title") or "").strip()
+    current_description = (audit.get("meta_description") or "").strip()
     return {
         "url": re.sub(r"^https?://(www\.)?", "", url).rstrip("/"),
         "current_title": (audit.get("title") or "").strip() or None,
         "current_description": (audit.get("meta_description") or "").strip() or None,
         "suggested_title": title,
         "suggested_description": description,
+        # A template can't improve on a title and description someone wrote well.
+        "worth_suggesting": (
+            len(current_title) < MIN_GOOD_TITLE
+            or len(current_description) < MIN_GOOD_DESCRIPTION
+            or current_title.lower() in _PLACEHOLDER_TITLES
+        ),
     }
+
+
+def page_counts(audit: dict[str, Any], peers: list[dict[str, Any]]) -> dict[str, Any]:
+    """This site's service pages against the most any nearby competitor has."""
+    counts = [_num(p.get("offering_page_count")) for p in _site_peers(peers)]
+    known = [int(c) for c in counts if c is not None]
+    yours = _num(audit.get("offering_page_count"))
+    return {
+        "yours": int(yours) if yours is not None else None,
+        "best": max(known) if len(known) >= MIN_PEERS else None,
+    }
+
+
+def town_page_share(peers: list[dict[str, Any]]) -> dict[str, Any]:
+    """How many nearby sites have pages for individual towns."""
+    rows = [p for p in _site_peers(peers) if p.get("location_page_count") is not None]
+    if len(rows) < MIN_PEERS:
+        return {}
+    return {"having": sum(1 for p in rows if p["location_page_count"] > 0), "total": len(rows)}
