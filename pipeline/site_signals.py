@@ -56,6 +56,13 @@ SIGNALS = frozenset({
 
 _PHONE_TEXT = re.compile(r"\(?\b\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}\b")
 _JS_APP_ROOTS = ("root", "app", "__next", "__nuxt", "___gatsby")
+# Keep in step with EV_SERVICE_SQL in app/campaigns.py.
+EV_SERVICE = re.compile(
+    r"\b(ev|evs|electric vehicles?|tesla)\b.{0,30}charg"
+    r"|charg.{0,30}\b(ev|evs|electric vehicles?)\b"
+    r"|\bevse\b",
+    re.I,
+)
 _FAQ_HEADING = re.compile(r"\b(faqs?|frequently asked|common questions|questions)\b", re.I)
 # Parent folders that hold one page per town or neighborhood.
 _AREA_PARENTS = {"service-area", "service-areas", "areas", "areas-we-serve", "areas-served",
@@ -245,6 +252,7 @@ def collect(
         "images": len(images),
         "images_missing_alt": sum(1 for i in images if not (i.get("alt") or "").strip()),
         "ai_bots": _bot_access(robots, final_url),
+        "ev_service": bool(EV_SERVICE.search(f"{title} {text}")),
         "offering_paths": len(offering_paths),
         "location_paths": len(location_paths),
         "service_city_paths": len(pairs),

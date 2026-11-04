@@ -3,6 +3,9 @@ from typing import Any
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
+from app.campaigns import COOLDOWN_DAYS, DEFAULT_CAMPAIGN
+from app.repositories.outreach_board import cooldown_join
+
 
 class OutreachOperationLocked(RuntimeError):
     pass
@@ -27,6 +30,7 @@ class OutreachRepository:
                 select 1
                 from outreach_queue q
                 where q.place_id = w.place_id
+                  and q.campaign_key = 'seo_websites'
               )
           and (
                 cardinality(coalesce(w.emails_found, '{}'::text[])) = 0
@@ -93,7 +97,9 @@ class OutreachRepository:
 
         return int(row["count"])
 
-    def candidate_readiness(self, place_id: str) -> dict[str, Any] | None:
+    def candidate_readiness(
+        self, place_id: str, campaign_key: str = DEFAULT_CAMPAIGN,
+    ) -> dict[str, Any] | None:
         query = """
             select
                 w.place_id,
@@ -113,6 +119,7 @@ class OutreachRepository:
                     select 1
                     from outreach_queue q
                     where q.place_id = w.place_id
+                      and q.campaign_key = %s
                 ) as already_queued
             from v_lead_worklist w
             join v_lead_segments seg
@@ -123,7 +130,7 @@ class OutreachRepository:
         """
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (place_id,))
+                cur.execute(query, (campaign_key, place_id))
                 return cur.fetchone()
 
     def list_items(self, status: str | None = None) -> tuple[list[dict[str, Any]], int]:
@@ -261,13 +268,19 @@ class OutreachRepository:
                 q.id::text as id,
                 q.place_id,
                 q.channel,
+                q.campaign_key,
                 q.status,
                 q.to_address,
                 q.version,
                 b.name,
                 b.city,
+                b.state,
                 b.vertical,
                 b.website_url,
+                we.title as site_title,
+                we.meta_description as site_description,
+                we.offering_titles,
+                we.site_signals,
                 w.headline_gap,
                 w.total_score,
                 w.tier,
@@ -328,11 +341,17 @@ class OutreachRepository:
                 cur.execute(query, (email,))
                 return cur.fetchone() is not None
 
-    def create_item(self, place_id: str, channel: str, to_address: str | None) -> dict[str, Any]:
+    def create_item(
+        self,
+        place_id: str,
+        channel: str,
+        to_address: str | None,
+        campaign_key: str = DEFAULT_CAMPAIGN,
+    ) -> dict[str, Any]:
         insert_query = """
-            insert into outreach_queue (place_id, channel, to_address)
-            values (%s, %s, %s)
-            on conflict (place_id, channel) do nothing
+            insert into outreach_queue (place_id, channel, to_address, campaign_key)
+            values (%s, %s, %s, %s)
+            on conflict (place_id, channel, campaign_key) do nothing
             returning id::text as id, place_id, channel, status, to_address,
                       subject, body, claim_signal, verification_status,
                       verification_note, version, created_at, updated_at
@@ -342,12 +361,12 @@ class OutreachRepository:
                    subject, body, claim_signal, verification_status,
                    verification_note, version, created_at, updated_at
             from outreach_queue
-            where place_id = %s and channel = %s
+            where place_id = %s and channel = %s and campaign_key = %s
         """
         with self.pool.connection() as conn:
             with conn.transaction():
                 with conn.cursor() as cur:
-                    cur.execute(insert_query, (place_id, channel, to_address))
+                    cur.execute(insert_query, (place_id, channel, to_address, campaign_key))
                     row = cur.fetchone()
                     if row is not None:
                         cur.execute(
@@ -355,14 +374,18 @@ class OutreachRepository:
                             insert into outreach_queue_events (queue_id, place_id, event_type, changes)
                             values (%s::uuid, %s, 'queued', %s)
                             """,
-                            (row['id'], place_id, Jsonb({'channel': channel, 'to_address': to_address})),
+                            (row['id'], place_id, Jsonb({
+                                'channel': channel,
+                                'to_address': to_address,
+                                'campaign_key': campaign_key,
+                            })),
                         )
                         return row
 
                     # Queue creation is idempotent. Existing rows are never
                     # silently mutated by a second create request; edits go
                     # through the versioned update path.
-                    cur.execute(select_query, (place_id, channel))
+                    cur.execute(select_query, (place_id, channel, campaign_key))
                     return cur.fetchone()
 
     def latest_audit_report(self, place_id: str) -> dict[str, Any] | None:
@@ -381,7 +404,7 @@ class OutreachRepository:
 
     def get_item(self, item_id: str) -> dict[str, Any] | None:
         query = """
-            select id::text as id, place_id, channel, status, to_address,
+            select id::text as id, place_id, channel, campaign_key, status, to_address,
                    subject, body, claim_signal, verification_status,
                    verification_note, generation_model,
                    generation_prompt_version, draft_generated_at,
@@ -897,13 +920,78 @@ class OutreachRepository:
                     )
                     return updated
 
-    def find_email_item(self, place_id: str) -> dict[str, Any] | None:
+    def find_email_item(
+        self, place_id: str, campaign_key: str = DEFAULT_CAMPAIGN,
+    ) -> dict[str, Any] | None:
         query = """
             select id::text as id, status, body, claim_signal, gmail_draft_id, version
             from outreach_queue
-            where place_id = %s and channel = 'email'
+            where place_id = %s and channel = 'email' and campaign_key = %s
         """
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (place_id,))
+                cur.execute(query, (place_id, campaign_key))
                 return cur.fetchone()
+
+    def recent_contact(self, place_id: str, campaign_key: str) -> dict[str, Any] | None:
+        """The newest contact in another campaign, while the cooldown is running."""
+        query = f"""
+            select cd.cooldown_campaign as campaign, cd.cooldown_until as until
+            from (select 1) lead
+            {cooldown_join("%(place_id)s", "%(campaign_key)s")}
+            where cd.cooldown_until is not null
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, {
+                    "place_id": place_id, "campaign_key": campaign_key, "cooldown_days": COOLDOWN_DAYS,
+                })
+                return cur.fetchone()
+
+    def place_opted_out(self, place_id: str) -> bool:
+        query = "select 1 from outreach_queue where place_id = %s and status = 'suppressed' limit 1"
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (place_id,))
+                return cur.fetchone() is not None
+
+    def do_not_contact(self, item_id: str) -> dict[str, Any] | None:
+        """Stop all outreach to this business, in every campaign."""
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "select place_id, to_address, channel from outreach_queue where id = %s::uuid",
+                        (item_id,),
+                    )
+                    item = cur.fetchone()
+                    if item is None:
+                        return None
+                    if item["channel"] == "email" and item["to_address"]:
+                        cur.execute(
+                            """
+                            insert into suppression (email, reason)
+                            values (lower(%s), 'do not contact')
+                            on conflict (email) do nothing
+                            """,
+                            (item["to_address"],),
+                        )
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set status = 'suppressed', version = version + 1, updated_at = now()
+                        where place_id = %s and status <> 'suppressed'
+                        returning id::text as id
+                        """,
+                        (item["place_id"],),
+                    )
+                    changed = [row["id"] for row in cur.fetchall()]
+                    for queue_id in changed:
+                        cur.execute(
+                            """
+                            insert into outreach_queue_events (queue_id, place_id, event_type, changes)
+                            values (%s::uuid, %s, 'do_not_contact', %s)
+                            """,
+                            (queue_id, item["place_id"], Jsonb({"status": "suppressed"})),
+                        )
+                    return {"place_id": item["place_id"], "updated": len(changed)}

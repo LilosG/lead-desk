@@ -19,6 +19,17 @@ const stages = [
   description="Every prospect, in one stage, with the next step. Nothing is sent from here."
 >
   <div class="space-y-4">
+    <section class="rounded-lg border border-[var(--line)] bg-white px-4 py-3">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div id="campaign-tabs" role="group" aria-label="Campaign" class="flex flex-wrap gap-2"></div>
+        <p id="campaign-summary" class="text-xs text-[var(--muted)]"></p>
+      </div>
+      <details id="campaign-results" class="mt-2 text-xs">
+        <summary class="cursor-pointer font-medium text-[var(--muted)]">Results by market and niche</summary>
+        <div id="campaign-results-body" class="mt-2 overflow-x-auto"></div>
+      </details>
+    </section>
+
     <nav id="stage-tabs" aria-label="Outreach stages" class="grid grid-cols-3 gap-2 sm:grid-cols-5 xl:grid-cols-9">
       {stages.map((stage) => (
         <button
@@ -46,7 +57,7 @@ const stages = [
         <label for="filter-market" class="mb-1 block text-[11px] font-medium text-[var(--muted)]">Market</label>
         <select id="filter-market" class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-sm"><option value="">All markets</option></select>
       </div>
-      <label class="flex items-center gap-2 pb-1.5 text-sm"><input id="filter-qualified" type="checkbox" /> Qualified only</label>
+      <label id="qualified-option" class="flex items-center gap-2 pb-1.5 text-sm"><input id="filter-qualified" type="checkbox" /> Qualified only</label>
       <div class="ml-auto flex items-center gap-3 pb-1 text-xs text-[var(--muted)]">
         <span id="gmail-status">Gmail —</span>
         <button id="sync-gmail" type="button" class="rounded-md border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-40">Check Gmail</button>
@@ -147,6 +158,7 @@ const stages = [
               <option value="contacted">Contacted</option>
               <option value="replied">Replied</option>
               <option value="archived">Archived</option>
+              <option value="suppressed" disabled>Do not contact</option>
             </select>
           </div>
           <div>
@@ -163,6 +175,7 @@ const stages = [
         <div id="draft-error" class="hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"></div>
         <button type="submit" class="w-full rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium">Save changes</button>
       </form>
+      <button id="draft-stop" type="button" class="w-full rounded-md border border-red-200 px-4 py-2.5 text-sm font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-40">Do not contact</button>
     </div>
   </aside>
 
@@ -188,8 +201,29 @@ const stages = [
       gmail_message_id: string | null;
       gmail_draft_left_at: string | null;
       contacted_at: string | null;
+      cooldown_until: string | null;
       updated_at: string;
       next_step: string;
+    };
+
+    type Campaign = {
+      key: string;
+      name: string;
+      description: string;
+      sent: number;
+      replied: number;
+      opted_out: number;
+      reply_rate: number | null;
+      prep_label: string;
+      uses_audit: boolean;
+    };
+
+    type CampaignResult = {
+      market: string;
+      vertical: string;
+      sent: number;
+      replied: number;
+      reply_rate: number;
     };
 
     type Board = {
@@ -229,7 +263,7 @@ const stages = [
     const PREP_STAGES = new Set(['to_prep', 'review', 'attention']);
     const STATUS_STAGES = new Set(['review', 'attention', 'in_gmail', 'contacted', 'replied', 'call']);
     const STEP_LABELS: Record<string, string> = {
-      audit: 'audit', queue: 'queue', draft: 'email draft', ready: 'draft ready', gmail_draft: 'Gmail draft',
+      cooldown: 'cooldown', audit: 'audit', queue: 'queue', draft: 'email draft', ready: 'draft ready', gmail_draft: 'Gmail draft',
     };
 
     const el = <T extends HTMLElement>(selector: string): T => {
@@ -260,6 +294,7 @@ const stages = [
 
     const params = new URLSearchParams(window.location.search);
     const state = {
+      campaign: params.get('campaign') || 'seo_websites',
       stage: params.get('stage') || 'to_prep',
       q: params.get('q') || '',
       vertical: params.get('vertical') || '',
@@ -268,11 +303,13 @@ const stages = [
       page: Math.max(1, Number(params.get('page') || 1)),
     };
     let rows: Row[] = [];
+    let campaigns: Campaign[] = [];
     const selected = new Set<string>();
     let gmailConnected = false;
     let searchTimer: number | undefined;
 
     const rowKey = (row: Row): string => row.id || row.place_id;
+    const currentCampaign = (): Campaign | undefined => campaigns.find((c) => c.key === state.campaign);
 
     function showError(error: unknown) {
       const box = el('#page-error');
@@ -287,12 +324,35 @@ const stages = [
     }
 
     function queryString(): string {
-      const query = new URLSearchParams({ stage: state.stage, page: String(state.page) });
+      const query = new URLSearchParams({ campaign: state.campaign, stage: state.stage, page: String(state.page) });
       if (state.q) query.set('q', state.q);
       if (state.vertical) query.set('vertical', state.vertical);
       if (state.market) query.set('market', state.market);
       query.set('qualified', String(state.qualifiedOnly));
       return query.toString();
+    }
+
+    function renderCampaigns() {
+      el('#campaign-tabs').innerHTML = campaigns.map((campaign) => {
+        const active = campaign.key === state.campaign;
+        return `<button type="button" data-campaign="${esc(campaign.key)}" aria-pressed="${active}" title="${esc(campaign.description)}" class="rounded-md border px-3 py-1.5 text-sm font-medium transition ${active ? 'border-[var(--dark)] bg-[var(--dark)] text-white' : 'border-[var(--line)] bg-white hover:border-[var(--accent)]'}">${esc(campaign.name)}</button>`;
+      }).join('');
+      const current = currentCampaign();
+      if (!current) return;
+      el('#campaign-summary').textContent = current.sent
+        ? `${current.sent.toLocaleString()} sent · ${current.replied.toLocaleString()} replied · ${current.reply_rate}% reply rate`
+        : 'Nothing sent yet';
+      el('#bulk-prep').textContent = current.prep_label;
+    }
+
+    async function loadResults() {
+      const body = el('#campaign-results-body');
+      const { results } = await api(`/api/outreach/campaigns/${encodeURIComponent(state.campaign)}/results`) as { results: CampaignResult[] };
+      body.innerHTML = results.length ? `
+        <table class="min-w-full border-collapse">
+          <thead><tr class="border-b border-[var(--line)] text-left text-[var(--muted)]"><th class="py-1.5 pr-4 font-medium">Market</th><th class="py-1.5 pr-4 font-medium">Niche</th><th class="py-1.5 pr-4 font-medium">Sent</th><th class="py-1.5 pr-4 font-medium">Replied</th><th class="py-1.5 font-medium">Reply rate</th></tr></thead>
+          <tbody>${results.map((row) => `<tr class="border-b border-[var(--line)] last:border-0"><td class="py-1.5 pr-4">${esc(row.market.replace(/, USA$/, ''))}</td><td class="py-1.5 pr-4">${esc(row.vertical.replaceAll('_', ' '))}</td><td class="py-1.5 pr-4">${esc(row.sent)}</td><td class="py-1.5 pr-4">${esc(row.replied)}</td><td class="py-1.5">${esc(row.reply_rate)}%</td></tr>`).join('')}</tbody>
+        </table>` : '<p class="text-[var(--muted)]">Nothing sent in this campaign yet.</p>';
     }
 
     function renderTabs(counts: Record<string, number>) {
@@ -323,6 +383,7 @@ const stages = [
     }
 
     function actionFor(row: Row): string {
+      if (row.stage === 'to_prep' && row.cooldown_until) return '';
       if (row.stage === 'to_prep') return `<button type="button" data-prep="${esc(row.place_id)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Prep</button>`;
       if (row.stage === 'verify') return `<button type="button" data-site-ok="${esc(row.place_id)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Site is OK</button>`;
       if (row.kind === 'candidate') return `<a href="/prospects/${encodeURIComponent(row.place_id)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Open</a>`;
@@ -367,6 +428,7 @@ const stages = [
       el('#page-error').classList.add('hidden');
       history.replaceState(null, '', `/outreach?${queryString()}`);
       const query = new URLSearchParams({
+        campaign: state.campaign,
         stage: state.stage,
         page: String(state.page),
         qualified_only: String(state.qualifiedOnly),
@@ -383,6 +445,7 @@ const stages = [
       renderOptions(el<HTMLSelectElement>('#filter-vertical'), data.filters.verticals, state.vertical, (v) => v.replaceAll('_', ' '));
       renderOptions(el<HTMLSelectElement>('#filter-market'), data.filters.markets, state.market, (v) => v.replace(/, USA$/, ''));
       el<HTMLInputElement>('#filter-qualified').disabled = state.stage !== 'to_prep';
+      el('#qualified-option').classList.toggle('hidden', currentCampaign()?.uses_audit === false);
       el('#page-label').textContent = `${data.pagination.total.toLocaleString()} in this stage · page ${data.pagination.page} of ${Math.max(data.pagination.total_pages, 1)}`;
       el<HTMLButtonElement>('#prev').disabled = data.pagination.page <= 1;
       el<HTMLButtonElement>('#next').disabled = data.pagination.page >= data.pagination.total_pages;
@@ -432,6 +495,12 @@ const stages = [
       el<HTMLSelectElement>('#draft-status').value = item.status;
       el<HTMLSelectElement>('#draft-verification').value = item.verification_status;
       el('#draft-error').classList.add('hidden');
+
+      const stop = el<HTMLButtonElement>('#draft-stop');
+      stop.dataset.armed = '';
+      stop.textContent = 'Do not contact';
+      stop.disabled = item.status === 'suppressed';
+      stop.dataset.gmail = item.gmail_draft_id && item.stage === 'in_gmail' ? 'true' : '';
 
       const generate = el<HTMLButtonElement>('#draft-generate');
       generate.textContent = item.body ? 'Regenerate draft' : 'Generate draft';
@@ -486,7 +555,7 @@ const stages = [
         box.innerHTML = `Working on ${done + 1} of ${placeIds.length}: ${esc(names.get(placeId))}… Keep this page open.<br>${lines.join('<br>')}`;
         try {
           const result = await api(`/api/outreach/fast-track/${encodeURIComponent(placeId)}`, {
-            method: 'POST', body: JSON.stringify({ gmail: true }),
+            method: 'POST', body: JSON.stringify({ gmail: true, campaign: state.campaign }),
           });
           lines.push(result.ok
             ? `<span class="text-emerald-700">✓ ${esc(names.get(placeId))}: in Gmail</span>`
@@ -500,6 +569,25 @@ const stages = [
       box.innerHTML = `Finished ${done} of ${placeIds.length}. Review the drafts in Gmail before sending.<br>${lines.join('<br>')}`;
       await loadBoard();
     }
+
+    el('#campaign-tabs').addEventListener('click', (event) => {
+      const button = (event.target as Element).closest<HTMLButtonElement>('[data-campaign]');
+      if (!button?.dataset.campaign || button.dataset.campaign === state.campaign) return;
+      state.campaign = button.dataset.campaign;
+      state.stage = 'to_prep';
+      state.vertical = '';
+      state.market = '';
+      state.page = 1;
+      selected.clear();
+      el('#bulk-result').classList.add('hidden');
+      renderCampaigns();
+      el<HTMLDetailsElement>('#campaign-results').open = false;
+      loadBoard().catch(showError);
+    });
+
+    el<HTMLDetailsElement>('#campaign-results').addEventListener('toggle', (event) => {
+      if ((event.target as HTMLDetailsElement).open) loadResults().catch(showError);
+    });
 
     el('#stage-tabs').addEventListener('click', (event) => {
       const button = (event.target as Element).closest<HTMLButtonElement>('[data-stage]');
@@ -661,6 +749,26 @@ const stages = [
       }
     });
 
+    el<HTMLButtonElement>('#draft-stop').addEventListener('click', async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      if (!button.dataset.armed) {
+        button.dataset.armed = 'true';
+        button.textContent = 'Confirm: stop all outreach to this business';
+        return;
+      }
+      button.disabled = true;
+      el('#draft-error').classList.add('hidden');
+      try {
+        await api(`/api/outreach/items/${encodeURIComponent(draftId())}/do-not-contact`, { method: 'POST' });
+        if (button.dataset.gmail) showNote('Stopped. A Gmail draft for this business is still in Gmail, so delete it there.');
+        closeDrawer();
+        await loadBoard();
+      } catch (error) {
+        drawerError(error);
+        button.disabled = false;
+      }
+    });
+
     async function init() {
       el<HTMLInputElement>('#filter-q').value = state.q;
       el<HTMLInputElement>('#filter-qualified').checked = state.qualifiedOnly;
@@ -668,6 +776,9 @@ const stages = [
       gmailConnected = Boolean(integrations.gmail_configured);
       el('#gmail-status').textContent = gmailConnected ? `Gmail · ${integrations.gmail_sender_email || 'connected'}` : 'Gmail not connected';
       el<HTMLButtonElement>('#sync-gmail').disabled = !gmailConnected;
+      campaigns = (await api('/api/outreach/campaigns')).campaigns as Campaign[];
+      if (!currentCampaign()) state.campaign = campaigns[0]?.key || 'seo_websites';
+      renderCampaigns();
       await loadBoard();
       let lastSync = 0;
       try { lastSync = Number(sessionStorage.getItem(SYNC_KEY) || 0); } catch { lastSync = 0; }

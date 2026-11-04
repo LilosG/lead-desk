@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.campaigns import CAMPAIGNS, DEFAULT_CAMPAIGN
 from app.core.config import get_settings
 from app.core.database import pool
 from app.integrations.openrouter import OpenRouterClient
@@ -83,6 +84,7 @@ def get_service() -> OutreachService:
         generation_model=settings.openrouter_model if generator else None,
         gmail_sender_email=settings.gmail_sender_email if gmail else None,
         audit_builder=build_default_audit,
+        ev_overview_url=settings.ev_overview_url,
     )
 
 
@@ -143,9 +145,26 @@ def get_board_service() -> OutreachBoardService:
     )
 
 
+def known_campaign(campaign: str) -> str:
+    if campaign not in CAMPAIGNS:
+        raise HTTPException(status_code=404, detail='campaign not found')
+    return campaign
+
+
+@router.get('/campaigns')
+def list_campaigns() -> dict:
+    return {'campaigns': get_board_service().campaigns()}
+
+
+@router.get('/campaigns/{campaign}/results')
+def campaign_results(campaign: str) -> dict:
+    return {'results': get_board_service().campaign_results(known_campaign(campaign))}
+
+
 @router.get('/board')
 def outreach_board(
     stage: Stage = 'to_prep',
+    campaign: str = Query(default=DEFAULT_CAMPAIGN, max_length=40),
     q: str | None = Query(default=None, max_length=120),
     vertical: str | None = Query(default=None, max_length=100),
     market: str | None = Query(default=None, max_length=120),
@@ -154,7 +173,7 @@ def outreach_board(
     page_size: int = Query(default=50, ge=1, le=100),
 ) -> dict:
     return get_board_service().board(
-        stage=stage, q=q, vertical=vertical, market=market,
+        campaign=known_campaign(campaign), stage=stage, q=q, vertical=vertical, market=market,
         qualified_only=qualified_only, page=page, page_size=page_size,
     )
 
@@ -177,8 +196,11 @@ def sync_gmail_drafts() -> dict:
 
 
 @router.get('/readiness/{place_id}')
-def outreach_readiness(place_id: str) -> dict:
-    result = get_service().candidate_readiness(place_id)
+def outreach_readiness(
+    place_id: str,
+    campaign: str = Query(default=DEFAULT_CAMPAIGN, max_length=40),
+) -> dict:
+    result = get_service().candidate_readiness(place_id, known_campaign(campaign))
 
     if result is None:
         raise HTTPException(status_code=404, detail='prospect not found')
@@ -322,6 +344,7 @@ class BulkStatusRequest(BaseModel):
 
 class FastTrackRequest(BaseModel):
     gmail: bool = True
+    campaign: str = Field(default=DEFAULT_CAMPAIGN, max_length=40)
 
 
 @router.post('/bulk/status')
@@ -338,4 +361,16 @@ def fast_track_prospect(place_id: str, payload: FastTrackRequest) -> dict:
     from app.api.routes.audit_reports import get_service as get_audit_service
     from app.services.outreach_bulk import fast_track
 
-    return fast_track(get_service(), get_audit_service(), place_id, gmail=payload.gmail)
+    return fast_track(
+        get_service(), get_audit_service(), place_id,
+        gmail=payload.gmail, campaign_key=known_campaign(payload.campaign),
+    )
+
+
+@router.post('/items/{item_id}/do-not-contact')
+def do_not_contact(item_id: UUID) -> dict:
+    """Stop all outreach to this business, in every campaign."""
+    result = OutreachRepository(pool).do_not_contact(str(item_id))
+    if result is None:
+        raise HTTPException(status_code=404, detail='outreach item not found')
+    return result

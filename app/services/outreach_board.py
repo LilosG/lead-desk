@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from math import ceil
 from typing import Any, Literal
 
+from app.campaigns import CAMPAIGNS, get_campaign
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
@@ -27,10 +28,22 @@ def days_since(value: datetime | None, now: datetime | None = None) -> int | Non
     return ((now or datetime.now(timezone.utc)) - value).days
 
 
+def cooldown_note(row: dict[str, Any]) -> str | None:
+    until = row.get("cooldown_until")
+    if not until or row.get("stage") not in {"to_prep", "review", "attention"}:
+        return None
+    return f"Already in {row.get('cooldown_campaign')} outreach. Wait until {until:%b} {until.day}"
+
+
 def next_step(row: dict[str, Any], now: datetime | None = None) -> str:
     """One plain instruction for this prospect."""
     stage = row.get("stage")
+    waiting = cooldown_note(row)
+    if waiting:
+        return waiting
     if stage == "to_prep":
+        if not get_campaign(row.get("campaign_key")).uses_audit:
+            return "Draft the email"
         return "Build the audit and draft the email"
     if stage == "verify":
         return "Open the site, then mark it checked or add an email"
@@ -74,9 +87,12 @@ def gmail_block_reason(item: dict[str, Any], *, gmail_connected: bool) -> str | 
         return "There's no draft yet. Click Generate draft first."
     if item.get("verification_status") not in {"verified", "not_required"}:
         return "The claim in this draft failed verification. Regenerate the draft."
-    if item.get("claim_signal") != "audit_report":
-        return "This draft has no audit behind it. Click Regenerate draft to build one and attach it."
-    return None
+    campaign = get_campaign(item.get("campaign_key"))
+    if item.get("claim_signal") != campaign.claim_signal:
+        if campaign.uses_audit:
+            return "This draft has no audit behind it. Click Regenerate draft to build one and attach it."
+        return "Click Regenerate draft to write this campaign's email."
+    return cooldown_note(item)
 
 
 class OutreachBoardService:
@@ -91,14 +107,20 @@ class OutreachBoardService:
         self.gmail_repository = gmail_repository
         self.gmail = gmail
 
-    def board(self, *, stage: str, page: int, page_size: int, **filters: Any) -> dict[str, Any]:
-        data = self.repository.board(stage=stage, page=page, page_size=page_size, **filters)
+    def board(self, *, stage: str, page: int, page_size: int, campaign: str, **filters: Any) -> dict[str, Any]:
+        if not get_campaign(campaign).uses_audit:
+            # "Qualified" is the SEO score. A campaign without an audit doesn't use it.
+            filters["qualified_only"] = False
+        data = self.repository.board(
+            campaign=campaign, stage=stage, page=page, page_size=page_size, **filters,
+        )
         counts = {name: int(data["counts"].get(name, 0)) for name in STAGES}
         total = counts.get(stage, 0)
         return {
             "stage": stage,
             "counts": counts,
-            "items": [{**row, "next_step": next_step(row)} for row in data["rows"]],
+            "items": [{**row, "next_step": next_step({**row, "campaign_key": campaign})}
+                      for row in data["rows"]],
             "pagination": {
                 "page": page,
                 "page_size": page_size,
@@ -107,6 +129,21 @@ class OutreachBoardService:
             },
             "filters": {"verticals": data["verticals"], "markets": data["markets"]},
         }
+
+    def campaigns(self) -> list[dict[str, Any]]:
+        known = [row for row in self.repository.campaigns() if row["key"] in CAMPAIGNS]
+        return [{
+            **row,
+            "reply_rate": round(row["replied"] / row["sent"] * 100, 1) if row["sent"] else None,
+            "prep_label": CAMPAIGNS[row["key"]].prep_label,
+            "uses_audit": CAMPAIGNS[row["key"]].uses_audit,
+        } for row in known]
+
+    def campaign_results(self, campaign: str) -> list[dict[str, Any]]:
+        return [
+            {**row, "reply_rate": round(row["replied"] / row["sent"] * 100, 1)}
+            for row in self.repository.campaign_results(campaign)
+        ]
 
     def item(self, item_id: str) -> dict[str, Any] | None:
         item = self.repository.item(item_id)

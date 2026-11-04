@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.campaigns import DEFAULT_CAMPAIGN, get_campaign
 from app.services.audit_reports import AuditReportError, AuditReportService
 from app.services.outreach import (
     OutreachBlocked,
@@ -46,8 +47,11 @@ def fast_track(
     place_id: str,
     *,
     gmail: bool = True,
+    campaign_key: str = DEFAULT_CAMPAIGN,
 ) -> dict[str, Any]:
     """Audit PDF -> queue email -> generate draft -> Draft ready -> Gmail draft.
+
+    Campaigns that don't use an audit skip that step.
 
     Stops at the first step that fails and says which one and why; steps
     already done stay done, so running it again picks up where it stopped.
@@ -59,11 +63,15 @@ def fast_track(
                 "steps": steps, "item_id": (item or {}).get("id")}
 
     # Picking up a lead that stopped partway keeps its draft (and any edits).
-    existing = outreach.repository.find_email_item(place_id)
-    resuming = bool(existing and existing.get("body") and existing.get("claim_signal") == "audit_report")
+    campaign = get_campaign(campaign_key)
+    waiting = outreach.cooldown_block(place_id, campaign_key)
+    if waiting:
+        return stop("cooldown", waiting)
+    existing = outreach.repository.find_email_item(place_id, campaign_key)
+    resuming = bool(existing and existing.get("body") and existing.get("claim_signal") == campaign.claim_signal)
 
     # 1. Fresh audit report (the email is written from it and attaches it).
-    if not resuming:
+    if not resuming and campaign.uses_audit:
         created = audits.create_default_reports([place_id])
         result = created[0] if created else {"status": "skipped", "detail": "no result"}
         if result.get("status") != "created":
@@ -72,7 +80,7 @@ def fast_track(
 
     # 2. Queue (idempotent: returns the existing queue item if there is one).
     try:
-        item = outreach.create_item(place_id, "email", None)
+        item = outreach.create_item(place_id, "email", None, campaign_key)
     except _FAILURES as exc:
         return stop("queue", str(exc))
     if item is None:

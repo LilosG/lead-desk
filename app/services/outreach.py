@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 from uuid import UUID, uuid4
 
+from app.campaigns import DEFAULT_CAMPAIGN, get_campaign
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
@@ -16,6 +17,8 @@ from app.services.outreach_audit_copy import (
     contact_first_name,
     personal_greeting,
 )
+from app.services.ev_offer import PROMPT_VERSION as EV_PROMPT_VERSION
+from app.services.ev_offer import ev_evidence, write_email
 from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
@@ -69,6 +72,7 @@ class OutreachService:
         generation_model: str | None = None,
         gmail_sender_email: str | None = None,
         audit_builder: Callable[[str], Any] | None = None,
+        ev_overview_url: str | None = None,
     ) -> None:
         self.repository = repository
         self.evidence_repository = evidence_repository
@@ -79,6 +83,7 @@ class OutreachService:
         self.gmail_sender_email = gmail_sender_email
         # Callable(place_id) that builds a default audit report.
         self.audit_builder = audit_builder
+        self.ev_overview_url = ev_overview_url
 
     def integration_status(self) -> dict:
         return {
@@ -93,8 +98,10 @@ class OutreachService:
         items = self.repository.list_candidates(limit=limit)
         return {"items": items, "total": len(items)}
 
-    def candidate_readiness(self, place_id: str) -> dict | None:
-        item = self.repository.candidate_readiness(place_id)
+    def candidate_readiness(
+        self, place_id: str, campaign_key: str = DEFAULT_CAMPAIGN,
+    ) -> dict | None:
+        item = self.repository.candidate_readiness(place_id, campaign_key)
         if item is None:
             return None
 
@@ -134,10 +141,27 @@ class OutreachService:
         items, total = self.repository.list_items(status=status)
         return {"items": items, "total": total}
 
-    def create_item(self, place_id: str, channel: str, to_address: str | None) -> dict | None:
+    def cooldown_block(self, place_id: str, campaign_key: str | None) -> str | None:
+        """Why this business can't be contacted in this campaign yet, if so."""
+        recent = self.repository.recent_contact(place_id, campaign_key or DEFAULT_CAMPAIGN)
+        if not recent:
+            return None
+        until = recent["until"]
+        return f"Already in {recent['campaign']} outreach. Wait until {until:%b} {until.day}."
+
+    def create_item(
+        self,
+        place_id: str,
+        channel: str,
+        to_address: str | None,
+        campaign_key: str = DEFAULT_CAMPAIGN,
+    ) -> dict | None:
         prospect = self.repository.prospect_context(place_id)
         if prospect is None:
             return None
+
+        if self.repository.place_opted_out(place_id):
+            raise OutreachBlocked("this business is on the do-not-contact list")
 
         if channel == "email":
             address = to_address or ((prospect.get("emails_found") or [None])[0])
@@ -151,7 +175,7 @@ class OutreachService:
                 raise OutreachBlocked("prospect has no phone number")
             to_address = to_address or prospect["phone"]
 
-        return self.repository.create_item(place_id, channel, to_address)
+        return self.repository.create_item(place_id, channel, to_address, campaign_key)
 
     def update_item(self, item_id: str, *, changes: dict, expected_version: int) -> dict | None:
         current = self.repository.get_item(item_id)
@@ -314,13 +338,31 @@ class OutreachService:
             )
         return recent
 
+    def write_ev_draft(self, context: dict) -> dict:
+        """The EV Permits email, refused unless its facts check out."""
+        evidence = ev_evidence(context)
+        if evidence is None:
+            raise OutreachBlocked("This site doesn't show EV work, so the email can't say it does.")
+        if not self.ev_overview_url:
+            raise OutreachBlocked("The EV overview page isn't published yet. Set EV_OVERVIEW_URL first.")
+        written = write_email(context, self.ev_overview_url)
+        return {
+            "subject": written["subject"],
+            "body": f"{written['body']}\n\n{CAN_SPAM_FOOTER}",
+            "claim_signal": get_campaign(context.get("campaign_key")).claim_signal,
+            "verification_status": "verified",
+            "verification_note": f"EV work found in the site's {evidence}. {written['note']}",
+            "generation_model": "fixed copy",
+            "prompt_version": EV_PROMPT_VERSION,
+        }
+
     def generate_draft(self, item_id: str, *, expected_version: int) -> dict | None:
-        if self.generator is None:
+        context = self.repository.draft_context(item_id)
+        uses_audit = get_campaign((context or {}).get("campaign_key")).uses_audit
+        if self.generator is None and uses_audit:
             raise OutreachIntegrationUnavailable(
                 "OpenRouter draft generation is not configured"
             )
-
-        context = self.repository.draft_context(item_id)
         if context is None:
             return None
         if context["version"] != expected_version:
@@ -329,7 +371,8 @@ class OutreachService:
             raise OutreachBlocked(
                 "AI draft generation is currently available for email only"
             )
-        context = self.ensure_current_audit(context)
+        if uses_audit:
+            context = self.ensure_current_audit(context)
 
         current = self.repository.get_item(item_id)
         if current is None:
@@ -344,6 +387,17 @@ class OutreachService:
             raise OutreachBlocked("email queue item has no recipient address")
         if self.repository.is_suppressed(context["to_address"]):
             raise OutreachBlocked("email address is suppressed")
+
+        if not uses_audit:
+            try:
+                updated, conflict = self.repository.record_generated_draft(
+                    item_id, expected_version=expected_version, **self.write_ev_draft(context),
+                )
+            except OutreachOperationLocked as exc:
+                raise OutreachBlocked(str(exc)) from exc
+            if conflict:
+                raise OutreachConflict("outreach item changed while the draft was being generated")
+            return updated
 
         business_name = clean_business_name(context.get("name"))
         visible_claim, claim_signal, verification_status, verification_note = (
@@ -459,6 +513,9 @@ class OutreachService:
             )
         if self.repository.is_suppressed(current["to_address"]):
             raise OutreachBlocked("email address is suppressed")
+        waiting = self.cooldown_block(current["place_id"], current.get("campaign_key"))
+        if waiting:
+            raise OutreachBlocked(waiting)
 
         # Build the audit PDF before anything is recorded: if it fails, the
         # item must not be left in a "pending" Gmail state that blocks retries.

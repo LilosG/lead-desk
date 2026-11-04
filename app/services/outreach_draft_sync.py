@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.campaigns import get_campaign
 from app.integrations.gmail import GmailDraftError
 from app.services.outreach_audit_copy import (
     clean_business_name,
@@ -145,10 +146,6 @@ class OutreachDraftSyncService:
                 expected_version=expected_version,
             )
 
-        if self.outreach.generator is None:
-            raise OutreachIntegrationUnavailable(
-                "OpenRouter draft generation is not configured"
-            )
         if self.outreach.gmail is None:
             raise OutreachIntegrationUnavailable(
                 "Gmail draft integration is not configured"
@@ -166,6 +163,67 @@ class OutreachDraftSyncService:
         if self.repository.is_suppressed(context["to_address"]):
             raise OutreachBlocked("email address is suppressed")
 
+        if get_campaign(context.get("campaign_key")).uses_audit:
+            draft = self._write_audit_draft(item_id, context)
+        else:
+            draft = self.outreach.write_ev_draft(context)
+
+        try:
+            remote = self.outreach.gmail.update_draft(
+                gmail_draft_id,
+                to_address=context["to_address"],
+                subject=draft["subject"],
+                body=draft["body"],
+                attachments=self.outreach.audit_attachments(
+                    {"claim_signal": draft["claim_signal"], "place_id": context.get("place_id")}
+                ),
+            )
+        except GmailDraftError as exc:
+            raise OutreachIntegrationUnavailable(str(exc)) from exc
+
+        if remote is None:
+            cleared, conflict = self.gmail_repository.clear_stale_draft(
+                item_id,
+                expected_version=expected_version,
+                stale_draft_id=gmail_draft_id,
+            )
+            if conflict:
+                raise OutreachConflict(
+                    "outreach item changed while Gmail draft state was checked"
+                )
+            if cleared is None:
+                return None
+            updated, conflict = self.repository.record_generated_draft(
+                item_id,
+                expected_version=int(cleared["version"]),
+                **draft,
+            )
+            if conflict:
+                raise OutreachConflict(
+                    "outreach item changed while the draft was being generated"
+                )
+            return updated
+
+        updated, conflict = self.gmail_repository.record_synced_generated_draft(
+            item_id,
+            expected_version=expected_version,
+            expected_gmail_draft_id=gmail_draft_id,
+            gmail_message_id=remote.message_id,
+            **draft,
+        )
+        if conflict:
+            self._restore_remote(current)
+            raise OutreachConflict(
+                "outreach item changed while the regenerated Gmail draft was being saved"
+            )
+        return updated
+
+    def _write_audit_draft(self, item_id: str, context: dict) -> dict:
+        """The audit-led email, checked against recent drafts for sameness."""
+        if self.outreach.generator is None:
+            raise OutreachIntegrationUnavailable(
+                "OpenRouter draft generation is not configured"
+            )
         context = self.outreach.ensure_current_audit(context)
         business_name = clean_business_name(context.get("name"))
         visible_claim, claim_signal, verification_status, verification_note = (
@@ -232,69 +290,15 @@ class OutreachDraftSyncService:
                 "no draft was saved"
             )
 
-        body = f"{rendered_note}\n\n{CAN_SPAM_FOOTER}"
-
-        try:
-            remote = self.outreach.gmail.update_draft(
-                gmail_draft_id,
-                to_address=context["to_address"],
-                subject=context.get("_audit_subject") or copy.subject,
-                body=body,
-                attachments=self.outreach.audit_attachments(
-                    {"claim_signal": claim_signal, "place_id": context.get("place_id")}
-                ),
-            )
-        except GmailDraftError as exc:
-            raise OutreachIntegrationUnavailable(str(exc)) from exc
-
-        if remote is None:
-            cleared, conflict = self.gmail_repository.clear_stale_draft(
-                item_id,
-                expected_version=expected_version,
-                stale_draft_id=gmail_draft_id,
-            )
-            if conflict:
-                raise OutreachConflict(
-                    "outreach item changed while Gmail draft state was checked"
-                )
-            if cleared is None:
-                return None
-            updated, conflict = self.repository.record_generated_draft(
-                item_id,
-                expected_version=int(cleared["version"]),
-                subject=context.get("_audit_subject") or copy.subject,
-                body=body,
-                claim_signal=claim_signal,
-                verification_status=verification_status,
-                verification_note=verification_note,
-                generation_model=copy.model,
-                prompt_version=PROMPT_VERSION,
-            )
-            if conflict:
-                raise OutreachConflict(
-                    "outreach item changed while the draft was being generated"
-                )
-            return updated
-
-        updated, conflict = self.gmail_repository.record_synced_generated_draft(
-            item_id,
-            expected_version=expected_version,
-            expected_gmail_draft_id=gmail_draft_id,
-            subject=context.get("_audit_subject") or copy.subject,
-            body=body,
-            claim_signal=claim_signal,
-            verification_status=verification_status,
-            verification_note=verification_note,
-            generation_model=copy.model,
-            prompt_version=PROMPT_VERSION,
-            gmail_message_id=remote.message_id,
-        )
-        if conflict:
-            self._restore_remote(current)
-            raise OutreachConflict(
-                "outreach item changed while the regenerated Gmail draft was being saved"
-            )
-        return updated
+        return {
+            "subject": context.get("_audit_subject") or copy.subject,
+            "body": f"{rendered_note}\n\n{CAN_SPAM_FOOTER}",
+            "claim_signal": claim_signal,
+            "verification_status": verification_status,
+            "verification_note": verification_note,
+            "generation_model": copy.model,
+            "prompt_version": PROMPT_VERSION,
+        }
 
     def _restore_remote(self, item: dict) -> None:
         draft_id = item.get("gmail_draft_id")
