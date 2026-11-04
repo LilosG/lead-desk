@@ -557,7 +557,9 @@ def _number_badge(n: int, st: dict[str, ParagraphStyle], tone: Any = GOLD) -> Ta
     return t
 
 
-def _moves_section(moves: list[dict[str, str]], st: dict[str, ParagraphStyle]) -> list[Flowable]:
+def _moves_section(
+    moves: list[dict[str, str]], st: dict[str, ParagraphStyle], *, ahead: bool = False,
+) -> list[Flowable]:
     rows = [
         [_number_badge(i, st),
          [Paragraph(_text(m.get("move")), st["row_title"]), Spacer(1, 2),
@@ -572,7 +574,9 @@ def _moves_section(moves: list[dict[str, str]], st: dict[str, ParagraphStyle]) -
         ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
     return [
-        *_section("What I'd do first", "Start here", st),
+        *_section("What I'd do next" if ahead else "What I'd do first", "Start here", st),
+        *([Paragraph("You're already holding your own against the businesses nearby. These are "
+                     "what I'd do to pull ahead.", st["body"]), Spacer(1, 2)] if ahead else []),
         t, Spacer(1, 4),
         Paragraph("The rest of this report is the full picture. If you'd like to talk any of it "
                   "through, I'm happy to.", st["muted"]),
@@ -888,7 +892,7 @@ def _google_result(title: str | None, url: str, desc: str | None, st: dict[str, 
 def _snippet_section(snapshot: dict[str, Any], st: dict[str, ParagraphStyle]) -> list[Flowable]:
     snip = snapshot.get("search_snippet") or {}
     shot = (snapshot.get("measurements") or {}).get("screenshot")
-    if not snip and not shot:
+    if (not snip and not shot) or snip.get("worth_suggesting") is False:
         return []
     image = None
     if isinstance(shot, str) and "," in shot:
@@ -1166,7 +1170,7 @@ def render_audit_report_pdf(report: dict) -> bytes:
 
     moves = snapshot.get("top_moves") or []
     if moves:
-        story += _moves_section(moves, st)
+        story += _moves_section(moves, st, ahead=bool(snapshot.get("already_competitive")))
 
     summary = snapshot.get("executive_summary")
     if summary:

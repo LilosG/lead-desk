@@ -12,7 +12,7 @@ from app.services.audit_report_policy import (
 )
 from app.schemas.audit_reports import REPORT_VERSION
 from app.services import audit_benchmarks
-from app.services.audit_moves import top_moves
+from app.services.audit_moves import already_competitive, top_moves
 from app.services.outreach_audit_copy import clean_business_name
 from pipeline import site_signals as signal_rules
 from pipeline import verticals as vertical_config
@@ -755,7 +755,11 @@ class AuditReportService:
                 "top_moves": top_moves(
                     report_findings, gaps=gaps, city=prospect.get("city"),
                     last_review_days=prospect.get("last_review_days"),
+                    page_counts=audit_benchmarks.page_counts(website_audit, peer_rows),
+                    town_pages=audit_benchmarks.town_page_share(peer_rows),
+                    offering_label=niche_ctx["offering_label"],
                 ),
+                "already_competitive": already_competitive(report_findings, bench),
                 "findings": report_findings,
                 "market_comparison": comparison,
                 "next_step": next_step(self._published_demo_url(place_id)),
