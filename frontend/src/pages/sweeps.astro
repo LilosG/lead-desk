@@ -337,7 +337,7 @@ import AppLayout from "../layouts/AppLayout.astro";
       required<HTMLElement>("#vertical-selection-count").textContent = `${verticals.length} selected (${presets.length} preset, ${customs.length} custom)`;
       required<HTMLElement>("#scope-summary").textContent = `${verticals.length} verticals × ${selectedCities.length} cities`;
       required<HTMLElement>("#base-query-count").textContent = baseRequests.toLocaleString();
-      required<HTMLElement>("#max-query-count").textContent = (baseRequests * 3).toLocaleString();
+      required<HTMLElement>("#max-query-count").textContent = (baseRequests * 6).toLocaleString();
 
       updateStartButton();
     }

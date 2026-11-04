@@ -89,8 +89,8 @@ checks += [
 ]
 
 # --- hard spend cap equals the Sweeps page's "max with pagination" -------------
-checks.append(("spend cap = queries x cities x 3 pages",
-               D.max_search_calls(["med_spa"], 1) == 9))
+checks.append(("spend cap = queries x cities x 6 pages",
+               D.max_search_calls(["med_spa"], 1) == 18))
 
 
 class CountingPlaces(D.PlacesClient):
