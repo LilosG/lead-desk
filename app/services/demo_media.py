@@ -16,7 +16,7 @@ from app.repositories.prospects import ProspectRepository
 from pipeline import verticals as vertical_config
 
 
-PROMPT_VERSION = "demo-media-v3"
+PROMPT_VERSION = "demo-media-v4"
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_IMAGE_WIDTH = 2000
 WEBP_QUALITY = 82
@@ -31,6 +31,40 @@ NICHE_SCENES = {
     "wellness_health": "a calm, modern treatment studio with natural materials and soft daylight",
     "auto": "a spotless, well-lit auto repair bay with a car on the lift and professional equipment",
     "generic_local_business": "the welcoming, beautifully kept interior of a {category}",
+}
+# One fixed subject per trade, so every lead in a niche gets a consistent shot.
+TRADE_SCENES = {
+    "electrician": (
+        "a modern home's tidy garage with a neatly wired open electrical panel and professional "
+        "tools in the foreground, warm lights glowing through the house behind it"
+    ),
+    "plumber": (
+        "a modern kitchen with a new chrome faucet, open under-sink copper pipework and "
+        "professional tools in the foreground"
+    ),
+    "hvac": (
+        "a clean new outdoor air conditioning unit beside a well-kept home, with gauges and "
+        "professional tools in the foreground"
+    ),
+    "roofing": (
+        "a clean new roof on a well-kept home, seen along the ridge line, with roofing tools and "
+        "materials in the foreground"
+    ),
+    "restoration": (
+        "a bright home interior mid-restoration, with professional drying fans and equipment "
+        "set out in a clean, orderly way"
+    ),
+    "landscaping": (
+        "a lush, freshly landscaped front yard with crisp edges, a stone path and healthy plants "
+        "that suit the local climate"
+    ),
+    "handyman": (
+        "a well-kept home interior with a freshly finished repair and a neat, well-used toolbox "
+        "in the foreground"
+    ),
+    "party_rentals": (
+        "an elegant outdoor event set up with tables, chairs and string lights, ready for guests"
+    ),
 }
 VALID_ROLES = {"hero", "work", "secondary"}
 ROLE_ASPECT_RATIO = {
@@ -175,8 +209,11 @@ class DemoMediaService:
         city = str(prospect.get("city") or "")
         state = str(prospect.get("state") or "")
         location = ", ".join(part for part in (city, state) if part)
-        profile = vertical_config.vertical_profile(prospect.get("vertical") or "")
-        scene = NICHE_SCENES.get(profile, NICHE_SCENES["generic_local_business"]).format(category=category)
+        vertical = prospect.get("vertical") or ""
+        profile = vertical_config.vertical_profile(vertical)
+        scene = TRADE_SCENES.get(vertical_config.normalize_vertical_key(vertical)) or NICHE_SCENES.get(
+            profile, NICHE_SCENES["generic_local_business"]
+        ).format(category=category)
         role_direction = {
             "hero": (
                 f"Wide cinematic hero photograph of {scene}, main subject in the right two-thirds "
@@ -186,7 +223,10 @@ class DemoMediaService:
             "secondary": f"Wide photograph of {scene}, from a different angle than a typical hero shot.",
         }[role]
         place = f" Fits the look of {location}." if location else ""
-        optional = f" Additional art direction: {direction.strip()}" if direction and direction.strip() else ""
+        optional = (
+            f" Art direction, which takes priority over the scene described above: {direction.strip()}"
+            if direction and direction.strip() else ""
+        )
         return (
             f"Create a photorealistic website photograph for a {category}.{place} {role_direction} "
             "Do not place any business name, logo, signage, text, phone number, badge, license "
