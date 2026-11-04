@@ -211,7 +211,8 @@ class DemoMediaService:
         location = ", ".join(part for part in (city, state) if part)
         vertical = prospect.get("vertical") or ""
         profile = vertical_config.vertical_profile(vertical)
-        scene = TRADE_SCENES.get(vertical_config.normalize_vertical_key(vertical)) or NICHE_SCENES.get(
+        trade = vertical_config.normalize_vertical_key(vertical) if vertical.strip() else ""
+        scene = TRADE_SCENES.get(trade) or NICHE_SCENES.get(
             profile, NICHE_SCENES["generic_local_business"]
         ).format(category=category)
         role_direction = {
