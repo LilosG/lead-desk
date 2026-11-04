@@ -107,15 +107,57 @@ def recrawl_stalled(dsn: str) -> int:
     return sum(1 for f in results if f.crawl_error != "blocked_crawl_hang")
 
 
+def refresh_ev_signal(dsn: str, niche: str) -> int:
+    """Re-read one niche's sites and record only whether they offer EV work.
+
+    Sites that can't be read keep what's on file, and nothing else is rewritten,
+    so PageSpeed results and manual entries stay as they are.
+    """
+    with psycopg.connect(dsn, row_factory=dict_row) as conn:
+        businesses = conn.execute(
+            """
+            select b.*
+            from businesses b
+            join website_enrichment w on w.place_id = b.place_id
+            where b.vertical = %s
+              and b.website_url is not null
+              and w.site_source = 'gbp'
+            """,
+            (niche,),
+        ).fetchall()
+    if not businesses:
+        return 0
+    print(f"re-reading {len(businesses)} {niche} sites...", flush=True)
+    with ProcessPoolExecutor(max_workers=C.CRAWL_MAX_CONCURRENT) as pool:
+        results = list(pool.map(E.crawl_business, [dict(b) for b in businesses]))
+    readable = [f for f in results if f.is_reachable and "ev_service" in (f.site_signals or {})]
+    with psycopg.connect(dsn) as conn:
+        for found in readable:
+            conn.execute(
+                """
+                update website_enrichment
+                set site_signals = coalesce(site_signals, '{}'::jsonb)
+                                   || jsonb_build_object('ev_service', %s::boolean)
+                where place_id = %s
+                """,
+                (found.site_signals["ev_service"], found.place_id),
+            )
+    return len(readable)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--recrawl-stalled", action="store_true")
+    ap.add_argument("--refresh-ev-signal", metavar="NICHE",
+                    help="re-read one niche's sites to record who offers EV work")
     args = ap.parse_args()
     dsn = os.environ.get("DATABASE_URL", "")
     if not dsn:
         raise SystemExit("DATABASE_URL is not set")
     if args.recrawl_stalled:
         print(f"recovered {recrawl_stalled(dsn)} sites")
+    if args.refresh_ev_signal:
+        print(f"updated {refresh_ev_signal(dsn, args.refresh_ev_signal)} sites")
     counts = rescore_all(dsn)
     labels = C.QUALIFICATION_LABELS
     print(f"\nre-scored {sum(counts.values())} leads with model {C.MODEL_VERSION}")

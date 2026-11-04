@@ -118,6 +118,9 @@ class UncertainThenRecoveringGmail(FakeGmail):
 
 
 class FakeRepository:
+    def recent_contact(self, place_id, campaign_key):
+        return None
+
     def __init__(self):
         self.generated = None
         self.gmail = None

@@ -5,7 +5,7 @@ class FakeRepository:
     def __init__(self, item):
         self.item = item
 
-    def candidate_readiness(self, place_id):
+    def candidate_readiness(self, place_id, campaign_key):
         assert place_id == "place-1"
         return self.item
 

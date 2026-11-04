@@ -10,7 +10,7 @@ class FakeRepo:
         item = self.items.get(item_id)
         return dict(item) if item else None
 
-    def find_email_item(self, place_id):
+    def find_email_item(self, place_id, campaign_key):
         return next((dict(i) for i in self.items.values() if i["place_id"] == place_id), None)
 
 
@@ -24,7 +24,10 @@ class FakeOutreach:
         self.repository.items[item["id"]] = item
         return dict(item)
 
-    def create_item(self, place_id, channel, to_address):
+    def cooldown_block(self, place_id, campaign_key):
+        return None
+
+    def create_item(self, place_id, channel, to_address, campaign_key):
         self.calls.append("queue")
         existing = self.repository.items.get("q1")
         return dict(existing) if existing else self._save(
