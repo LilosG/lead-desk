@@ -180,8 +180,9 @@ def test_the_ev_email_says_only_what_is_verified(outreach):
     result = fast_track(outreach, None, "camp-title", gmail=False, campaign_key=EV_PERMITS)
     item = outreach.repository.get_item(result["item_id"])
 
-    assert item["subject"] == "Oro Valley EV permits"
-    assert item["body"].startswith("Hi there,\n\nOro Valley wants a site plan, one-line diagram and load calculation on EV jobs. Since camp-title Electric does EV installs")
+    assert item["subject"] == "Cutting EV permit paperwork at camp-title Electric"
+    assert item["body"].startswith("Hi there,\n\nOro Valley wants a site plan, one-line diagram and load calculation on EV jobs.")
+    assert "gives you back 26 hours a month" in item["body"]
     assert OVERVIEW in item["body"]
     assert "no thanks" in item["body"]
     assert item["claim_signal"] == "ev_permit_offer"
@@ -362,8 +363,8 @@ def test_ev_evidence_uses_every_source_on_file():
 def test_unknown_cities_get_no_permit_claim():
     written = write_email({"place_id": "p", "city": "Boise", "state": "ID", "name": "Sparks"}, OVERVIEW)
     assert "Boise" not in written["body"]
-    assert written["body"].startswith("Hi there,\n\nSince Sparks does EV installs")
-    assert written["subject"] == "Boise EV permits"
+    assert written["body"].startswith("Hi there,\n\nEvery EV install means permit paperwork")
+    assert written["subject"] == "Cutting EV permit paperwork at Sparks"
 
 
 def test_ev_copy_has_no_price_or_approval_promise():
