@@ -183,7 +183,9 @@ _TRADE_SUFFIX = re.compile(
 
 def short_name(name: str) -> str:
     """'Five Point Electric' -> 'Five Point', for subjects that fit on a phone."""
-    return _TRADE_SUFFIX.sub("", name) or name
+    # 'Allied Electric a Buckles-Smith Company', 'Fuse Service HVAC, Electrical & Appliance Repair'
+    head = re.split(r",|\s+a\s+(?=[A-Z])", name)[0].strip()
+    return _TRADE_SUFFIX.sub("", head) or head or name
 
 
 def team_greeting(first_name: str | None, name: str) -> str:

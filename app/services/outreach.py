@@ -363,8 +363,6 @@ class OutreachService:
         if context.get("vertical") != "electrician":
             raise OutreachBlocked("EV Permits is only for electricians.")
         evidence = ev_offer.ev_evidence(context)
-        if evidence is None:
-            raise OutreachBlocked("This site doesn't show EV work, so the email can't say it does.")
         chosen = resolve_angle(EV_PERMITS, context["place_id"], angle, context.get("angle"))
         if not is_known(EV_PERMITS, chosen):
             raise OutreachBlocked(f"Unknown email angle: {chosen}")
@@ -374,7 +372,9 @@ class OutreachService:
             "body": f"{written['body']}\n\n{CAN_SPAM_FOOTER}",
             "claim_signal": get_campaign(context.get("campaign_key")).claim_signal,
             "verification_status": "verified",
-            "verification_note": f"EV work found: {evidence}. {written['note']}".strip(),
+            "verification_note": (f"EV work found: {evidence}." if evidence else
+                                   "Site doesn't show EV work, so the email asks instead of assuming.")
+                                  + f" {written['note']}".rstrip(),
             "generation_model": FIXED_COPY,
             "prompt_version": ev_offer.PROMPT_VERSION,
             "angle": chosen,

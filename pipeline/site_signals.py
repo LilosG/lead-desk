@@ -98,8 +98,14 @@ _EV_COMMERCIAL = re.compile(
 )
 # A blog post shows interest. A service page shows they sell it.
 _EDITORIAL_PATH = re.compile(r"/(blog|news|posts?|articles?|tag|category|resources)(/|$)", re.I)
-_SERVICE_HUB = re.compile(r"/(services?|residential|electrical[-_]services?|what[-_]we[-_]do)(/|$)", re.I)
-MAX_EV_PAGE_FETCHES = 2
+# Any page that could list what they do: /electric-c10/residential-services, /what-we-do.
+_SERVICE_HUB = re.compile(r"service|residential|electric|what[-_]we[-_]do", re.I)
+MAX_EV_PAGE_FETCHES = 4
+
+
+def _hub_rank(path: str) -> tuple[bool, bool, int]:
+    low = path.lower()
+    return ("electric" not in low, "residential" not in low and "service" not in low, len(path))
 
 
 def _path_words(path: str) -> str:
@@ -152,7 +158,8 @@ def ev_profile(
         if not paths and not EV_SERVICE.search(text):
             links = {_internal_path(a["href"], host) for a in soup.find_all("a", href=True)}
             wanted = sorted({p for p in [*links, *site_paths]
-                             if p and _SERVICE_HUB.search(p)}, key=len)
+                             if p and _SERVICE_HUB.search(p) and not _EDITORIAL_PATH.search(p)},
+                            key=_hub_rank)
         for path in wanted[:MAX_EV_PAGE_FETCHES]:
             page = fetch_page(path)
             if page:

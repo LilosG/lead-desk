@@ -76,9 +76,21 @@ _DRAWINGS_ASKS = (
 )
 
 
+def _opening(ctx: dict[str, Any]) -> str:
+    """What we saw on their site, or a question when the site doesn't show EV work."""
+    if ctx["shows_ev"]:
+        return f"{ctx['proof']} {ctx['paperwork']}"
+    rules = ctx["rules"]
+    if rules and rules.get("asks_for"):
+        return (f"If {ctx['short']} installs EV chargers, {ctx['city']} wants {rules['asks_for']} "
+                "on those jobs.")
+    return (f"If {ctx['short']} installs EV chargers, you know each job means a load calc, drawings "
+            "and checking what the city wants.")
+
+
 def _free_packet(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     return f"{possessive(ctx['short'])} next EV permit", [
-        f"{ctx['proof']} {ctx['paperwork']}",
+        _opening(ctx),
         "We built a system that does about 90% of that packet. Your tech fills out one short form, and "
         "it handles the city research, drawings and load calc and flags anything missing. Your office "
         "just reviews and submits, so it gets that time back on every install.",
@@ -88,9 +100,15 @@ def _free_packet(ctx: dict[str, Any]) -> tuple[str, list[str]]:
 
 def _drawings(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     rules = ctx["rules"]
-    opener = (f"{ctx['city']} wants {rules['asks_for']} on EV jobs. Who draws those at {ctx['short']}?"
-              if rules and rules.get("asks_for")
-              else f"Who draws the site plans and one-lines on {possessive(ctx['short'])} EV jobs?")
+    if rules and rules.get("asks_for"):
+        opener = (f"{ctx['city']} wants {rules['asks_for']} on EV jobs. Who draws those at {ctx['short']}?"
+                  if ctx["shows_ev"] else
+                  f"{ctx['city']} wants {rules['asks_for']} on EV jobs. If {ctx['short']} does those, "
+                  "who draws them?")
+    elif ctx["shows_ev"]:
+        opener = f"Who draws the site plans and one-lines on {possessive(ctx['short'])} EV jobs?"
+    else:
+        opener = f"If {ctx['short']} installs EV chargers, who draws the site plans and one-lines?"
     return "Who draws your EV site plans?", [
         opener,
         "We built a system that does it from one short job form. It draws the site plan on the actual "
@@ -103,10 +121,12 @@ def _drawings(ctx: dict[str, Any]) -> tuple[str, list[str]]:
 
 def _time_back(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     return f"Time on EV permits at {ctx['short']}", [
-        "How long does your office spend putting together one EV permit packet?",
-        f"{ctx['proof']} Whatever that number is, we can take about 90% of it off your plate. One short "
-        "form from your tech, and the city research, load calc, drawings and packet are done and "
-        "waiting for review.",
+        ("How long does your office spend putting together one EV permit packet?" if ctx["shows_ev"]
+         else f"If {ctx['short']} installs EV chargers, how long does your office spend on one permit "
+              "packet?"),
+        f"{ctx['proof'] + ' ' if ctx['shows_ev'] else ''}Whatever that number is, we can take about 90% "
+        "of it off your plate. One short form from your tech, and the city research, load calc, "
+        "drawings and packet are done and waiting for review.",
         "That's office time back on every install, without adding staff.",
         "What's your number? A rough guess is fine.",
     ]
@@ -114,7 +134,7 @@ def _time_back(ctx: dict[str, Any]) -> tuple[str, list[str]]:
 
 def _guarantee(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     return "30-day EV permit test", [
-        f"{ctx['proof']} {ctx['paperwork']}",
+        _opening(ctx),
         "We set up a system around the cities you work in. From one short job form it builds about 90% "
         "of the packet: site plan, one-line, load calc and the rest, ready for your team to review.",
         "If it isn't producing packets you'd be comfortable submitting within the first 30 days, you get "
@@ -145,6 +165,7 @@ def _facts(context: dict[str, Any]) -> dict[str, Any]:
         "short": short_name(name),
         "city": city,
         "first_name": first_name,
+        "shows_ev": ev_evidence(context) is not None,
         "greeting": team_greeting(first_name, name),
         "proof": _proof_line(short_name(name), signals, None if named_city else city),
         "paperwork": _paperwork_line(rules, city),
