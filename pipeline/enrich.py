@@ -458,7 +458,8 @@ def _clean_emails(raw: set, site_host: str = "", business_name: str | None = Non
     out, rejected = [], []
     for e in raw:
         e = e.strip().lower().rstrip(".,;:)")
-        if EMAIL_JUNK.search(e) or len(e) > 80 or "@" not in e:
+        # A site's own mailto link can be mistyped, so hold those to the same shape.
+        if EMAIL_JUNK.search(e) or len(e) > 80 or not EMAIL_RE.fullmatch(e):
             continue
         edomain = _registrable(e.split("@")[-1])
         if (site_domain and edomain != site_domain and edomain not in FREE_MAIL_DOMAINS

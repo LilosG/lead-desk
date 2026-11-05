@@ -132,10 +132,25 @@ const { place_id } = Astro.params;
             </a>
           </section>
 
+          <section id="ev-campaign" class="hidden rounded-lg border border-[var(--line)] bg-white p-5">
+            <div class="text-sm font-medium">EV Permits</div>
+            <div class="mt-1 text-xs text-[var(--muted)]">
+              Writes the EV email and creates a Gmail draft. No audit needed.
+            </div>
+            <div id="ev-campaign-result" class="mt-3 hidden text-xs leading-5"></div>
+            <button
+              id="ev-campaign-action"
+              type="button"
+              class="mt-4 w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Prep for EV Permits
+            </button>
+          </section>
+
           <section class="rounded-lg border border-[var(--line)] bg-white p-5">
             <div class="flex items-start justify-between gap-4">
               <div>
-                <div class="text-sm font-medium">Outreach readiness</div>
+                <div class="text-sm font-medium">SEO + Websites outreach</div>
                 <div class="mt-1 text-xs text-[var(--muted)]">
                   Centralized eligibility check before this prospect enters outreach.
                 </div>
@@ -482,6 +497,31 @@ const { place_id } = Astro.params;
         if (data.website_url) links.push(`<a href="${escapeHtml(data.website_url)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Website</a>`);
         if (data.google_maps_uri) links.push(`<a href="${escapeHtml(data.google_maps_uri)}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Google Maps</a>`);
         required('#business-links').innerHTML = links.join('');
+
+        const evSection = required('#ev-campaign');
+        const evAction = required<HTMLButtonElement>('#ev-campaign-action');
+        const evResult = required('#ev-campaign-result');
+        evSection.classList.toggle('hidden', data.vertical !== 'electrician');
+        evAction.onclick = async () => {
+          evAction.disabled = true;
+          evResult.classList.add('hidden');
+          try {
+            const response = await fetch(`/api/outreach/fast-track/${encodeURIComponent(placeId)}`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify({ gmail: true, campaign: 'ev_permits' }),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+            evResult.className = `mt-3 text-xs leading-5 ${body.ok ? 'text-emerald-700' : 'text-red-700'}`;
+            evResult.textContent = body.ok ? 'In Gmail. Review the draft there before sending.' : body.detail;
+            evAction.disabled = Boolean(body.ok);
+          } catch (error) {
+            evResult.className = 'mt-3 text-xs leading-5 text-red-700';
+            evResult.textContent = error instanceof Error ? error.message : 'Unable to prep this lead.';
+            evAction.disabled = false;
+          }
+        };
 
         const readinessBadge =
           required('#outreach-readiness-badge');

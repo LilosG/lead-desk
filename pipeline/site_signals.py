@@ -56,10 +56,15 @@ SIGNALS = frozenset({
 
 _PHONE_TEXT = re.compile(r"\(?\b\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}\b")
 _JS_APP_ROOTS = ("root", "app", "__next", "__nuxt", "___gatsby")
-# Keep in step with EV_SERVICE_SQL in app/campaigns.py.
+# Keep in step with EV_SERVICE_PATTERN in app/campaigns.py.
 EV_SERVICE = re.compile(
-    r"\b(ev|evs|electric vehicles?|tesla)\b.{0,30}charg"
-    r"|charg.{0,30}\b(ev|evs|electric vehicles?)\b"
+    r"\belectric\s+(vehicle|car)s?\b"
+    r"|\b(evs?|tesla)\b.{0,30}(charg|install|outlet|ready|circuit|wiring)"
+    r"|\bcharg.{0,30}\bevs?\b"
+    r"|\b(car|vehicle)[\s-]+charg"
+    r"|\bcharging\s+stations?\b"
+    r"|\blevel[\s-]*2\s+(home\s+)?charg"
+    r"|\bwall\s+connector\b"
     r"|\bevse\b",
     re.I,
 )
@@ -221,6 +226,8 @@ def collect(
     pairs = service_city_paths(offering_paths, location_paths, business, offering_words)
     same_as = [n.get("sameAs") for n in nodes if n.get("sameAs")]
     has_tel = any(a["href"].lower().startswith("tel:") for a in soup.find_all("a", href=True))
+    # A menu can be images or icons, but its links still spell out the page.
+    link_words = " ".join(re.sub(r"[-_/]+", " ", a["href"]) for a in soup.find_all("a", href=True))
 
     signals: dict[str, Any] = {
         "version": SIGNALS_VERSION,
@@ -252,7 +259,7 @@ def collect(
         "images": len(images),
         "images_missing_alt": sum(1 for i in images if not (i.get("alt") or "").strip()),
         "ai_bots": _bot_access(robots, final_url),
-        "ev_service": bool(EV_SERVICE.search(f"{title} {text}")),
+        "ev_service": bool(EV_SERVICE.search(f"{title} {text} {link_words}")),
         "offering_paths": len(offering_paths),
         "location_paths": len(location_paths),
         "service_city_paths": len(pairs),

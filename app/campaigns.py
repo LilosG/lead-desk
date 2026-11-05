@@ -34,11 +34,18 @@ def get_campaign(key: str | None) -> Campaign:
 
 # What a site says when it offers EV charger installs. Keep in step with
 # EV_SERVICE in pipeline/site_signals.py, which reads the full homepage.
-EV_SERVICE_SQL = (
-    r"\m(ev|evs|electric vehicles?|tesla)\M.{0,30}charg"
-    r"|charg.{0,30}\m(ev|evs|electric vehicles?)\M"
-    r"|\mevse\M"
+EV_SERVICE_PATTERN = (
+    r"\belectric\s+(vehicle|car)s?\b"
+    r"|\b(evs?|tesla)\b.{0,30}(charg|install|outlet|ready|circuit|wiring)"
+    r"|\bcharg.{0,30}\bevs?\b"
+    r"|\b(car|vehicle)[\s-]+charg"
+    r"|\bcharging\s+stations?\b"
+    r"|\blevel[\s-]*2\s+(home\s+)?charg"
+    r"|\bwall\s+connector\b"
+    r"|\bevse\b"
 )
+# Postgres spells a word boundary \y rather than \b.
+EV_SERVICE_SQL = EV_SERVICE_PATTERN.replace(r"\b", r"\y")
 
 # City permit requirements, from each city's published EV checklist. "full"
 # cities ask for a real packet. "simple" cities use a no-plan permit, so the
