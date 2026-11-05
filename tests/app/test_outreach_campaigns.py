@@ -304,7 +304,7 @@ def test_campaign_routes(client, pool):
     assert client.get("/api/outreach/campaigns/nope/results").status_code == 404
     response = client.get("/api/outreach/board", params={"campaign": EV_PERMITS, "q": "camp-"})
     assert response.status_code == 200
-    assert {row["place_id"] for row in response.json()["items"]} == {"camp-title", "camp-signal"}
+    assert {row["place_id"] for row in response.json()["items"]} == {"camp-title", "camp-signal", "camp-noev"}
     assert client.post("/api/outreach/fast-track/camp-title", json={"campaign": "nope"}).status_code == 404
 
 
