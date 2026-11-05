@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     app_name: str = "Lead Desk"
     app_version: str = "0.1.0"
     database_url: str = Field(alias="DATABASE_URL")
-    ev_overview_url: str | None = Field(default=None, alias="EV_OVERVIEW_URL")
 
     auth_username: str = Field(alias="AUTH_USERNAME")
     auth_password_hash: str = Field(alias="AUTH_PASSWORD_HASH")
@@ -97,13 +96,6 @@ class Settings(BaseSettings):
                 f"DEMO_IMAGE_MODEL must be an approved model: {approved}"
             )
         return value
-
-    @field_validator("ev_overview_url")
-    @classmethod
-    def validate_ev_overview_url(cls, value: str | None) -> str | None:
-        if value and not value.startswith("https://"):
-            raise ValueError("EV_OVERVIEW_URL must use https")
-        return value or None
 
     @field_validator("public_app_url", "demo_site_base_url")
     @classmethod

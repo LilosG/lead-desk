@@ -67,6 +67,34 @@ EV_PERMIT_CITIES: dict[tuple[str, str], dict[str, str]] = {
         "asks_for": "a site plan, load calculation and single-line diagram",
         "source": "https://www.cityofbrea.gov/1782/EV-Charger-Checklist---Residential",
     },
+    ("Escondido", "CA"): {
+        "fit": "full",
+        "asks_for": "a site or floor plan, load calculation and single-line diagram",
+        "source": "https://www.escondido.org/Data/Sites/1/media/pdfs/Building/InfoGuideline30.pdf",
+    },
+    ("Moreno Valley", "CA"): {
+        "fit": "full",
+        "asks_for": "a scaled site plan, load calculation and single-line diagram",
+        "source": "https://www.moval.org/city_hall/forms/building-safety/ResidentialEVCSExpeditedChecklist.pdf",
+    },
+    ("Vista", "CA"): {
+        "fit": "full",
+        "asks_for": "a key plan and a signed load calculation",
+        "source": "https://vista.gov/home/showpublisheddocument/13375/638566251365800000",
+    },
+    ("Irvine", "CA"): {
+        "fit": "full",
+        "asks_for": "a load worksheet and single-line diagram",
+        "source": "https://cityofirvine.gov/node/69646",
+    },
+    ("Murrieta", "CA"): {
+        "fit": "simple",
+        "source": "https://www.murrietaca.gov/DocumentCenter/View/12125/DS-149-Residential-Electrical-Vehicle-Charger-Guidelines",
+    },
+    ("Chino", "CA"): {
+        "fit": "simple",
+        "source": "https://www.cityofchino.org/DocumentCenter/View/7290/Residential-EV-Charger-Checklist-PDF",
+    },
     ("San Diego", "CA"): {
         "fit": "simple",
         "source": "https://www.sandiego.gov/development-services/forms-publications/information-bulletins/187",

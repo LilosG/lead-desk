@@ -52,6 +52,7 @@ def regenerate_synced_draft(item_id: str, payload: OutreachVersionAction) -> dic
         result = get_sync_service().regenerate(
             item_id,
             expected_version=payload.expected_version,
+            angle=payload.angle,
         )
     except OutreachConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

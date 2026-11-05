@@ -32,6 +32,23 @@ class OutreachGmailRepository:
                 )
                 return cur.fetchall()
 
+    def open_follow_ups(self) -> list[dict[str, Any]]:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select id::text as id, gmail_draft_id
+                    from outreach_follow_ups
+                    where gmail_draft_id is not null and sent_at is null
+                    """
+                )
+                return cur.fetchall()
+
+    def mark_follow_up_left_gmail(self, follow_up_id: str) -> None:
+        with self.pool.connection() as conn:
+            conn.execute("update outreach_follow_ups set sent_at = now() where id = %s::uuid",
+                         (follow_up_id,))
+
     def mark_draft_left_gmail(self, item_id: str, draft_id: str) -> bool:
         """The draft is gone from Gmail: sent, or deleted by hand. Treated as contacted."""
         with self.pool.connection() as conn:
@@ -146,6 +163,7 @@ class OutreachGmailRepository:
         generation_model: str,
         prompt_version: str,
         gmail_message_id: str | None,
+        angle: str | None = None,
     ) -> tuple[dict[str, Any] | None, bool]:
         """Persist regenerated copy while preserving the existing Gmail draft link."""
         with self.pool.connection() as conn:
@@ -191,6 +209,7 @@ class OutreachGmailRepository:
                             status = 'review_required',
                             generation_model = %s,
                             generation_prompt_version = %s,
+                            angle = %s,
                             draft_generated_at = now(),
                             gmail_message_id = coalesce(%s, gmail_message_id),
                             version = version + 1,
@@ -212,6 +231,7 @@ class OutreachGmailRepository:
                             verification_note,
                             generation_model,
                             prompt_version,
+                            angle,
                             gmail_message_id,
                             item_id,
                         ),

@@ -244,7 +244,8 @@ LOCATION_PAGE_WORDS = [
 # ---------------------------------------------------------------------------
 VERTICALS = {
     "electrician": {
-        "queries": ["electrician", "electrical contractor", "residential electrician"],
+        "queries": ["electrician", "electrical contractor", "residential electrician",
+                    "ev charger installer"],
         "priority": 1,
         "profile": "home_service",
         "case_study": "Wheyland Electric — 20 to 306 keywords and 1 to 29 top-3 rankings in 5 months",
@@ -344,6 +345,7 @@ CRAWL_MAX_CONCURRENT = 8
 CRAWL_CACHE_MAX_AGE_DAYS = 30  # a re-swept site older than this is crawled again
 SITE_CRAWL_CAP_S     = 75      # hard wall-clock cap for one site, all its pages included
 RESPECT_ROBOTS       = True
+MX_LOOKUP_TIMEOUT_S  = 3
 
 CONTACT_PAGE_HINTS = [
     "contact", "contact-us", "contactus", "get-a-quote", "quote", "estimate",

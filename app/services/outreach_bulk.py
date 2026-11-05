@@ -48,6 +48,7 @@ def fast_track(
     *,
     gmail: bool = True,
     campaign_key: str = DEFAULT_CAMPAIGN,
+    angle: str | None = None,
 ) -> dict[str, Any]:
     """Audit PDF -> queue email -> generate draft -> Draft ready -> Gmail draft.
 
@@ -96,7 +97,7 @@ def fast_track(
     # 3. Generate the draft from the new audit.
     if not resuming:
         try:
-            item = outreach.generate_draft(item["id"], expected_version=item["version"]) or item
+            item = outreach.generate_draft(item["id"], expected_version=item["version"], angle=angle) or item
         except _FAILURES as exc:
             return stop("draft", str(exc), item)
         if item.get("status") == "no_outreach_finding" or not item.get("body"):

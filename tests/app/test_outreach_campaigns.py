@@ -35,7 +35,6 @@ from app.services.outreach_board import OutreachBoardService, gmail_block_reason
 from app.services.outreach_bulk import fast_track  # noqa: E402
 from app.services.outreach_draft_sync import OutreachDraftSyncService  # noqa: E402
 
-OVERVIEW = "https://demo.example.com/ev"
 PHOENIX = "Oro Valley, AZ, USA"
 EV_TITLES = ["Panel Upgrades", "EV Charger Installation"]
 
@@ -124,7 +123,7 @@ def clean_queue(request):
 
 @pytest.fixture
 def outreach(pool):
-    return OutreachService(OutreachRepository(pool), ev_overview_url=OVERVIEW)
+    return OutreachService(OutreachRepository(pool))
 
 
 @pytest.fixture
@@ -180,21 +179,13 @@ def test_the_ev_email_says_only_what_is_verified(outreach):
     result = fast_track(outreach, None, "camp-title", gmail=False, campaign_key=EV_PERMITS)
     item = outreach.repository.get_item(result["item_id"])
 
-    assert item["subject"] == "Cutting EV permit paperwork at camp-title Electric"
-    assert item["body"].startswith("Hi there,\n\nOro Valley wants a site plan, one-line diagram and load calculation on EV jobs.")
-    assert "gives you back 26 hours a month" in item["body"]
-    assert OVERVIEW in item["body"]
+    assert "about 90%" in item["body"] or "site plan on the actual property" in item["body"]
+    assert "http" not in item["body"].replace("lilosgrowth.com", "")
     assert "no thanks" in item["body"]
+    assert item["angle"] in {"free_packet", "drawings"}
     assert item["claim_signal"] == "ev_permit_offer"
     assert item["verification_status"] == "verified"
     assert "orovalleyaz.gov" in item["verification_note"]
-
-
-def test_ev_drafts_wait_for_the_overview_page(pool):
-    outreach = OutreachService(OutreachRepository(pool))
-    result = fast_track(outreach, None, "camp-title", gmail=False, campaign_key=EV_PERMITS)
-    assert result["failed_step"] == "draft"
-    assert "EV_OVERVIEW_URL" in result["detail"]
 
 
 def test_a_lead_without_ev_evidence_cannot_get_the_ev_email(outreach):
@@ -228,7 +219,8 @@ def test_regenerating_a_synced_ev_draft_updates_gmail_without_ai(pool, outreach)
     ).regenerate(item["id"], expected_version=item["version"])
 
     assert updated["claim_signal"] == "ev_permit_offer"
-    assert "drafts the full permit packet" in updated["body"]
+    assert updated["body"] != "edited"
+    assert updated["generation_model"] == "fixed copy"
     assert Gmail.calls[0]["attachments"] is None
 
 
@@ -244,6 +236,13 @@ def test_contact_in_one_campaign_holds_the_other_for_30_days(pool, outreach, boa
 
     _touch(pool, seo["id"], contacted_at=datetime.now(timezone.utc) - timedelta(days=31))
     assert fast_track(outreach, None, "camp-signal", gmail=False, campaign_key=EV_PERMITS)["ok"]
+
+
+def test_a_reply_keeps_the_other_offer_away_after_the_first_contact_ages_out(pool, outreach):
+    seo = outreach.create_item("camp-signal", "email", None, SEO_WEBSITES)
+    _touch(pool, seo["id"], status="replied",
+           contacted_at=datetime.now(timezone.utc) - timedelta(days=40))
+    assert outreach.cooldown_block("camp-signal", EV_PERMITS)
 
 
 def test_a_draft_sitting_in_gmail_also_holds_the_other_campaign(pool, outreach):
@@ -360,22 +359,24 @@ def test_collect_reads_ev_work_from_a_link_with_no_text():
 
 
 def test_ev_evidence_uses_every_source_on_file():
-    assert ev_evidence({"site_signals": {"ev_service": True}}) == "homepage text"
+    assert ev_evidence({"site_signals": {"ev_service": True}}) == "site text"
+    assert ev_evidence({"site_signals": {"ev_service": True, "ev_strength": "page",
+                                         "ev_page_path": "/ev"}}) == "EV page (/ev)"
     assert ev_evidence({"offering_titles": EV_TITLES}) == "service link"
     assert ev_evidence({"site_description": "We add EV chargers."}) == "page description"
     assert ev_evidence({"site_title": "Sparks Electric"}) is None
 
 
 def test_unknown_cities_get_no_permit_claim():
-    written = write_email({"place_id": "p", "city": "Boise", "state": "ID", "name": "Sparks"}, OVERVIEW)
-    assert "Boise" not in written["body"]
-    assert written["body"].startswith("Hi there,\n\nEvery EV install means permit paperwork")
-    assert written["subject"] == "Cutting EV permit paperwork at Sparks"
+    written = write_email({"place_id": "p", "city": "Boise", "state": "ID", "name": "Sparks"}, "guarantee")
+    assert "Boise wants" not in written["body"]
+    assert "Each one means a load calc" in written["body"]
 
 
 def test_ev_copy_has_no_price_or_approval_promise():
-    written = write_email({"place_id": "p", "city": "Brea", "state": "CA", "name": "Sparks"}, OVERVIEW)
-    assert not re.search(r"\$|guarantee|approv", written["body"], re.I)
+    for angle in ("free_packet", "drawings", "time_back", "guarantee"):
+        written = write_email({"place_id": "p", "city": "Brea", "state": "CA", "name": "Sparks"}, angle)
+        assert not re.search(r"\$|approv|\bAI\b", written["body"], re.I)
 
 
 def test_block_reason_and_next_step_use_the_campaign():
@@ -385,3 +386,30 @@ def test_block_reason_and_next_step_use_the_campaign():
             "gmail_draft_id": None, "pending_operation": False}
     assert "campaign's email" in (gmail_block_reason(item, gmail_connected=True) or "")
     assert next_step({"stage": "to_prep", "campaign_key": EV_PERMITS}) == "Draft the email"
+
+
+def test_ev_leads_rank_by_ev_proof_not_the_seo_score(pool, board):
+    with pool.connection() as conn:
+        conn.execute("""update website_enrichment
+                        set site_signals = site_signals || '{"ev_service": true, "ev_strength": "page",
+                                                              "ev_brands": ["Tesla"]}'::jsonb
+                        where place_id = 'camp-signal'""")
+    try:
+        data = board.board(campaign=EV_PERMITS, stage="to_prep", page=1, page_size=100,
+                           q=None, vertical=None, market=None, qualified_only=False)
+        assert data["items"][0]["place_id"] == "camp-signal"
+        assert data["items"][0]["lead_note"].startswith("EV page · Tesla")
+    finally:
+        with pool.connection() as conn:
+            conn.execute("""update website_enrichment set site_signals = '{"ev_service": true}'::jsonb
+                            where place_id = 'camp-signal'""")
+
+
+def test_the_seo_board_flags_leads_that_should_get_ev_first(board):
+    data = board.board(campaign=SEO_WEBSITES, stage="to_prep", page=1, page_size=100,
+                       q=None, vertical=None, market=None, qualified_only=False)
+    by_id = {row["place_id"]: row for row in data["items"]}
+    assert by_id["camp-title"]["lead_note"] == "Shows EV work: pitch EV Permits first"
+    assert by_id["camp-noev"]["lead_note"] is None
+    ids = [row["place_id"] for row in data["items"]]
+    assert ids.index("camp-noev") < ids.index("camp-title")

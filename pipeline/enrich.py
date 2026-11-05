@@ -22,7 +22,10 @@ import urllib.parse as urlparse
 import urllib.robotparser as robotparser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from functools import lru_cache
 
+import dns.exception
+import dns.resolver
 import requests
 from bs4 import BeautifulSoup
 
@@ -467,10 +470,53 @@ def _clean_emails(raw: set, site_host: str = "", business_name: str | None = Non
             rejected.append(e)
             continue
         out.append(e)
-    # Prefer role addresses a business actually monitors over scraped noise.
-    priority = ("info@", "contact@", "office@", "sales@", "hello@", "service@", "admin@")
-    out = sorted(set(out), key=lambda e: (not e.startswith(priority), e))
-    return out[:5]
+    return rank_emails(out)[:5]
+
+
+# Shared inboxes a business watches, in the order worth using them.
+SHARED_MAILBOXES = ("office", "info", "contact", "hello", "sales", "service", "admin", "support",
+                    "team", "mail", "estimates", "quotes", "dispatch", "customerservice")
+# Real inboxes, but a sales email to them goes to the wrong desk.
+WRONG_DESK_MAILBOXES = {"careers", "career", "jobs", "job", "hiring", "hr", "recruiting", "billing",
+                        "accounting", "accounts", "invoices", "invoice", "ap", "ar", "payroll",
+                        "marketing", "press", "media", "webmaster", "web", "privacy", "legal"}
+
+
+def _email_rank(email: str) -> tuple[int, int, str]:
+    local, _, domain = email.lower().partition("@")
+    head = re.split(r"[._\-+]", local)[0]
+    if head in WRONG_DESK_MAILBOXES:
+        return (3, 0, email)
+    if head in SHARED_MAILBOXES:
+        return (1, SHARED_MAILBOXES.index(head), email)
+    if _registrable(domain) in FREE_MAIL_DOMAINS:
+        return (2, 0, email)
+    # A person's own address gets read by that person, and it gives us their name.
+    return (0, 0, email)
+
+
+def rank_emails(emails: list[str]) -> list[str]:
+    """Best address first: a person, then a shared inbox, then the wrong desk."""
+    return sorted(set(emails), key=_email_rank)
+
+
+@lru_cache(maxsize=8192)
+def domain_takes_mail(domain: str) -> bool:
+    """False only when DNS says so. A failed lookup keeps the address."""
+    try:
+        records = dns.resolver.resolve(domain, "MX", lifetime=C.MX_LOOKUP_TIMEOUT_S)
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        return False
+    except dns.exception.DNSException:
+        return True
+    return any(str(r.exchange) != "." for r in records)
+
+
+def drop_undeliverable(emails: list[str]) -> list[str]:
+    """Each bounce counts against mike@lilosgrowth.com, so skip dead domains."""
+    return [e for e in emails
+            if _registrable(e.split("@")[-1]) in FREE_MAIL_DOMAINS
+            or domain_takes_mail(e.split("@")[-1])]
 
 
 def _root_url(url: str) -> str | None:
@@ -674,6 +720,7 @@ def crawl_site(business: dict, session: requests.Session | None = None,
 
     # Contact pages first: when the budget runs out, an unvisited /schedule costs
     # little and an unvisited /contact costs the email address.
+    other_page_texts: list[str] = []
     internal.sort(key=lambda u: (0 if "contact" in urlparse.urlparse(u).path.lower() else
                                  1 if "about" in urlparse.urlparse(u).path.lower() else 2))
     if not any("contact" in urlparse.urlparse(u).path.lower() for u in internal):
@@ -691,6 +738,7 @@ def crawl_site(business: dict, session: requests.Session | None = None,
         s2 = BeautifulSoup(h2, "html.parser")
         emails |= extract_emails(h2, s2)
         phones |= set(PHONE_RE.findall(h2))
+        other_page_texts.append(s2.get_text(" ", strip=True))
         if s2.find("form") and f.contact_page_url is None:
             f.has_contact_form = True
             f.contact_page_url = r2.url
@@ -784,6 +832,11 @@ def crawl_site(business: dict, session: requests.Session | None = None,
         robots=robots_cache.get(base), has_sitemap=sitemap_paths is not None,
         offering_paths=sorted(offering_paths), location_paths=sorted(location_paths),
         offering_words=offering_words, sample_page=None if not deep else _page_sampler(session, base, robots_cache),
+        site_paths=sitemap_paths or [],
+        # Only trades that can buy the EV offer spend the extra requests.
+        fetch_page=(_page_sampler(session, base, robots_cache)
+                    if business.get("vertical") == "electrician" else None),
+        other_page_texts=other_page_texts,
     )
     return f
 
@@ -818,7 +871,9 @@ def crawl_business(business: dict) -> SiteFindings:
     signal.setitimer(signal.ITIMER_REAL, C.SITE_CRAWL_CAP_S)
     try:
         crawl = crawl_site if business.get("website_url") else crawl_unlisted
-        return crawl(business)
+        found = crawl(business)
+        found.emails_found = drop_undeliverable(found.emails_found)
+        return found
     except SiteCrawlTimeout:
         return SiteFindings(place_id=business["place_id"], crawl_error="blocked_crawl_hang")
     finally:

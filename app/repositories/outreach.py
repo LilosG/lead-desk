@@ -272,6 +272,7 @@ class OutreachRepository:
                 q.status,
                 q.to_address,
                 q.version,
+                q.angle,
                 b.name,
                 b.city,
                 b.state,
@@ -404,7 +405,7 @@ class OutreachRepository:
 
     def get_item(self, item_id: str) -> dict[str, Any] | None:
         query = """
-            select id::text as id, place_id, channel, campaign_key, status, to_address,
+            select id::text as id, place_id, channel, campaign_key, angle, status, to_address,
                    subject, body, claim_signal, verification_status,
                    verification_note, generation_model,
                    generation_prompt_version, draft_generated_at,
@@ -617,6 +618,7 @@ class OutreachRepository:
         verification_note: str,
         generation_model: str,
         prompt_version: str,
+        angle: str | None = None,
     ) -> tuple[dict[str, Any] | None, bool]:
         with self.pool.connection() as conn:
             with conn.transaction():
@@ -648,6 +650,7 @@ class OutreachRepository:
                             status = 'review_required',
                             generation_model = %s,
                             generation_prompt_version = %s,
+                            angle = %s,
                             draft_generated_at = now(),
                             gmail_draft_id = null,
                             gmail_message_id = null,
@@ -671,6 +674,7 @@ class OutreachRepository:
                             verification_note,
                             generation_model,
                             prompt_version,
+                            angle,
                             item_id,
                         ),
                     )
@@ -688,10 +692,72 @@ class OutreachRepository:
                                 'verification_status': verification_status,
                                 'generation_model': generation_model,
                                 'prompt_version': prompt_version,
+                                'angle': angle,
                             }),
                         ),
                     )
         return updated, False
+
+    def follow_up_context(self, item_id: str) -> dict[str, Any] | None:
+        """What a follow-up needs: the first email's thread and any steps so far."""
+        query = """
+            select
+                q.id::text as id, q.place_id, q.channel, q.campaign_key, q.status, q.to_address,
+                q.subject, q.angle, q.contacted_at, q.gmail_thread_id,
+                b.name, b.city, b.state, we.site_signals,
+                (select o.message_id_header from gmail_draft_operations o
+                 where o.queue_id = q.id and o.state = 'created'
+                 order by o.created_at desc limit 1) as first_message_id,
+                coalesce((select jsonb_agg(to_jsonb(f) order by f.step)
+                          from outreach_follow_ups f where f.queue_id = q.id), '[]'::jsonb) as follow_ups,
+                exists (select 1 from suppression s
+                        where lower(s.email) = lower(coalesce(q.to_address, ''))) as suppressed
+            from outreach_queue q
+            join businesses b on b.place_id = q.place_id
+            left join website_enrichment we on we.place_id = q.place_id
+            where q.id = %s::uuid
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (item_id,))
+                return cur.fetchone()
+
+    def begin_follow_up(self, item_id: str, step: int, *, subject: str, body: str,
+                        message_id_header: str) -> dict[str, Any]:
+        """Save the follow-up before Gmail is called, so a retry can't double it up."""
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into outreach_follow_ups (queue_id, step, subject, body, message_id_header)
+                    values (%s::uuid, %s, %s, %s, %s)
+                    on conflict (queue_id, step) do update
+                        set subject = case when outreach_follow_ups.gmail_draft_id is null
+                                           then excluded.subject else outreach_follow_ups.subject end,
+                            body = case when outreach_follow_ups.gmail_draft_id is null
+                                        then excluded.body else outreach_follow_ups.body end
+                    returning id::text as id, step, subject, body, message_id_header, gmail_draft_id
+                    """,
+                    (item_id, step, subject, body, message_id_header),
+                )
+                return cur.fetchone()
+
+    def complete_follow_up(self, follow_up_id: str, *, draft_id: str, message_id: str | None,
+                           place_id: str, item_id: str, step: int) -> None:
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                conn.execute(
+                    "update outreach_follow_ups set gmail_draft_id = %s, gmail_message_id = %s "
+                    "where id = %s::uuid",
+                    (draft_id, message_id, follow_up_id),
+                )
+                conn.execute(
+                    """
+                    insert into outreach_queue_events (queue_id, place_id, event_type, changes)
+                    values (%s::uuid, %s, 'follow_up_drafted', %s)
+                    """,
+                    (item_id, place_id, Jsonb({"step": step, "gmail_draft_id": draft_id})),
+                )
 
     def begin_gmail_draft_operation(
         self,
@@ -820,6 +886,7 @@ class OutreachRepository:
         *,
         draft_id: str,
         message_id: str | None,
+        thread_id: str | None = None,
     ) -> dict[str, Any] | None:
         with self.pool.connection() as conn:
             with conn.transaction():
@@ -873,6 +940,7 @@ class OutreachRepository:
                         update outreach_queue
                         set gmail_draft_id = %s,
                             gmail_message_id = %s,
+                            gmail_thread_id = %s,
                             gmail_draft_created_at = now(),
                             version = version + 1,
                             updated_at = now()
@@ -885,7 +953,7 @@ class OutreachRepository:
                                   gmail_message_id, gmail_draft_created_at,
                                   version, created_at, updated_at
                         """,
-                        (draft_id, message_id, operation['queue_id']),
+                        (draft_id, message_id, thread_id, operation['queue_id']),
                     )
                     updated = cur.fetchone()
 

@@ -23,6 +23,10 @@ const stages = [
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div id="campaign-tabs" role="group" aria-label="Campaign" class="flex flex-wrap gap-2"></div>
         <p id="campaign-summary" class="text-xs text-[var(--muted)]"></p>
+        <label class="ml-auto flex items-center gap-2 text-xs text-[var(--muted)]">
+          Email angle
+          <select id="angle-select" class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-[var(--ink,inherit)]"></select>
+        </label>
       </div>
       <details id="campaign-results" class="mt-2 text-xs">
         <summary class="cursor-pointer font-medium text-[var(--muted)]">Results by market and niche</summary>
@@ -73,6 +77,7 @@ const stages = [
         <span id="selected-count" class="text-[var(--muted)]">0 selected</span>
         <div class="ml-auto flex flex-wrap items-center gap-2">
           <button id="bulk-prep" type="button" class="hidden rounded-md bg-[var(--dark)] px-3 py-1.5 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Audit + email + Gmail draft</button>
+          <button id="bulk-follow-up" type="button" class="hidden rounded-md bg-[var(--dark)] px-3 py-1.5 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Draft follow-ups</button>
           <div id="bulk-status-group" class="hidden items-center gap-2">
             <select id="bulk-status" class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5">
               <option value="contacted">Contacted</option>
@@ -123,6 +128,10 @@ const stages = [
     </div>
 
     <div class="space-y-4 p-5">
+      <label class="block text-xs font-medium text-[var(--muted)]">
+        Email angle
+        <select id="draft-angle" class="mt-1 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm"></select>
+      </label>
       <div class="grid gap-2 sm:grid-cols-2">
         <button id="draft-generate" type="button" class="rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">Generate draft</button>
         <button id="draft-gmail" type="button" class="rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Create Gmail draft</button>
@@ -203,6 +212,8 @@ const stages = [
       contacted_at: string | null;
       cooldown_until: string | null;
       updated_at: string;
+      lead_note: string | null;
+      follow_up_due: boolean;
       next_step: string;
     };
 
@@ -216,7 +227,10 @@ const stages = [
       reply_rate: number | null;
       prep_label: string;
       uses_audit: boolean;
+      angles: { key: string; label: string; summary: string }[];
     };
+
+    type AngleResult = { angle: string; sent: number; replied: number; reply_rate: number };
 
     type CampaignResult = {
       market: string;
@@ -235,6 +249,7 @@ const stages = [
 
     type Item = {
       id: string;
+      angle: string | null;
       place_id: string;
       name: string | null;
       city: string | null;
@@ -295,6 +310,7 @@ const stages = [
     const params = new URLSearchParams(window.location.search);
     const state = {
       campaign: params.get('campaign') || 'seo_websites',
+      angle: 'rotate',
       stage: params.get('stage') || 'to_prep',
       q: params.get('q') || '',
       vertical: params.get('vertical') || '',
@@ -343,12 +359,22 @@ const stages = [
         ? `${current.sent.toLocaleString()} sent · ${current.replied.toLocaleString()} replied · ${current.reply_rate}% reply rate`
         : 'Nothing sent yet';
       el('#bulk-prep').textContent = current.prep_label;
+      const options = current.angles.map((a) => `<option value="${esc(a.key)}" title="${esc(a.summary)}">${esc(a.label)}</option>`).join('');
+      const angleSelect = el<HTMLSelectElement>('#angle-select');
+      angleSelect.innerHTML = `<option value="rotate">Rotate (A/B test)</option>${options}`;
+      angleSelect.value = current.angles.some((a) => a.key === state.angle) ? state.angle : 'rotate';
+      state.angle = angleSelect.value;
+      el('#draft-angle').innerHTML = options;
     }
 
     async function loadResults() {
       const body = el('#campaign-results-body');
-      const { results } = await api(`/api/outreach/campaigns/${encodeURIComponent(state.campaign)}/results`) as { results: CampaignResult[] };
+      const { results, angles } = await api(`/api/outreach/campaigns/${encodeURIComponent(state.campaign)}/results`) as { results: CampaignResult[]; angles: AngleResult[] };
       body.innerHTML = results.length ? `
+        <table class="mb-3 min-w-full border-collapse">
+          <thead><tr class="border-b border-[var(--line)] text-left text-[var(--muted)]"><th class="py-1.5 pr-4 font-medium">Angle</th><th class="py-1.5 pr-4 font-medium">Sent</th><th class="py-1.5 pr-4 font-medium">Replied</th><th class="py-1.5 font-medium">Reply rate</th></tr></thead>
+          <tbody>${angles.map((row) => `<tr class="border-b border-[var(--line)] last:border-0"><td class="py-1.5 pr-4">${esc(row.angle)}</td><td class="py-1.5 pr-4">${esc(row.sent)}</td><td class="py-1.5 pr-4">${esc(row.replied)}</td><td class="py-1.5">${esc(row.reply_rate)}%</td></tr>`).join('')}</tbody>
+        </table>
         <table class="min-w-full border-collapse">
           <thead><tr class="border-b border-[var(--line)] text-left text-[var(--muted)]"><th class="py-1.5 pr-4 font-medium">Market</th><th class="py-1.5 pr-4 font-medium">Niche</th><th class="py-1.5 pr-4 font-medium">Sent</th><th class="py-1.5 pr-4 font-medium">Replied</th><th class="py-1.5 font-medium">Reply rate</th></tr></thead>
           <tbody>${results.map((row) => `<tr class="border-b border-[var(--line)] last:border-0"><td class="py-1.5 pr-4">${esc(row.market.replace(/, USA$/, ''))}</td><td class="py-1.5 pr-4">${esc(row.vertical.replaceAll('_', ' '))}</td><td class="py-1.5 pr-4">${esc(row.sent)}</td><td class="py-1.5 pr-4">${esc(row.replied)}</td><td class="py-1.5">${esc(row.reply_rate)}%</td></tr>`).join('')}</tbody>
@@ -388,6 +414,7 @@ const stages = [
       if (row.stage === 'verify') return `<button type="button" data-site-ok="${esc(row.place_id)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Site is OK</button>`;
       if (row.kind === 'candidate') return `<a href="/prospects/${encodeURIComponent(row.place_id)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Open</a>`;
       if (row.stage === 'in_gmail') return `<a href="${esc(gmailDraftUrl(row.gmail_message_id))}" target="_blank" rel="noreferrer" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Open in Gmail</a>`;
+      if (row.follow_up_due && row.id) return `<button type="button" data-follow-up="${esc(row.id)}" class="rounded-md border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Draft follow-up</button>`;
       return '';
     }
 
@@ -401,8 +428,8 @@ const stages = [
             <div class="mt-0.5 text-xs text-[var(--muted)]">${esc([row.city, row.vertical?.replaceAll('_', ' ')].filter(Boolean).join(' · '))}</div>
           </td>
           <td class="px-3 py-3 text-xs">${esc(row.email || row.phone || '—')}</td>
-          <td class="whitespace-nowrap px-3 py-3 text-xs"><span class="font-semibold">${esc(row.tier ?? '—')}</span> · ${esc(row.total_score ?? '—')}</td>
-          <td class="max-w-sm px-3 py-3 text-xs leading-5">${esc(row.next_step)}</td>
+          <td class="whitespace-nowrap px-3 py-3 text-xs">${currentCampaign()?.uses_audit ? `<span class="font-semibold">${esc(row.tier ?? '—')}</span> · ${esc(row.total_score ?? '—')}` : esc(row.lead_note ?? '—')}</td>
+          <td class="max-w-sm px-3 py-3 text-xs leading-5">${esc(row.next_step)}${currentCampaign()?.uses_audit && row.lead_note ? `<div class="mt-0.5 text-[var(--muted)]">${esc(row.lead_note)}</div>` : ''}</td>
           <td class="whitespace-nowrap px-3 py-3 text-xs text-[var(--muted)]">${esc(whenFor(row))}</td>
           <td class="whitespace-nowrap px-4 py-3 text-right">${actionFor(row)}</td>
         </tr>`).join('');
@@ -416,6 +443,8 @@ const stages = [
       const canPrep = PREP_STAGES.has(state.stage);
       const canStatus = STATUS_STAGES.has(state.stage);
       el('#bulk-prep').classList.toggle('hidden', !canPrep);
+      el('#bulk-follow-up').classList.toggle('hidden', state.stage !== 'contacted');
+      el<HTMLButtonElement>('#bulk-follow-up').disabled = !rows.some((r) => r.follow_up_due && selected.has(rowKey(r)));
       el('#bulk-status-group').classList.toggle('hidden', !canStatus);
       el('#bulk-status-group').classList.toggle('flex', canStatus);
       el<HTMLButtonElement>('#bulk-prep').disabled = selected.size === 0;
@@ -493,6 +522,7 @@ const stages = [
       el<HTMLInputElement>('#draft-subject').value = item.subject || '';
       el<HTMLTextAreaElement>('#draft-body').value = item.body || '';
       el<HTMLSelectElement>('#draft-status').value = item.status;
+      if (item.angle) el<HTMLSelectElement>('#draft-angle').value = item.angle;
       el<HTMLSelectElement>('#draft-verification').value = item.verification_status;
       el('#draft-error').classList.add('hidden');
 
@@ -555,7 +585,7 @@ const stages = [
         box.innerHTML = `Working on ${done + 1} of ${placeIds.length}: ${esc(names.get(placeId))}… Keep this page open.<br>${lines.join('<br>')}`;
         try {
           const result = await api(`/api/outreach/fast-track/${encodeURIComponent(placeId)}`, {
-            method: 'POST', body: JSON.stringify({ gmail: true, campaign: state.campaign }),
+            method: 'POST', body: JSON.stringify({ gmail: true, campaign: state.campaign, angle: state.angle }),
           });
           lines.push(result.ok
             ? `<span class="text-emerald-700">✓ ${esc(names.get(placeId))}: in Gmail</span>`
@@ -569,6 +599,33 @@ const stages = [
       box.innerHTML = `Finished ${done} of ${placeIds.length}. Review the drafts in Gmail before sending.<br>${lines.join('<br>')}`;
       await loadBoard();
     }
+
+    async function draftFollowUps(items: Row[]) {
+      const box = el('#bulk-result');
+      box.className = 'border-b border-[var(--line)] px-4 py-3 text-xs leading-5';
+      const lines: string[] = [];
+      for (const [index, row] of items.entries()) {
+        box.innerHTML = `Working on ${index + 1} of ${items.length}: ${esc(row.name)}… Keep this page open.<br>${lines.join('<br>')}`;
+        try {
+          await api(`/api/outreach/items/${encodeURIComponent(row.id as string)}/follow-up`, { method: 'POST' });
+          lines.push(`<span class="text-emerald-700">✓ ${esc(row.name)}: in Gmail</span>`);
+          selected.delete(rowKey(row));
+        } catch (error) {
+          lines.push(`<span class="text-red-700">✗ ${esc(row.name)}: ${esc(error instanceof Error ? error.message : error)}</span>`);
+        }
+      }
+      box.innerHTML = `Finished. Check each thread in Gmail before sending, in case they replied.<br>${lines.join('<br>')}`;
+      await loadBoard();
+    }
+
+    el<HTMLSelectElement>('#angle-select').addEventListener('change', (event) => {
+      state.angle = (event.target as HTMLSelectElement).value;
+    });
+
+    el<HTMLButtonElement>('#bulk-follow-up').addEventListener('click', () => {
+      const items = rows.filter((r) => r.follow_up_due && r.id && selected.has(rowKey(r)));
+      if (items.length) draftFollowUps(items).catch(showError);
+    });
 
     el('#campaign-tabs').addEventListener('click', (event) => {
       const button = (event.target as Element).closest<HTMLButtonElement>('[data-campaign]');
@@ -634,6 +691,13 @@ const stages = [
     el('#rows').addEventListener('click', (event) => {
       const target = event.target as Element;
       if (target.closest('[data-select]') || target.closest('a')) return;
+      const followUp = target.closest<HTMLButtonElement>('[data-follow-up]');
+      if (followUp?.dataset.followUp) {
+        const row = rows.find((r) => r.id === followUp.dataset.followUp);
+        followUp.disabled = true;
+        if (row) draftFollowUps([row]).catch(showError);
+        return;
+      }
       const prep = target.closest<HTMLButtonElement>('[data-prep]');
       if (prep?.dataset.prep) {
         prep.disabled = true;
@@ -698,7 +762,7 @@ const stages = [
       el('#draft-error').classList.add('hidden');
       try {
         await api(`/api/outreach/items/${encodeURIComponent(draftId())}/regenerate-synced`, {
-          method: 'POST', body: JSON.stringify({ expected_version: draftVersion() }),
+          method: 'POST', body: JSON.stringify({ expected_version: draftVersion(), angle: el<HTMLSelectElement>('#draft-angle').value }),
         });
         await refreshDrawer(draftId());
       } catch (error) {

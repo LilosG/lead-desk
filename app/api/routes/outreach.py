@@ -84,7 +84,6 @@ def get_service() -> OutreachService:
         generation_model=settings.openrouter_model if generator else None,
         gmail_sender_email=settings.gmail_sender_email if gmail else None,
         audit_builder=build_default_audit,
-        ev_overview_url=settings.ev_overview_url,
     )
 
 
@@ -158,7 +157,11 @@ def list_campaigns() -> dict:
 
 @router.get('/campaigns/{campaign}/results')
 def campaign_results(campaign: str) -> dict:
-    return {'results': get_board_service().campaign_results(known_campaign(campaign))}
+    service = get_board_service()
+    return {
+        'results': service.campaign_results(known_campaign(campaign)),
+        'angles': service.angle_results(campaign),
+    }
 
 
 @router.get('/board')
@@ -277,6 +280,7 @@ def generate_outreach_draft(item_id: str, payload: OutreachVersionAction) -> dic
         result = get_service().generate_draft(
             item_id,
             expected_version=payload.expected_version,
+            angle=payload.angle,
         )
     except OutreachConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -285,6 +289,19 @@ def generate_outreach_draft(item_id: str, payload: OutreachVersionAction) -> dic
     except OutreachIntegrationUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    if result is None:
+        raise HTTPException(status_code=404, detail='outreach item not found')
+    return result
+
+
+@router.post('/items/{item_id}/follow-up')
+def draft_follow_up(item_id: str) -> dict:
+    try:
+        result = get_service().draft_follow_up(item_id)
+    except OutreachBlocked as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OutreachIntegrationUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail='outreach item not found')
     return result
@@ -345,6 +362,7 @@ class BulkStatusRequest(BaseModel):
 class FastTrackRequest(BaseModel):
     gmail: bool = True
     campaign: str = Field(default=DEFAULT_CAMPAIGN, max_length=40)
+    angle: str | None = Field(default=None, max_length=40)
 
 
 @router.post('/bulk/status')
@@ -363,7 +381,7 @@ def fast_track_prospect(place_id: str, payload: FastTrackRequest) -> dict:
 
     return fast_track(
         get_service(), get_audit_service(), place_id,
-        gmail=payload.gmail, campaign_key=known_campaign(payload.campaign),
+        gmail=payload.gmail, campaign_key=known_campaign(payload.campaign), angle=payload.angle,
     )
 
 
