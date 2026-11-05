@@ -182,7 +182,7 @@ def test_the_ev_email_says_only_what_is_verified(outreach):
     item = outreach.repository.get_item(result["item_id"])
 
     assert "about 90%" in item["body"] or "site plan on the actual property" in item["body"]
-    assert "http" not in item["body"].replace("lilosgrowth.com", "")
+    assert "https://ev-permit-packets.vercel.app/" in item["body"]
     assert "no thanks" in item["body"]
     assert item["angle"] in {"free_packet", "drawings"}
     assert item["claim_signal"] == "ev_permit_offer"
