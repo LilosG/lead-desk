@@ -10,20 +10,25 @@ from psycopg_pool import ConnectionPool
 
 from app.campaigns import COOLDOWN_DAYS, EV_PERMITS, EV_SERVICE_SQL, simple_permit_cities
 
-# Who can buy the EV offer. One rule, so the SEO board can flag the same leads.
-_EV_ELIGIBLE = """(
+# Who the EV offer can go to. A site that doesn't mention EV work still gets the
+# email, worded as a question, and ranks after the shops that do.
+_EV_AUDIENCE = """(
           b.vertical = 'electrician'
           and (b.primary_type = 'electrician' or 'electrician' = any(b.types)
                or b.name ~* 'electric')
           and coalesce(w.qualification, '') <> 'franchise'
           and (coalesce(b.city, '') || ', ' || coalesce(b.state, '')) <> all(%(simple_cities)s)
+    )"""
+# Shops that clearly sell EV work get the EV pitch before the SEO one.
+_EV_ELIGIBLE = f"""(
+          {_EV_AUDIENCE}
           and (
                 coalesce((we.site_signals ->> 'ev_service')::boolean, false)
                 or concat_ws(' ', array_to_string(we.offering_titles, ' '), we.title, we.meta_description)
                    ~* %(ev_pattern)s
               )
     )"""
-_LEAD_RULES = {EV_PERMITS: f"and {_EV_ELIGIBLE}"}
+_LEAD_RULES = {EV_PERMITS: f"and {_EV_AUDIENCE}"}
 
 
 def cooldown_join(place: str, campaign: str) -> str:
@@ -201,6 +206,7 @@ _SEO_ORDER = f"case when ev_eligible then 1 else 0 end, {_DEFAULT_ORDER}"
 # The SEO score rewards a weak site, which says nothing about buying permit
 # automation. The best EV lead is a busy shop that clearly sells EV work.
 _EV_ORDER = (
+    "case when ev_eligible then 0 else 1 end, "
     "case when ev_strength = 'page' then 0 else 1 end, "
     "case when jsonb_array_length(coalesce(ev_brands, '[]'::jsonb)) > 0 then 0 else 1 end, "
     "fit_score desc nulls last, review_count desc nulls last, name"

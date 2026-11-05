@@ -146,14 +146,16 @@ def _touch(pool, item_id, **columns):
                      [*columns.values(), item_id])
 
 
-def test_ev_campaign_only_lists_electricians_that_show_ev_work(board):
-    assert set(_names(board, EV_PERMITS)) == {"camp-title", "camp-signal"}
+def test_ev_campaign_lists_every_electrician_with_ev_shops_first(board):
+    names = list(_names(board, EV_PERMITS))
+    assert set(names) == {"camp-title", "camp-signal", "camp-noev"}
+    assert names[-1] == "camp-noev"
 
 
 def test_qualified_filter_does_not_hide_ev_leads(board):
     data = board.board(campaign=EV_PERMITS, stage="to_prep", page=1, page_size=100,
                        q="camp-", vertical=None, market=None, qualified_only=True)
-    assert {row["place_id"] for row in data["items"]} == {"camp-title", "camp-signal"}
+    assert {row["place_id"] for row in data["items"]} == {"camp-title", "camp-signal", "camp-noev"}
 
 
 def test_seo_campaign_is_unchanged_by_the_ev_rules(board):
@@ -302,7 +304,7 @@ def test_campaign_routes(client, pool):
     assert client.get("/api/outreach/campaigns/nope/results").status_code == 404
     response = client.get("/api/outreach/board", params={"campaign": EV_PERMITS, "q": "camp-"})
     assert response.status_code == 200
-    assert {row["place_id"] for row in response.json()["items"]} == {"camp-title", "camp-signal"}
+    assert {row["place_id"] for row in response.json()["items"]} == {"camp-title", "camp-signal", "camp-noev"}
     assert client.post("/api/outreach/fast-track/camp-title", json={"campaign": "nope"}).status_code == 404
 
 
