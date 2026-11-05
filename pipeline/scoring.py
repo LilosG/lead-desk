@@ -642,7 +642,8 @@ def fit_score(b: dict, w, base: Baseline | None) -> tuple[int, list[str]]:
     p25 = base.p25_reviews if base else 0
     median = base.median_reviews if base else 0
     p75 = base.p75_reviews if base else 0
-    at_median = bool(reviews) and reviews >= median
+    # A town's median can be 3. Beating it doesn't make a business established.
+    at_median = reviews >= max(median, C.FIT_SOLID_REVIEWS)
 
     activity = {"active": 40, "steady": 34, "quiet": 20, "stale": 5,
                 "unknown": 24, "no reviews": 0}[label]
@@ -659,7 +660,7 @@ def fit_score(b: dict, w, base: Baseline | None) -> tuple[int, list[str]]:
 
     if not reviews:
         volume = 0
-    elif reviews >= p75:
+    elif reviews >= max(p75, C.FIT_SOLID_REVIEWS):
         volume = C.FIT_MAX["reviews"]
     elif at_median:
         volume = 25
@@ -690,6 +691,9 @@ def qualify(b: dict, w, fit: int, evidence: list, reach: int) -> tuple[str, list
         return "franchise", ["National brand or franchise"]
     if fit < C.QUALIFY_MIN_FIT:
         return "low_fit", ["Not enough evidence yet that this is an active business"]
+    reviews = b.get("review_count") or 0
+    if reviews < C.QUALIFY_MIN_REVIEWS:
+        return "low_fit", [f"Only {reviews} Google review{'' if reviews == 1 else 's'} so far"]
     # A site linked by hand has already had its look from a person.
     linked_by_hand = getattr(w, "site_source", "gbp") == "manual"
     if "crawl_blocked" in signals and not emails and not linked_by_hand:

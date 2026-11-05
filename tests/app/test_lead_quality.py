@@ -1,9 +1,11 @@
 """What the crawl learns for outreach: EV proof, who to email and their name."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
+import psycopg
 from bs4 import BeautifulSoup
 
 PIPELINE = Path(__file__).resolve().parents[2] / "pipeline"
@@ -11,6 +13,7 @@ if str(PIPELINE) not in sys.path:
     sys.path.insert(0, str(PIPELINE))
 
 import enrich as E  # noqa: E402
+import scoring as S  # noqa: E402
 import site_signals as SS  # noqa: E402
 
 from app.services.outreach_audit_copy import contact_first_name  # noqa: E402
@@ -130,3 +133,39 @@ def test_no_mail_server_drops_the_domain(monkeypatch):
     monkeypatch.setattr(E.dns.resolver, "resolve", none)
     assert E.domain_takes_mail("no-mail.com") is False
     E.domain_takes_mail.cache_clear()
+
+
+def test_a_handful_of_reviews_is_not_qualified_even_in_a_small_town():
+    gap = [S.Evidence("website", "no_h1", "low", 3, "x", {})]
+    site = E.SiteFindings(place_id="p", emails_found=["a@sparks.com"], is_reachable=True)
+    verdict, reasons = S.qualify({"review_count": 5}, site, 90, gap, 80)
+    assert verdict == "low_fit"
+    assert reasons == ["Only 5 Google reviews so far"]
+    assert S.qualify({"review_count": 10}, site, 90, gap, 80)[0] == "qualified"
+
+
+def test_beating_a_tiny_local_median_does_not_earn_review_points():
+    base = S.Baseline(vertical="electrician", geo_label="x", sample_size=9, median_reviews=3,
+                      p25_reviews=1, p75_reviews=5, median_rating=4.5, pct_with_website=50)
+    business = {"review_count": 6, "last_review_days": 30, "rating": 4.8, "phone": "1", "has_hours": True}
+    fit, reasons = S.fit_score(business, None, base)
+    assert fit < 70
+    assert not any("at or above" in reason for reason in reasons)
+
+
+def test_the_cleanup_removes_chargers_but_keeps_electricians_and_contacted_leads():
+    dsn = os.environ.get("DATABASE_URL")
+    sql = Path("sql/migrations/026_remove_charging_stations.sql").read_text()
+    rows = [("cs-1", "Tesla Supercharger", "service", ["service"]),
+            ("cs-2", "EVgo", "electric_vehicle_charging_station", ["electric_vehicle_charging_station"]),
+            ("cs-3", "Sparks EV Charging Stations", "electrician", ["electrician"]),
+            ("cs-4", "ChargePoint Charging Station", "service", ["service"])]
+    with psycopg.connect(dsn) as conn:
+        for row in rows:
+            conn.execute("insert into businesses (place_id, name, primary_type, types) values (%s, %s, %s, %s)", row)
+        conn.execute("""insert into outreach_queue (place_id, channel, status, contacted_at)
+                        values ('cs-4', 'email', 'contacted', now())""")
+        conn.execute(sql)
+        left = {r[0] for r in conn.execute("select place_id from businesses where place_id like 'cs-%'")}
+        conn.execute("delete from businesses where place_id like 'cs-%'")
+    assert left == {"cs-3", "cs-4"}

@@ -244,8 +244,7 @@ LOCATION_PAGE_WORDS = [
 # ---------------------------------------------------------------------------
 VERTICALS = {
     "electrician": {
-        "queries": ["electrician", "electrical contractor", "residential electrician",
-                    "ev charger installer"],
+        "queries": ["electrician", "electrical contractor", "residential electrician"],
         "priority": 1,
         "profile": "home_service",
         "case_study": "Wheyland Electric — 20 to 306 keywords and 1 to 29 top-3 rankings in 5 months",
@@ -377,6 +376,7 @@ TIER_CUTOFFS = [("A", 45), ("B", 33), ("C", 22), ("D", 0)]
 FIT_MAX = {"activity": 40, "reviews": 30, "website": 15, "rating": 10, "profile": 5}
 QUALIFY_MIN_FIT = 45
 FIT_SOLID_REVIEWS = 10  # enough reviews to count as a real customer base anywhere
+QUALIFY_MIN_REVIEWS = FIT_SOLID_REVIEWS  # fewer stays labelled, but isn't Qualified
 
 QUALIFICATION_LABELS = {
     "qualified": "Qualified",

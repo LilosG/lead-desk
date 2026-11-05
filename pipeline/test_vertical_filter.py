@@ -72,6 +72,36 @@ CASES = [
         False,
     ),
     (
+        "public charger excluded by type",
+        {
+            "name": "Electrify America",
+            "primary_type": "electric_vehicle_charging_station",
+            "types": ["electric_vehicle_charging_station", "point_of_interest"],
+        },
+        "electrician",
+        True,
+    ),
+    (
+        "public charger excluded by name",
+        {
+            "name": "Tesla Supercharger",
+            "primary_type": "service",
+            "types": ["service", "establishment"],
+        },
+        "electrician",
+        True,
+    ),
+    (
+        "electrician who sells chargers stays",
+        {
+            "name": "Sparks EV Charging Stations",
+            "primary_type": "electrician",
+            "types": ["electrician", "service"],
+        },
+        "electrician",
+        False,
+    ),
+    (
         "auto shop excluded",
         {
             "name": "Pacific Auto Electric",

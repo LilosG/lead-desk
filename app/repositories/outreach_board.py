@@ -13,6 +13,8 @@ from app.campaigns import COOLDOWN_DAYS, EV_PERMITS, EV_SERVICE_SQL, simple_perm
 # Who can buy the EV offer. One rule, so the SEO board can flag the same leads.
 _EV_ELIGIBLE = """(
           b.vertical = 'electrician'
+          and (b.primary_type = 'electrician' or 'electrician' = any(b.types)
+               or b.name ~* 'electric')
           and coalesce(w.qualification, '') <> 'franchise'
           and (coalesce(b.city, '') || ', ' || coalesce(b.state, '')) <> all(%(simple_cities)s)
           and (
