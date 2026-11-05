@@ -172,6 +172,14 @@ import AppLayout from '../../layouts/AppLayout.astro';
         >
           Create audit reports (0)
         </button>
+        <button
+          id="batch-ev"
+          type="button"
+          disabled
+          class="rounded-md bg-[var(--dark)] px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Prep for EV Permits (0)
+        </button>
         <select
           id="page-size"
           class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-xs"
@@ -299,6 +307,8 @@ import AppLayout from '../../layouts/AppLayout.astro';
     const qualificationSelect = $('#qualification') as HTMLSelectElement;
     const batchButton = $('#batch-audit') as HTMLButtonElement;
     const batchStatus = $('#batch-status') as HTMLSpanElement;
+    const batchEvButton = $('#batch-ev') as HTMLButtonElement;
+    const prospectsById = new Map<string, Prospect>();
     const selectPage = $('#select-page') as HTMLInputElement;
     const selected = new Set<string>();
     let labelNames: Record<string, string> = {};
@@ -476,9 +486,19 @@ import AppLayout from '../../layouts/AppLayout.astro';
     function updateBatchButton() {
       batchButton.textContent = `Create audit reports (${selected.size})`;
       batchButton.disabled = selected.size === 0;
+      const electricians = evSelection().length;
+      batchEvButton.textContent = `Prep for EV Permits (${electricians})`;
+      batchEvButton.disabled = electricians === 0;
+    }
+
+    function evSelection(): Prospect[] {
+      return Array.from(selected)
+        .map((id) => prospectsById.get(id))
+        .filter((item): item is Prospect => item?.vertical === 'electrician');
     }
 
     function renderRows(items: Prospect[]) {
+      items.forEach((item) => prospectsById.set(item.place_id, item));
       rows.innerHTML = '';
 
       if (!items.length) {
@@ -791,6 +811,40 @@ import AppLayout from '../../layouts/AppLayout.astro';
       } finally {
         updateBatchButton();
       }
+    });
+
+    batchEvButton.addEventListener('click', async () => {
+      const leads = evSelection().slice(0, 50);
+      if (!leads.length) return;
+      batchEvButton.disabled = true;
+      batchButton.disabled = true;
+      const stopped: string[] = [];
+      let drafted = 0;
+      for (const [index, lead] of leads.entries()) {
+        batchStatus.textContent = `Prepping ${index + 1} of ${leads.length}: ${lead.name}. Keep this page open.`;
+        try {
+          const response = await fetch(`/api/outreach/fast-track/${encodeURIComponent(lead.place_id)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ gmail: true, campaign: 'ev_permits' }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (response.ok && result.ok) {
+            drafted += 1;
+            selected.delete(lead.place_id);
+          } else {
+            stopped.push(`${lead.name}: ${result.detail || `API returned ${response.status}`}`);
+          }
+        } catch (error) {
+          stopped.push(`${lead.name}: ${error instanceof Error ? error.message : 'request failed'}`);
+        }
+      }
+      batchStatus.textContent = [
+        `${drafted} EV draft${drafted === 1 ? '' : 's'} in Gmail`,
+        ...stopped,
+      ].join(' · ');
+      await loadProspects();
+      updateBatchButton();
     });
 
     readUrlState();

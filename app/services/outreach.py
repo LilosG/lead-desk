@@ -340,6 +340,8 @@ class OutreachService:
 
     def write_ev_draft(self, context: dict) -> dict:
         """The EV Permits email, refused unless its facts check out."""
+        if context.get("vertical") != "electrician":
+            raise OutreachBlocked("EV Permits is only for electricians.")
         evidence = ev_evidence(context)
         if evidence is None:
             raise OutreachBlocked("This site doesn't show EV work, so the email can't say it does.")

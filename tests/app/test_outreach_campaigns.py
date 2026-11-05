@@ -203,6 +203,12 @@ def test_a_lead_without_ev_evidence_cannot_get_the_ev_email(outreach):
     assert "doesn't show EV work" in result["detail"]
 
 
+def test_only_electricians_can_get_the_ev_email(outreach):
+    result = fast_track(outreach, None, "camp-plumber", gmail=False, campaign_key=EV_PERMITS)
+    assert result["failed_step"] == "draft"
+    assert "only for electricians" in result["detail"]
+
+
 def test_regenerating_a_synced_ev_draft_updates_gmail_without_ai(pool, outreach):
     class Gmail:
         calls = []
