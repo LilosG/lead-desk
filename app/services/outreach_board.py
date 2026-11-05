@@ -67,7 +67,8 @@ def follow_up_step(row: dict[str, Any], now: datetime | None = None) -> str:
 def lead_note(row: dict[str, Any], campaign: str) -> str | None:
     """Why this lead sits where it does in this campaign's list."""
     if campaign == EV_PERMITS:
-        proof = "EV page" if row.get("ev_strength") == "page" else "Mentions EV work"
+        proof = ("EV page" if row.get("ev_strength") == "page"
+                 else "Mentions EV work" if row.get("ev_eligible") else "No EV on site")
         brands = row.get("ev_brands") or []
         parts = [proof, *brands[:2], f"{row['review_count']} reviews" if row.get("review_count") else None]
         return " · ".join(p for p in parts if p)
