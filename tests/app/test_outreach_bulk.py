@@ -33,7 +33,7 @@ class FakeOutreach:
         return dict(existing) if existing else self._save(
             {"id": "q1", "place_id": place_id, "status": "queued", "version": 1, "body": None})
 
-    def generate_draft(self, item_id, *, expected_version):
+    def generate_draft(self, item_id, *, expected_version, angle=None):
         self.calls.append("draft")
         item = self.repository.items[item_id]
         return self._save({**item, "status": "review_required", "body": "Hi", "subject": "S",

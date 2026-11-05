@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.campaigns import DEFAULT_CAMPAIGN, get_campaign
+from app.campaigns import DEFAULT_CAMPAIGN, EV_PERMITS, get_campaign
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
@@ -17,14 +18,17 @@ from app.services.outreach_audit_copy import (
     contact_first_name,
     personal_greeting,
 )
-from app.services.ev_offer import PROMPT_VERSION as EV_PROMPT_VERSION
-from app.services.ev_offer import ev_evidence, write_email
+from app.services import ev_offer, seo_offer
+from app.services.email_angles import is_known, resolve_angle
 from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
 
 
 PROMPT_VERSION = "outreach-v12"
+FIXED_COPY = "fixed copy"
+# Days to wait after the previous email before each follow-up.
+FOLLOW_UP_GAPS = {2: 3, 3: 4}
 # Reports older than this version lack the checks the email and PDF now rely on.
 CURRENT_AUDIT_VERSION = REPORT_VERSION
 MAX_DRAFT_ATTEMPTS = 3
@@ -72,7 +76,6 @@ class OutreachService:
         generation_model: str | None = None,
         gmail_sender_email: str | None = None,
         audit_builder: Callable[[str], Any] | None = None,
-        ev_overview_url: str | None = None,
     ) -> None:
         self.repository = repository
         self.evidence_repository = evidence_repository
@@ -83,7 +86,6 @@ class OutreachService:
         self.gmail_sender_email = gmail_sender_email
         # Callable(place_id) that builds a default audit report.
         self.audit_builder = audit_builder
-        self.ev_overview_url = ev_overview_url
 
     def integration_status(self) -> dict:
         return {
@@ -259,11 +261,15 @@ class OutreachService:
     def audit_attachments(self, item: dict | None) -> list[tuple[str, bytes]] | None:
         """The audit PDF for drafts that say it is attached; None otherwise.
 
+        Rows from before angles have no angle, and their copy says it's attached.
+
         The email copy says the audit is attached, so the draft must really
         carry it. Gmail replaces the whole message on update, so every draft
         write for an audit-grounded item passes this again.
         """
         if not item or item.get("claim_signal") != "audit_report" or not item.get("place_id"):
+            return None
+        if item.get("angle") not in {None, seo_offer.AUDIT_ATTACHED}:
             return None
         lookup = getattr(self.repository, "latest_audit_report", None)
         if lookup is None:
@@ -338,35 +344,63 @@ class OutreachService:
             )
         return recent
 
-    def write_ev_draft(self, context: dict) -> dict:
+    def write_ev_draft(self, context: dict, angle: str | None = None) -> dict:
         """The EV Permits email, refused unless its facts check out."""
         if context.get("vertical") != "electrician":
             raise OutreachBlocked("EV Permits is only for electricians.")
-        evidence = ev_evidence(context)
+        evidence = ev_offer.ev_evidence(context)
         if evidence is None:
             raise OutreachBlocked("This site doesn't show EV work, so the email can't say it does.")
-        if not self.ev_overview_url:
-            raise OutreachBlocked("The EV overview page isn't published yet. Set EV_OVERVIEW_URL first.")
-        written = write_email(context, self.ev_overview_url)
+        chosen = resolve_angle(EV_PERMITS, context["place_id"], angle, context.get("angle"))
+        if not is_known(EV_PERMITS, chosen):
+            raise OutreachBlocked(f"Unknown email angle: {chosen}")
+        written = ev_offer.write_email(context, chosen)
         return {
             "subject": written["subject"],
             "body": f"{written['body']}\n\n{CAN_SPAM_FOOTER}",
             "claim_signal": get_campaign(context.get("campaign_key")).claim_signal,
             "verification_status": "verified",
-            "verification_note": f"EV work found in the site's {evidence}. {written['note']}",
-            "generation_model": "fixed copy",
-            "prompt_version": EV_PROMPT_VERSION,
+            "verification_note": f"EV work found: {evidence}. {written['note']}".strip(),
+            "generation_model": FIXED_COPY,
+            "prompt_version": ev_offer.PROMPT_VERSION,
+            "angle": chosen,
         }
 
-    def generate_draft(self, item_id: str, *, expected_version: int) -> dict | None:
+    def write_seo_draft(self, context: dict, angle: str | None = None) -> dict | None:
+        """The audit-led email. None when the audit gives it nothing to say."""
+        campaign = get_campaign(context.get("campaign_key")).key
+        chosen = resolve_angle(campaign, context["place_id"], angle, context.get("angle"))
+        if not is_known(campaign, chosen):
+            raise OutreachBlocked(f"Unknown email angle: {chosen}")
+        written = seo_offer.write_email(context, chosen)
+        if written is None:
+            return None
+        note = "Grounded in the latest generated Local Visibility Audit"
+        if context.get("audit_source_checked_at"):
+            note += f" using evidence dated {context['audit_source_checked_at']}"
+        return {
+            "subject": written["subject"],
+            "body": f"{written['body']}\n\n{CAN_SPAM_FOOTER}",
+            "claim_signal": "audit_report",
+            "verification_status": "not_required",
+            "verification_note": f"{note}. {written['note']}".strip(),
+            "generation_model": FIXED_COPY,
+            "prompt_version": seo_offer.PROMPT_VERSION,
+            "angle": written["angle"],
+        }
+
+    def write_fixed_copy(self, context: dict, angle: str | None = None) -> dict | None:
+        if get_campaign(context.get("campaign_key")).uses_audit:
+            return self.write_seo_draft(context, angle)
+        return self.write_ev_draft(context, angle)
+
+    def generate_draft(
+        self, item_id: str, *, expected_version: int, angle: str | None = None,
+    ) -> dict | None:
         context = self.repository.draft_context(item_id)
-        uses_audit = get_campaign((context or {}).get("campaign_key")).uses_audit
-        if self.generator is None and uses_audit:
-            raise OutreachIntegrationUnavailable(
-                "OpenRouter draft generation is not configured"
-            )
         if context is None:
             return None
+        uses_audit = get_campaign(context.get("campaign_key")).uses_audit
         if context["version"] != expected_version:
             raise OutreachConflict("outreach item changed since it was loaded")
         if context["channel"] != "email":
@@ -390,10 +424,11 @@ class OutreachService:
         if self.repository.is_suppressed(context["to_address"]):
             raise OutreachBlocked("email address is suppressed")
 
-        if not uses_audit:
+        written = self.write_fixed_copy(context, angle)
+        if written is not None:
             try:
                 updated, conflict = self.repository.record_generated_draft(
-                    item_id, expected_version=expected_version, **self.write_ev_draft(context),
+                    item_id, expected_version=expected_version, **written,
                 )
             except OutreachOperationLocked as exc:
                 raise OutreachBlocked(str(exc)) from exc
@@ -401,6 +436,10 @@ class OutreachService:
                 raise OutreachConflict("outreach item changed while the draft was being generated")
             return updated
 
+        if self.generator is None:
+            raise OutreachIntegrationUnavailable(
+                "OpenRouter draft generation is not configured"
+            )
         business_name = clean_business_name(context.get("name"))
         visible_claim, claim_signal, verification_status, verification_note = (
             self._resolve_draft_grounding(
@@ -603,4 +642,50 @@ class OutreachService:
             operation["id"],
             draft_id=result.draft_id,
             message_id=result.message_id,
+            thread_id=result.thread_id,
         )
+
+    def draft_follow_up(self, item_id: str, now: datetime | None = None) -> dict | None:
+        """The next email in the sequence, as a Gmail draft in the first email's thread."""
+        if self.gmail is None:
+            raise OutreachIntegrationUnavailable("Gmail draft integration is not configured")
+        item = self.repository.follow_up_context(item_id)
+        if item is None:
+            return None
+        if item["channel"] != "email" or item["status"] != "contacted" or item["suppressed"]:
+            raise OutreachBlocked("Follow-ups only go to contacted leads who haven't replied.")
+        sent = [f for f in item["follow_ups"] if f.get("gmail_draft_id")]
+        step = len(sent) + 2
+        if step not in FOLLOW_UP_GAPS:
+            raise OutreachBlocked("This lead has had every follow-up.")
+        if sent and not sent[-1].get("sent_at"):
+            raise OutreachBlocked("The last follow-up is still in Gmail. Send it first.")
+        previous = (datetime.fromisoformat(sent[-1]["sent_at"]) if sent else item["contacted_at"])
+        due = previous + timedelta(days=FOLLOW_UP_GAPS[step])
+        if (now or datetime.now(timezone.utc)) < due:
+            raise OutreachBlocked(f"This follow-up is due on {due:%b} {due.day}.")
+
+        offer = ev_offer if item["campaign_key"] == EV_PERMITS else seo_offer
+        subject = item["subject"] or ""
+        follow_up = self.repository.begin_follow_up(
+            item_id, step,
+            subject=subject if subject.lower().startswith("re:") else f"Re: {subject}",
+            body=f"{offer.write_follow_up(item, step)}\n\n{CAN_SPAM_FOOTER}",
+            message_id_header=f"<{uuid4()}@lead-desk.lilosgrowth.com>",
+        )
+        try:
+            result = self.gmail.find_draft_by_message_id(follow_up["message_id_header"]) or self.gmail.create_draft(
+                to_address=item["to_address"],
+                subject=follow_up["subject"],
+                body=follow_up["body"],
+                message_id_header=follow_up["message_id_header"],
+                in_reply_to=item.get("first_message_id"),
+                thread_id=item.get("gmail_thread_id"),
+            )
+        except GmailDraftError as exc:
+            raise OutreachIntegrationUnavailable(str(exc)) from exc
+        self.repository.complete_follow_up(
+            follow_up["id"], draft_id=result.draft_id, message_id=result.message_id,
+            place_id=item["place_id"], item_id=item_id, step=step,
+        )
+        return {"step": step, "gmail_message_id": result.message_id}

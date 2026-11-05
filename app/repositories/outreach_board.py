@@ -82,12 +82,22 @@ _BOARD_CTE = """
             cd.cooldown_until,
             we.site_signals ->> 'ev_strength' as ev_strength,
             we.site_signals -> 'ev_brands' as ev_brands,
-            {ev_eligible} as ev_eligible
+            {ev_eligible} as ev_eligible,
+            coalesce(fu.drafted, 0) as follow_ups_drafted,
+            coalesce(fu.open, false) as follow_up_open,
+            coalesce(fu.last_sent, q.contacted_at) as last_touch_at
         from outreach_queue q
         join v_outreach_stage vs on vs.id = q.id
         join businesses b on b.place_id = q.place_id
         left join v_lead_worklist w on w.place_id = q.place_id
         left join website_enrichment we on we.place_id = q.place_id
+        left join lateral (
+            select count(*) as drafted,
+                   bool_or(f.sent_at is null) as open,
+                   max(f.sent_at) as last_sent
+            from outreach_follow_ups f
+            where f.queue_id = q.id and f.gmail_draft_id is not null
+        ) fu on true
         {queue_cooldown}
         where q.campaign_key = %(campaign)s
 
@@ -129,7 +139,10 @@ _BOARD_CTE = """
             cd.cooldown_until,
             we.site_signals ->> 'ev_strength',
             we.site_signals -> 'ev_brands',
-            {ev_eligible}
+            {ev_eligible},
+            0,
+            false,
+            null::timestamptz
         from v_lead_worklist w
         join businesses b on b.place_id = w.place_id
         left join v_lead_findings f on f.place_id = w.place_id
@@ -170,7 +183,10 @@ def board_cte(campaign: str) -> str:
 
 _ORDER_BY = {
     "in_gmail": "gmail_draft_created_at desc nulls last",
-    "contacted": "contacted_at desc nulls last",
+    "contacted": ("case when follow_up_open then 2 when follow_ups_drafted >= 2 then 3 "
+                  "when last_touch_at + make_interval(days => "
+                  "case when follow_ups_drafted = 0 then 3 else 4 end) <= now() then 0 else 1 end, "
+                  "last_touch_at"),
     "replied": "updated_at desc",
     "closed": "updated_at desc",
 }
@@ -298,7 +314,7 @@ class OutreachBoardRepository:
                 q.verification_note, q.generation_model, q.draft_generated_at,
                 q.gmail_draft_id, q.gmail_message_id, q.gmail_draft_created_at,
                 q.gmail_draft_left_at, q.contacted_at, q.version, q.updated_at,
-                q.campaign_key,
+                q.campaign_key, q.angle,
                 b.name, b.city, vs.stage, cd.cooldown_campaign, cd.cooldown_until,
                 exists (
                     select 1 from gmail_draft_operations o
@@ -336,6 +352,23 @@ class OutreachBoardRepository:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query)
+                return cur.fetchall()
+
+    def angle_results(self, campaign: str) -> list[dict[str, Any]]:
+        query = """
+            select
+                q.angle,
+                count(*) as sent,
+                count(*) filter (where q.status = 'replied') as replied
+            from outreach_queue q
+            where q.campaign_key = %s
+              and (q.contacted_at is not null or q.status in ('contacted', 'replied'))
+            group by 1
+            order by sent desc
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (campaign,))
                 return cur.fetchall()
 
     def campaign_results(self, campaign: str) -> list[dict[str, Any]]:

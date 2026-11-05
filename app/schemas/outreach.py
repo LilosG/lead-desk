@@ -75,3 +75,4 @@ class OutreachUpdate(BaseModel):
 
 class OutreachVersionAction(BaseModel):
     expected_version: int = Field(ge=1)
+    angle: str | None = Field(default=None, max_length=40)

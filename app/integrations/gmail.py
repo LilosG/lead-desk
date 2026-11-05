@@ -22,6 +22,7 @@ class GmailDraftError(RuntimeError):
 class GmailDraftResult:
     draft_id: str
     message_id: str | None
+    thread_id: str | None = None
 
 
 class GmailDraftClient:
@@ -48,6 +49,7 @@ class GmailDraftClient:
         body: str,
         message_id_header: str | None = None,
         attachments: list[tuple[str, bytes]] | None = None,
+        in_reply_to: str | None = None,
     ) -> str:
         message = EmailMessage()
         message["To"] = to_address
@@ -55,6 +57,9 @@ class GmailDraftClient:
         message["Subject"] = subject
         if message_id_header:
             message["Message-ID"] = message_id_header
+        if in_reply_to:
+            message["In-Reply-To"] = in_reply_to
+            message["References"] = in_reply_to
         message.set_content(body)
         for filename, data in attachments or []:
             message.add_attachment(
@@ -70,6 +75,8 @@ class GmailDraftClient:
         body: str,
         message_id_header: str,
         attachments: list[tuple[str, bytes]] | None = None,
+        in_reply_to: str | None = None,
+        thread_id: str | None = None,
     ) -> GmailDraftResult:
         access_token = self._access_token()
         self._assert_sender_account(access_token)
@@ -79,7 +86,11 @@ class GmailDraftClient:
             body=body,
             message_id_header=message_id_header,
             attachments=attachments,
+            in_reply_to=in_reply_to,
         )
+        message: dict[str, str] = {"raw": raw}
+        if thread_id:
+            message["threadId"] = thread_id
 
         try:
             response = requests.post(
@@ -88,7 +99,7 @@ class GmailDraftClient:
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json",
                 },
-                json={"message": {"raw": raw}},
+                json={"message": message},
                 timeout=self.timeout_seconds,
             )
         except requests.RequestException as exc:
@@ -106,6 +117,7 @@ class GmailDraftClient:
             data = response.json()
             draft_id = str(data["id"])
             message_id = data.get("message", {}).get("id")
+            gmail_thread_id = data.get("message", {}).get("threadId")
         except (KeyError, TypeError, ValueError) as exc:
             raise GmailDraftError(
                 "Gmail accepted the request but returned an invalid draft response",
@@ -115,6 +127,7 @@ class GmailDraftClient:
         return GmailDraftResult(
             draft_id=draft_id,
             message_id=str(message_id) if message_id else None,
+            thread_id=str(gmail_thread_id) if gmail_thread_id else None,
         )
 
     def update_draft(

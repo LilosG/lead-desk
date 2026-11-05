@@ -37,8 +37,13 @@ def test_next_step_covers_every_stage_and_flags_follow_ups():
     assert "Generate" in next_step({"stage": "review", "has_draft": False})
     assert "Gmail" in next_step({"stage": "review", "has_draft": True})
     assert "send it from Gmail" in next_step({"stage": "in_gmail"})
-    assert next_step({"stage": "contacted", "contacted_at": NOW - timedelta(days=2)}, NOW) == "Waiting for a reply"
-    assert "Follow up" in next_step({"stage": "contacted", "contacted_at": NOW - timedelta(days=6)}, NOW)
+    assert next_step({"stage": "contacted", "contacted_at": NOW - timedelta(days=2)}, NOW).startswith(
+        "Waiting for a reply. Follow-up 1 on")
+    assert next_step({"stage": "contacted", "contacted_at": NOW - timedelta(days=4)}, NOW) == "Follow-up 1 is due"
+    assert next_step({"stage": "contacted", "follow_ups_drafted": 1, "follow_up_open": True,
+                      "contacted_at": NOW}, NOW) == "Follow-up 1 is in Gmail. Review and send it"
+    assert next_step({"stage": "contacted", "follow_ups_drafted": 2,
+                      "contacted_at": NOW}, NOW) == "No reply after 3 emails. Call them or archive"
 
 
 class FakeGmail:
@@ -61,6 +66,12 @@ class FakeGmailRepo:
         self.moved.append((item_id, draft_id))
         return True
 
+    def open_follow_ups(self):
+        return [{"id": "f1", "gmail_draft_id": "still-there"}, {"id": "f2", "gmail_draft_id": "gone-too"}]
+
+    def mark_follow_up_left_gmail(self, follow_up_id):
+        self.moved.append(follow_up_id)
+
 
 def test_sync_moves_only_drafts_that_left_gmail():
     repo = FakeGmailRepo([
@@ -69,7 +80,7 @@ def test_sync_moves_only_drafts_that_left_gmail():
     ])
     service = OutreachBoardService(None, gmail_repository=repo, gmail=FakeGmail({"still-there"}))
     assert service.sync_gmail() == {"checked": 2, "moved_to_contacted": 1}
-    assert repo.moved == [("b", "gone")]
+    assert repo.moved == [("b", "gone"), "f2"]
 
 
 def test_board_endpoint_returns_every_stage_count(client):

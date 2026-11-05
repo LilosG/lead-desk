@@ -1,7 +1,7 @@
 """What the Outreach page shows: each prospect's stage, and the next thing to do."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import Any, Literal
 
@@ -9,7 +9,8 @@ from app.campaigns import CAMPAIGNS, EV_PERMITS, get_campaign
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
-from app.services.outreach import OutreachIntegrationUnavailable
+from app.services.email_angles import angle_label, angle_options
+from app.services.outreach import FOLLOW_UP_GAPS, OutreachIntegrationUnavailable
 
 Stage = Literal[
     "to_prep", "verify", "call", "review", "attention",
@@ -19,13 +20,6 @@ STAGES: tuple[str, ...] = (
     "to_prep", "verify", "call", "review", "attention",
     "in_gmail", "contacted", "replied", "closed",
 )
-FOLLOW_UP_AFTER_DAYS = 5
-
-
-def days_since(value: datetime | None, now: datetime | None = None) -> int | None:
-    if value is None:
-        return None
-    return ((now or datetime.now(timezone.utc)) - value).days
 
 
 def cooldown_note(row: dict[str, Any]) -> str | None:
@@ -33,6 +27,36 @@ def cooldown_note(row: dict[str, Any]) -> str | None:
     if not until or row.get("stage") not in {"to_prep", "review", "attention"}:
         return None
     return f"Already in {row.get('cooldown_campaign')} outreach. Wait until {until:%b} {until.day}"
+
+
+def follow_up_due_at(row: dict[str, Any]) -> datetime | None:
+    """When the next follow-up can go, or None if there's nothing to schedule."""
+    next_email = int(row.get("follow_ups_drafted") or 0) + 2
+    last = row.get("last_touch_at") or row.get("contacted_at")
+    if row.get("follow_up_open") or next_email not in FOLLOW_UP_GAPS or last is None:
+        return None
+    return last + timedelta(days=FOLLOW_UP_GAPS[next_email])
+
+
+def follow_up_is_due(row: dict[str, Any], now: datetime | None = None) -> bool:
+    due = follow_up_due_at(row)
+    return (row.get("stage") == "contacted" and due is not None
+            and (now or datetime.now(timezone.utc)) >= due)
+
+
+def follow_up_step(row: dict[str, Any], now: datetime | None = None) -> str:
+    """Where this lead's sequence stands, for contacted leads."""
+    drafted = int(row.get("follow_ups_drafted") or 0)
+    if row.get("follow_up_open"):
+        return f"Follow-up {drafted} is in Gmail. Review and send it"
+    if drafted + 2 not in FOLLOW_UP_GAPS:
+        return "No reply after 3 emails. Call them or archive"
+    due = follow_up_due_at(row)
+    if due is None:
+        return "Waiting for a reply"
+    if (now or datetime.now(timezone.utc)) >= due:
+        return f"Follow-up {drafted + 1} is due"
+    return f"Waiting for a reply. Follow-up {drafted + 1} on {due:%b} {due.day}"
 
 
 def lead_note(row: dict[str, Any], campaign: str) -> str | None:
@@ -72,10 +96,7 @@ def next_step(row: dict[str, Any], now: datetime | None = None) -> str:
     if stage == "in_gmail":
         return "Review and send it from Gmail"
     if stage == "contacted":
-        waited = days_since(row.get("contacted_at"), now)
-        if waited is not None and waited >= FOLLOW_UP_AFTER_DAYS:
-            return f"Follow up: no reply logged for {waited} days"
-        return "Waiting for a reply"
+        return follow_up_step(row, now)
     if stage == "replied":
         return "Reply in Gmail"
     return "Closed"
@@ -132,7 +153,8 @@ class OutreachBoardService:
             "stage": stage,
             "counts": counts,
             "items": [{**row, "next_step": next_step({**row, "campaign_key": campaign}),
-                       "lead_note": lead_note(row, campaign)}
+                       "lead_note": lead_note(row, campaign),
+                       "follow_up_due": follow_up_is_due(row)}
                       for row in data["rows"]],
             "pagination": {
                 "page": page,
@@ -149,6 +171,7 @@ class OutreachBoardService:
             **row,
             "reply_rate": round(row["replied"] / row["sent"] * 100, 1) if row["sent"] else None,
             "prep_label": CAMPAIGNS[row["key"]].prep_label,
+            "angles": angle_options(row["key"]),
             "uses_audit": CAMPAIGNS[row["key"]].uses_audit,
         } for row in known]
 
@@ -156,6 +179,13 @@ class OutreachBoardService:
         return [
             {**row, "reply_rate": round(row["replied"] / row["sent"] * 100, 1)}
             for row in self.repository.campaign_results(campaign)
+        ]
+
+    def angle_results(self, campaign: str) -> list[dict[str, Any]]:
+        return [
+            {"angle": angle_label(campaign, row["angle"]), "sent": row["sent"], "replied": row["replied"],
+             "reply_rate": round(row["replied"] / row["sent"] * 100, 1)}
+            for row in self.repository.angle_results(campaign)
         ]
 
     def item(self, item_id: str) -> dict[str, Any] | None:
@@ -188,4 +218,7 @@ class OutreachBoardService:
             if item["gmail_draft_id"] not in live
             and self.gmail_repository.mark_draft_left_gmail(item["id"], item["gmail_draft_id"])
         )
+        for follow_up in self.gmail_repository.open_follow_ups():
+            if follow_up["gmail_draft_id"] not in live:
+                self.gmail_repository.mark_follow_up_left_gmail(follow_up["id"])
         return {"checked": len(open_items), "moved_to_contacted": moved}

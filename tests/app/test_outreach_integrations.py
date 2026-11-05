@@ -208,7 +208,7 @@ class FakeRepository:
         self.operation["state"] = "pending" if uncertain else "failed"
         self.operation["error_message"] = error_message
 
-    def complete_gmail_draft_operation(self, operation_id, *, draft_id, message_id):
+    def complete_gmail_draft_operation(self, operation_id, *, draft_id, message_id, thread_id=None):
         assert self.operation and self.operation["id"] == operation_id
         self.operation.update({
             "state": "created",

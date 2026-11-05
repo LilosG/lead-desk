@@ -175,6 +175,21 @@ def clean_business_name(name: str | None) -> str:
     return text or "your business"
 
 
+_TRADE_SUFFIX = re.compile(
+    r"\s+(electric(al)?|electricians?)(\s+(services?|contractors?|company|co\.?|solutions|group))*$",
+    re.I,
+)
+
+
+def short_name(name: str) -> str:
+    """'Five Point Electric' -> 'Five Point', for subjects that fit on a phone."""
+    return _TRADE_SUFFIX.sub("", name) or name
+
+
+def team_greeting(first_name: str | None, name: str) -> str:
+    return f"Hi {first_name}," if first_name else f"Hi {short_name(name)} team,"
+
+
 def possessive(name: str) -> str:
     return f"{name}'" if name.endswith("s") else f"{name}'s"
 
@@ -434,7 +449,9 @@ def _benchmark_email(snapshot: dict[str, Any], name: str,
     return paragraph, f"How {name} compares in {city}"
 
 
-def audit_email_paragraph(snapshot: dict[str, Any], business_name: str) -> tuple[str, str] | None:
+def audit_email_paragraph(
+    snapshot: dict[str, Any], business_name: str, *, with_demo: bool = True,
+) -> tuple[str, str] | None:
     """(claim paragraph, subject) from an audit snapshot, or None if nothing usable.
 
     When the audit has a local benchmark, the email leads with it ("I compared
@@ -449,7 +466,7 @@ def audit_email_paragraph(snapshot: dict[str, Any], business_name: str) -> tuple
         findings,
         key=lambda f: LEAD_PRIORITY.index(f["signal"]) if f["signal"] in LEAD_PRIORITY else 99,
     )
-    demo_url = (snapshot.get("next_step") or {}).get("demo_url")
+    demo_url = (snapshot.get("next_step") or {}).get("demo_url") if with_demo else None
     demo_line = (
         f"\n\nI also mocked up what a new homepage could look like for you: {demo_url}"
         if demo_url else ""

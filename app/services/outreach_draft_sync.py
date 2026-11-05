@@ -132,6 +132,7 @@ class OutreachDraftSyncService:
         item_id: str,
         *,
         expected_version: int,
+        angle: str | None = None,
     ) -> dict | None:
         current = self.repository.get_item(item_id)
         if current is None:
@@ -144,6 +145,7 @@ class OutreachDraftSyncService:
             return self.outreach.generate_draft(
                 item_id,
                 expected_version=expected_version,
+                angle=angle,
             )
 
         if self.outreach.gmail is None:
@@ -164,9 +166,8 @@ class OutreachDraftSyncService:
             raise OutreachBlocked("email address is suppressed")
 
         if get_campaign(context.get("campaign_key")).uses_audit:
-            draft = self._write_audit_draft(item_id, context)
-        else:
-            draft = self.outreach.write_ev_draft(context)
+            context = self.outreach.ensure_current_audit(context)
+        draft = self.outreach.write_fixed_copy(context, angle) or self._write_audit_draft(item_id, context)
 
         try:
             remote = self.outreach.gmail.update_draft(
@@ -175,7 +176,8 @@ class OutreachDraftSyncService:
                 subject=draft["subject"],
                 body=draft["body"],
                 attachments=self.outreach.audit_attachments(
-                    {"claim_signal": draft["claim_signal"], "place_id": context.get("place_id")}
+                    {"claim_signal": draft["claim_signal"], "place_id": context.get("place_id"),
+                     "angle": draft.get("angle")}
                 ),
             )
         except GmailDraftError as exc:
