@@ -16,6 +16,7 @@ from app.services.outreach import (
     OutreachConflict,
     OutreachIntegrationUnavailable,
     OutreachService,
+    uses_old_copy,
 )
 
 MAX_BULK = 50
@@ -69,7 +70,9 @@ def fast_track(
     if waiting:
         return stop("cooldown", waiting)
     existing = outreach.repository.find_email_item(place_id, campaign_key)
-    resuming = bool(existing and existing.get("body") and existing.get("claim_signal") == campaign.claim_signal)
+    # A draft in the old copy is rewritten unless it's already in Gmail.
+    resuming = bool(existing and existing.get("body") and existing.get("claim_signal") == campaign.claim_signal
+                    and (existing.get("gmail_draft_id") or not uses_old_copy(existing)))
 
     # 1. Fresh audit report (the email is written from it and attaches it).
     if not resuming and campaign.uses_audit:
