@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from math import ceil
 from typing import Any, Literal
 
-from app.campaigns import CAMPAIGNS, get_campaign
+from app.campaigns import CAMPAIGNS, EV_PERMITS, get_campaign
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
@@ -33,6 +33,18 @@ def cooldown_note(row: dict[str, Any]) -> str | None:
     if not until or row.get("stage") not in {"to_prep", "review", "attention"}:
         return None
     return f"Already in {row.get('cooldown_campaign')} outreach. Wait until {until:%b} {until.day}"
+
+
+def lead_note(row: dict[str, Any], campaign: str) -> str | None:
+    """Why this lead sits where it does in this campaign's list."""
+    if campaign == EV_PERMITS:
+        proof = "EV page" if row.get("ev_strength") == "page" else "Mentions EV work"
+        brands = row.get("ev_brands") or []
+        parts = [proof, *brands[:2], f"{row['review_count']} reviews" if row.get("review_count") else None]
+        return " · ".join(p for p in parts if p)
+    if row.get("ev_eligible") and row.get("stage") == "to_prep":
+        return "Shows EV work: pitch EV Permits first"
+    return None
 
 
 def next_step(row: dict[str, Any], now: datetime | None = None) -> str:
@@ -119,7 +131,8 @@ class OutreachBoardService:
         return {
             "stage": stage,
             "counts": counts,
-            "items": [{**row, "next_step": next_step({**row, "campaign_key": campaign})}
+            "items": [{**row, "next_step": next_step({**row, "campaign_key": campaign}),
+                       "lead_note": lead_note(row, campaign)}
                       for row in data["rows"]],
             "pagination": {
                 "page": page,

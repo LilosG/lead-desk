@@ -123,8 +123,10 @@ zachary
 _GREETING_LINE = re.compile(r"^(?:Hi there|Hi|Hello),?[ \t]*$", re.MULTILINE)
 
 
-def contact_first_name(email: str | None, business_name: str | None = None) -> str | None:
-    """A first name we can trust, from the address or an owner-named business."""
+def contact_first_name(
+    email: str | None, business_name: str | None = None, site_owner: str | None = None,
+) -> str | None:
+    """A first name we can trust: the address, an owner-named business, or the site's owner."""
     local = (email or "").split("@")[0].lower()
     first = re.split(r"[._\-+]", local)[0]
     if first in _FIRST_NAMES:
@@ -132,7 +134,8 @@ def contact_first_name(email: str | None, business_name: str | None = None) -> s
     owner = re.match(r"^([A-Za-z]+)['’]s\b", (business_name or "").strip())
     if owner and owner.group(1).lower() in _FIRST_NAMES:
         return owner.group(1).capitalize()
-    return None
+    stated = (site_owner or "").split(" ")[0].lower()
+    return stated.capitalize() if stated in _FIRST_NAMES else None
 
 
 def personal_greeting(note: str, first_name: str | None) -> str:

@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
@@ -78,6 +80,118 @@ SERVICE_CITY_PROFILES = {"home_service", "legal", "auto", "wellness_health", "me
 
 def _slug(value: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
+
+
+EV_BRANDS = {
+    "Tesla": r"\btesla\b",
+    "ChargePoint": r"\bcharge\s?point\b",
+    "JuiceBox": r"\bjuice\s?box\b",
+    "Wallbox": r"\bwallbox\b",
+    "Emporia": r"\bemporia\b",
+    "Grizzl-E": r"\bgrizzl-?e\b",
+    "ClipperCreek": r"\bclipper\s?creek\b",
+}
+_EV_COMMERCIAL = re.compile(
+    r"\bcommercial\b.{0,60}\b(ev|charging|charger)|\b(ev|charging|charger)\b.{0,60}\bcommercial\b"
+    r"|\b(fleet|workplace|parking lot)\b.{0,40}charg",
+    re.I,
+)
+# A blog post shows interest. A service page shows they sell it.
+_EDITORIAL_PATH = re.compile(r"/(blog|news|posts?|articles?|tag|category|resources)(/|$)", re.I)
+_SERVICE_HUB = re.compile(r"/(services?|residential|electrical[-_]services?|what[-_]we[-_]do)(/|$)", re.I)
+MAX_EV_PAGE_FETCHES = 2
+
+
+def _path_words(path: str) -> str:
+    return re.sub(r"[-_/]+", " ", path)
+
+
+def _internal_path(href: str, host: str) -> str | None:
+    """A link's path on this site, or None when it leaves the site."""
+    try:
+        target = urlparse(href.split("#")[0].split("?")[0])
+    except ValueError:
+        return None
+    if target.netloc and target.netloc.removeprefix("www.") != host:
+        return None
+    return target.path.rstrip("/") if target.path.startswith("/") else None
+
+
+def _ev_paths(soup: BeautifulSoup, site_paths: list[str], host: str) -> tuple[list[str], dict[str, str]]:
+    """Paths that are about EV work, and the menu wording for any we saw."""
+    titles: dict[str, str] = {}
+    paths = {p.rstrip("/") for p in site_paths if p and EV_SERVICE.search(_path_words(p))}
+    for link in soup.find_all("a", href=True):
+        path = _internal_path(link["href"], host)
+        anchor = link.get_text(" ", strip=True)
+        if not path or not (EV_SERVICE.search(anchor) or EV_SERVICE.search(_path_words(path))):
+            continue
+        paths.add(path)
+        if anchor and len(anchor) <= 60:
+            titles.setdefault(path, anchor)
+    return sorted(paths, key=lambda p: (bool(_EDITORIAL_PATH.search(p)), len(p))), titles
+
+
+def ev_profile(
+    soup: BeautifulSoup,
+    text: str,
+    site_paths: list[str],
+    host: str,
+    fetch_page: Callable[[str], str | None] | None = None,
+) -> dict[str, Any]:
+    """How strongly a site sells EV work, and the specifics an email can name.
+
+    The homepage is only the start: the sitemap catches pages the menu doesn't
+    link, and a service hub catches shops that list EV work one click in.
+    """
+    paths, titles = _ev_paths(soup, site_paths, host)
+    service_pages = [p for p in paths if not _EDITORIAL_PATH.search(p)]
+    pages_read: list[str] = []
+    if fetch_page is not None:
+        wanted = service_pages[:1]
+        if not paths and not EV_SERVICE.search(text):
+            links = {_internal_path(a["href"], host) for a in soup.find_all("a", href=True)}
+            wanted = sorted({p for p in [*links, *site_paths]
+                             if p and _SERVICE_HUB.search(p)}, key=len)
+        for path in wanted[:MAX_EV_PAGE_FETCHES]:
+            page = fetch_page(path)
+            if page:
+                pages_read.append(_visible_text(BeautifulSoup(page, "html.parser")))
+    combined = " ".join([text, *pages_read])
+    shown = bool(paths or EV_SERVICE.search(combined))
+    return {
+        "ev_service": shown,
+        "ev_strength": "page" if service_pages else "mention" if shown else None,
+        "ev_page_path": service_pages[0] if service_pages else None,
+        "ev_page_title": titles.get(service_pages[0]) if service_pages else None,
+        "ev_brands": [name for name, pattern in EV_BRANDS.items()
+                      if shown and re.search(pattern, combined, re.I)],
+        "ev_commercial": bool(shown and _EV_COMMERCIAL.search(combined)),
+    }
+
+
+_NAME = r"([A-Z][a-z]{2,14}(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z'’\-]{2,20})?)"
+_OWNER_PATTERNS = (
+    re.compile(rf"(?i:owned and operated by|owned by|founded by|started by|run by)\s+(?:(?i:master electrician)\s+)?{_NAME}"),
+    re.compile(rf"{_NAME},?\s+(?:(?i:is)\s+)?(?:(?i:the|our)\s+)?(?i:owner|founder|co-founder|president|ceo)\b"),
+    re.compile(rf"(?<!business )(?<!home )(?<!property )(?<!pool )\b(?i:owner|founder|president)[,:\s–—-]+{_NAME}"),
+)
+
+
+_NOT_A_NAME = {"our", "the", "your", "meet", "and", "with", "from", "company", "business", "family"}
+
+
+def owner_name(texts: list[str], nodes: list[dict]) -> str | None:
+    """The owner's name as a site states it. Callers still check it's a real first name."""
+    for node in nodes:
+        founder = node.get("founder")
+        founder = founder[0] if isinstance(founder, list) and founder else founder
+        name = founder.get("name") if isinstance(founder, dict) else founder
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    found = [m.group(1) for text in texts for pattern in _OWNER_PATTERNS for m in pattern.finditer(text)
+             if m.group(1).split()[0].lower() not in _NOT_A_NAME]
+    return Counter(found).most_common(1)[0][0] if found else None
 
 
 def schema_nodes(soup: BeautifulSoup) -> list[dict]:
@@ -208,6 +322,9 @@ def collect(
     location_paths: list[str],
     offering_words: list[str],
     sample_page: Callable[[str], str | None] | None = None,
+    site_paths: list[str] | None = None,
+    fetch_page: Callable[[str], str | None] | None = None,
+    other_page_texts: list[str] | None = None,
 ) -> dict[str, Any]:
     nodes = schema_nodes(soup)
     types = _types(nodes)
@@ -259,7 +376,9 @@ def collect(
         "images": len(images),
         "images_missing_alt": sum(1 for i in images if not (i.get("alt") or "").strip()),
         "ai_bots": _bot_access(robots, final_url),
-        "ev_service": bool(EV_SERVICE.search(f"{title} {text} {link_words}")),
+        **ev_profile(soup, f"{title} {text} {link_words}", site_paths or [],
+                     urlparse(final_url).netloc.removeprefix("www."), fetch_page),
+        "owner_name": owner_name([text, *(other_page_texts or [])], nodes),
         "offering_paths": len(offering_paths),
         "location_paths": len(location_paths),
         "service_city_paths": len(pairs),

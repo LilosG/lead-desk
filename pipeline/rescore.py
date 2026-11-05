@@ -12,6 +12,7 @@ stay off the Runs list.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import fields
@@ -116,50 +117,88 @@ def read_site(business: dict[str, Any]) -> E.SiteFindings | None:
         return None
 
 
-def refresh_ev_signal(dsn: str, niche: str) -> int:
-    """Re-read one niche's sites and record only whether they offer EV work.
+# What a re-read is allowed to change. PageSpeed results and manual entries stay.
+REFRESHED_SIGNALS = ("ev_service", "ev_strength", "ev_page_path", "ev_page_title",
+                     "ev_brands", "ev_commercial", "owner_name")
 
-    Sites that can't be read keep what's on file, and nothing else is rewritten,
-    so PageSpeed results and manual entries stay as they are.
-    """
-    with psycopg.connect(dsn, row_factory=dict_row) as conn:
-        businesses = conn.execute(
-            """
-            select b.*
-            from businesses b
-            join website_enrichment w on w.place_id = b.place_id
-            where b.vertical = %s
-              and b.website_url is not null
-              and w.site_source = 'gbp'
-            """,
-            (niche,),
-        ).fetchall()
-    if not businesses:
-        return 0
-    print(f"re-reading {len(businesses)} {niche} sites...", flush=True)
-    with ProcessPoolExecutor(max_workers=C.CRAWL_MAX_CONCURRENT) as pool:
-        results = list(pool.map(read_site, [dict(b) for b in businesses]))
-    readable = [f for f in results
-                if f and f.is_reachable and "ev_service" in (f.site_signals or {})]
+
+def apply_site_facts(dsn: str, results: list[E.SiteFindings | None]) -> int:
+    """Store what a re-read learned. Sites that can't be read keep what's on file."""
+    readable = [f for f in results if f and f.is_reachable and f.site_signals]
     with psycopg.connect(dsn) as conn:
         for found in readable:
+            facts = {key: found.site_signals.get(key) for key in REFRESHED_SIGNALS}
             conn.execute(
                 """
                 update website_enrichment
-                set site_signals = coalesce(site_signals, '{}'::jsonb)
-                                   || jsonb_build_object('ev_service', %s::boolean)
+                set site_signals = coalesce(site_signals, '{}'::jsonb) || %s::jsonb,
+                    emails_found = case when cardinality(coalesce(emails_found, '{}')) = 0
+                                        then %s::text[] else emails_found end
                 where place_id = %s
                 """,
-                (found.site_signals["ev_service"], found.place_id),
+                (json.dumps(facts), found.emails_found, found.place_id),
             )
     return len(readable)
+
+
+def reread_sites(dsn: str, where: str, params: tuple) -> int:
+    with psycopg.connect(dsn, row_factory=dict_row) as conn:
+        businesses = conn.execute(
+            f"""
+            select b.*
+            from businesses b
+            join website_enrichment w on w.place_id = b.place_id
+            where b.website_url is not null and w.site_source = 'gbp' and {where}
+            """,
+            params,
+        ).fetchall()
+    if not businesses:
+        return 0
+    print(f"re-reading {len(businesses)} sites...", flush=True)
+    with ProcessPoolExecutor(max_workers=C.CRAWL_MAX_CONCURRENT) as pool:
+        return apply_site_facts(dsn, list(pool.map(read_site, [dict(b) for b in businesses])))
+
+
+def refresh_ev_signal(dsn: str, niche: str) -> int:
+    """Re-read one niche's sites for EV detail, owner names and any missing email."""
+    return reread_sites(dsn, "b.vertical = %s", (niche,))
+
+
+def recrawl_missing_email(dsn: str) -> int:
+    """Leads crawled before the current email finder, whose sites do load."""
+    return reread_sites(
+        dsn,
+        "cardinality(coalesce(w.emails_found, '{}')) = 0 and coalesce(w.is_reachable, false)",
+        (),
+    )
+
+
+def rerank_emails(dsn: str) -> int:
+    """Put stored addresses in the current best-first order. Crawls nothing."""
+    changed = 0
+    with psycopg.connect(dsn, row_factory=dict_row) as conn:
+        rows = conn.execute(
+            "select place_id, emails_found from website_enrichment "
+            "where cardinality(coalesce(emails_found, '{}')) > 1"
+        ).fetchall()
+        for row in rows:
+            ranked = E.rank_emails(row["emails_found"])
+            if ranked != row["emails_found"]:
+                conn.execute("update website_enrichment set emails_found = %s where place_id = %s",
+                             (ranked, row["place_id"]))
+                changed += 1
+    return changed
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--recrawl-stalled", action="store_true")
     ap.add_argument("--refresh-ev-signal", metavar="NICHE",
-                    help="re-read one niche's sites to record who offers EV work")
+                    help="re-read one niche's sites for EV detail and owner names")
+    ap.add_argument("--recrawl-missing-email", action="store_true",
+                    help="re-read working sites that have no email on file")
+    ap.add_argument("--rerank-emails", action="store_true",
+                    help="put stored addresses in best-first order, without crawling")
     args = ap.parse_args()
     dsn = os.environ.get("DATABASE_URL", "")
     if not dsn:
@@ -168,6 +207,10 @@ def main() -> int:
         print(f"recovered {recrawl_stalled(dsn)} sites")
     if args.refresh_ev_signal:
         print(f"updated {refresh_ev_signal(dsn, args.refresh_ev_signal)} sites")
+    if args.recrawl_missing_email:
+        print(f"re-read {recrawl_missing_email(dsn)} sites")
+    if args.rerank_emails:
+        print(f"re-ordered emails on {rerank_emails(dsn)} leads")
     counts = rescore_all(dsn)
     labels = C.QUALIFICATION_LABELS
     print(f"\nre-scored {sum(counts.values())} leads with model {C.MODEL_VERSION}")

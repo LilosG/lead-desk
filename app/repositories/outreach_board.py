@@ -10,9 +10,9 @@ from psycopg_pool import ConnectionPool
 
 from app.campaigns import COOLDOWN_DAYS, EV_PERMITS, EV_SERVICE_SQL, simple_permit_cities
 
-_LEAD_RULES = {
-    EV_PERMITS: """
-          and b.vertical = 'electrician'
+# Who can buy the EV offer. One rule, so the SEO board can flag the same leads.
+_EV_ELIGIBLE = """(
+          b.vertical = 'electrician'
           and coalesce(w.qualification, '') <> 'franchise'
           and (coalesce(b.city, '') || ', ' || coalesce(b.state, '')) <> all(%(simple_cities)s)
           and (
@@ -20,16 +20,18 @@ _LEAD_RULES = {
                 or concat_ws(' ', array_to_string(we.offering_titles, ' '), we.title, we.meta_description)
                    ~* %(ev_pattern)s
               )
-    """,
-}
+    )"""
+_LEAD_RULES = {EV_PERMITS: f"and {_EV_ELIGIBLE}"}
 
 
 def cooldown_join(place: str, campaign: str) -> str:
     """The latest touch from another campaign, while its cooldown is running.
 
     A Gmail draft counts from the moment it exists: it may go out at any time.
+    A reply restarts the clock, so a live conversation doesn't get a second pitch.
     """
-    last_touch = "coalesce(oq.contacted_at, oq.gmail_draft_created_at)"
+    last_touch = ("greatest(oq.contacted_at, oq.gmail_draft_created_at, "
+                  "case when oq.status = 'replied' then oq.updated_at end)")
     return f"""
         left join lateral (
             select c.name as cooldown_campaign,
@@ -77,11 +79,15 @@ _BOARD_CTE = """
             q.updated_at,
             q.version,
             cd.cooldown_campaign,
-            cd.cooldown_until
+            cd.cooldown_until,
+            we.site_signals ->> 'ev_strength' as ev_strength,
+            we.site_signals -> 'ev_brands' as ev_brands,
+            {ev_eligible} as ev_eligible
         from outreach_queue q
         join v_outreach_stage vs on vs.id = q.id
         join businesses b on b.place_id = q.place_id
         left join v_lead_worklist w on w.place_id = q.place_id
+        left join website_enrichment we on we.place_id = q.place_id
         {queue_cooldown}
         where q.campaign_key = %(campaign)s
 
@@ -120,7 +126,10 @@ _BOARD_CTE = """
             w.scored_at,
             null,
             cd.cooldown_campaign,
-            cd.cooldown_until
+            cd.cooldown_until,
+            we.site_signals ->> 'ev_strength',
+            we.site_signals -> 'ev_brands',
+            {ev_eligible}
         from v_lead_worklist w
         join businesses b on b.place_id = w.place_id
         left join v_lead_findings f on f.place_id = w.place_id
@@ -155,6 +164,7 @@ def board_cte(campaign: str) -> str:
         .replace("{queue_cooldown}", cooldown_join("q.place_id", "%(campaign)s"))
         .replace("{candidate_cooldown}", cooldown_join("w.place_id", "%(campaign)s"))
         .replace("{lead_rule}", _LEAD_RULES.get(campaign, ""))
+        .replace("{ev_eligible}", _EV_ELIGIBLE)
     )
 
 
@@ -168,6 +178,19 @@ _DEFAULT_ORDER = (
     "case when qualification = 'qualified' then 0 else 1 end, "
     "total_score desc nulls last, review_count desc nulls last, name"
 )
+# EV leads get pitched EV first, so they drop behind leads only SEO can reach.
+_SEO_ORDER = f"case when ev_eligible then 1 else 0 end, {_DEFAULT_ORDER}"
+# The SEO score rewards a weak site, which says nothing about buying permit
+# automation. The best EV lead is a busy shop that clearly sells EV work.
+_EV_ORDER = (
+    "case when ev_strength = 'page' then 0 else 1 end, "
+    "case when jsonb_array_length(coalesce(ev_brands, '[]'::jsonb)) > 0 then 0 else 1 end, "
+    "fit_score desc nulls last, review_count desc nulls last, name"
+)
+
+
+def default_order(campaign: str) -> str:
+    return _EV_ORDER if campaign == EV_PERMITS else _SEO_ORDER
 
 
 def _scope(campaign: str) -> dict[str, Any]:
@@ -223,7 +246,7 @@ class OutreachBoardRepository:
         where, params = self._filters(
             campaign=campaign, q=q, vertical=vertical, market=market, qualified_only=qualified_only,
         )
-        order = _ORDER_BY.get(stage, _DEFAULT_ORDER)
+        order = _ORDER_BY.get(stage, default_order(campaign))
         cte = board_cte(campaign)
         rows_query = f"""
             {cte}

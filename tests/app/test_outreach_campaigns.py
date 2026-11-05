@@ -385,3 +385,30 @@ def test_block_reason_and_next_step_use_the_campaign():
             "gmail_draft_id": None, "pending_operation": False}
     assert "campaign's email" in (gmail_block_reason(item, gmail_connected=True) or "")
     assert next_step({"stage": "to_prep", "campaign_key": EV_PERMITS}) == "Draft the email"
+
+
+def test_ev_leads_rank_by_ev_proof_not_the_seo_score(pool, board):
+    with pool.connection() as conn:
+        conn.execute("""update website_enrichment
+                        set site_signals = site_signals || '{"ev_service": true, "ev_strength": "page",
+                                                              "ev_brands": ["Tesla"]}'::jsonb
+                        where place_id = 'camp-signal'""")
+    try:
+        data = board.board(campaign=EV_PERMITS, stage="to_prep", page=1, page_size=100,
+                           q=None, vertical=None, market=None, qualified_only=False)
+        assert data["items"][0]["place_id"] == "camp-signal"
+        assert data["items"][0]["lead_note"].startswith("EV page · Tesla")
+    finally:
+        with pool.connection() as conn:
+            conn.execute("""update website_enrichment set site_signals = '{"ev_service": true}'::jsonb
+                            where place_id = 'camp-signal'""")
+
+
+def test_the_seo_board_flags_leads_that_should_get_ev_first(board):
+    data = board.board(campaign=SEO_WEBSITES, stage="to_prep", page=1, page_size=100,
+                       q=None, vertical=None, market=None, qualified_only=False)
+    by_id = {row["place_id"]: row for row in data["items"]}
+    assert by_id["camp-title"]["lead_note"] == "Shows EV work: pitch EV Permits first"
+    assert by_id["camp-noev"]["lead_note"] is None
+    ids = [row["place_id"] for row in data["items"]]
+    assert ids.index("camp-noev") < ids.index("camp-title")
