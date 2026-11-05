@@ -1,0 +1,222 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+
+const input = 'w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm';
+const label = 'mb-1 block text-xs font-medium text-[var(--muted)]';
+const card = 'rounded-lg border border-[var(--line)] bg-white p-5';
+
+const jobFields = [
+  { name: 'customer', label: 'Customer', value: 'Sample Homeowner' },
+  { name: 'address', label: 'Job address', value: '123 Sample St, Oro Valley, AZ 85737' },
+  { name: 'contractor', label: 'Contractor', value: 'Sample Electric, LLC' },
+  { name: 'license_number', label: 'License number', value: 'ROC 000000' },
+];
+const loadFields = [
+  { name: 'square_feet', label: 'Square feet', value: 3100 },
+  { name: 'small_appliance_circuits', label: 'Small appliance circuits', value: 2 },
+  { name: 'laundry_circuits', label: 'Laundry circuits', value: 1 },
+  { name: 'range_va', label: 'Range (VA)', value: 12000 },
+  { name: 'cooktop_va', label: 'Cooktop (VA)', value: 0 },
+  { name: 'oven_va', label: 'Oven (VA)', value: 0 },
+  { name: 'dryer_va', label: 'Dryer (VA)', value: 5000 },
+  { name: 'water_heater_va', label: 'Water heater (VA)', value: 4500 },
+  { name: 'dishwasher_va', label: 'Dishwasher (VA)', value: 1200 },
+  { name: 'disposal_va', label: 'Disposal (VA)', value: 900 },
+  { name: 'microwave_va', label: 'Microwave (VA)', value: 1500 },
+  { name: 'hot_tub_or_pool_va', label: 'Hot tub or pool (VA)', value: 1800 },
+  { name: 'other_va', label: 'Other fixed loads (VA)', value: 0 },
+  { name: 'heating_va', label: 'Heating (VA)', value: 0 },
+  { name: 'cooling_va', label: 'Air conditioning (VA)', value: 7200 },
+];
+const panelFields = [
+  { name: 'service_amps', label: 'Service size (A)', value: 200 },
+  { name: 'open_breaker_spaces', label: 'Open breaker spaces', value: 2 },
+  { name: 'charger_amps', label: 'Charger amps', value: 48 },
+  { name: 'run_ft', label: 'Circuit run (ft)', value: 58 },
+  { name: 'trench_ft', label: 'Underground (ft)', value: 55 },
+];
+---
+
+<AppLayout
+  title="EV Packet Demo"
+  description="Enter one job and get a draft permit packet. Demo only, using the Oro Valley checklist."
+>
+  <form id="job-form" class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <div class="space-y-4">
+      <section class={card}>
+        <h2 class="text-sm font-medium">Job</h2>
+        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+          {jobFields.map((field) => (
+            <div>
+              <label for={field.name} class={label}>{field.label}</label>
+              <input id={field.name} name={field.name} value={field.value} required class={input} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section class={card}>
+        <h2 class="text-sm font-medium">Panel and charger</h2>
+        <div class="mt-3 grid gap-3 sm:grid-cols-3">
+          {panelFields.map((field) => (
+            <div>
+              <label for={field.name} class={label}>{field.label}</label>
+              <input id={field.name} name={field.name} type="number" min="0" value={field.value} required class={input} />
+            </div>
+          ))}
+          <div>
+            <label for="location" class={label}>Charger location</label>
+            <select id="location" name="location" class={input}>
+              <option value="detached_garage">Detached garage</option>
+              <option value="attached_garage">Attached garage</option>
+              <option value="exterior_wall">Exterior wall</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section class={card}>
+        <h2 class="text-sm font-medium">Existing home loads</h2>
+        <p class="mt-1 text-xs text-[var(--muted)]">Use nameplate values. Enter 0 for anything gas or not in the home.</p>
+        <div class="mt-3 grid gap-3 sm:grid-cols-3">
+          {loadFields.map((field) => (
+            <div>
+              <label for={field.name} class={label}>{field.label}</label>
+              <input id={field.name} name={field.name} data-home type="number" min="0" value={field.value} required class={input} />
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+
+    <aside class="space-y-4 xl:sticky xl:top-4 xl:self-start">
+      <section class={card}>
+        <button type="submit" class="w-full rounded-md bg-[var(--dark)] px-4 py-2.5 text-sm font-medium text-white">Run the checks</button>
+        <button id="download" type="button" disabled class="mt-2 w-full rounded-md border border-[var(--line)] px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40">Download packet (PDF)</button>
+        <div id="error" role="alert" class="mt-3 hidden rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700"></div>
+      </section>
+
+      <section id="results" class={`hidden ${card}`}>
+        <div id="summary" class="text-sm font-medium"></div>
+        <dl id="sizing" class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs"></dl>
+        <h3 class="mt-4 text-xs font-medium text-[var(--muted)]">Checks</h3>
+        <ul id="checks" class="mt-1 space-y-1.5 text-xs leading-5"></ul>
+        <h3 class="mt-4 text-xs font-medium text-[var(--muted)]">Flagged for review</h3>
+        <ul id="flags" class="mt-1 space-y-1.5 text-xs leading-5"></ul>
+      </section>
+    </aside>
+  </form>
+
+  <script>
+    type Check = { name: string; result: string; passed: boolean };
+    type Result = {
+      ready: boolean;
+      computed_amps: number;
+      spare_amps: number;
+      breaker: number;
+      wire: string;
+      ground: string;
+      voltage_drop_percent: number;
+      underground_conduit: string | null;
+      interior_conduit: string;
+      disconnect_amps: number | null;
+      checks: Check[];
+      flags: string[];
+    };
+
+    const el = <T extends HTMLElement>(selector: string): T => {
+      const node = document.querySelector<T>(selector);
+      if (!node) throw new Error(`Missing ${selector}`);
+      return node;
+    };
+    const esc = (value: unknown): string => String(value ?? '')
+      .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+
+    const form = el<HTMLFormElement>('#job-form');
+    const download = el<HTMLButtonElement>('#download');
+    const errorBox = el('#error');
+
+    function jobData(): Record<string, unknown> {
+      const data: Record<string, unknown> = {};
+      const home: Record<string, number> = {};
+      form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select').forEach((field) => {
+        if (field.dataset.home !== undefined) home[field.name] = Number(field.value);
+        else data[field.name] = field.type === 'number' ? Number(field.value) : field.value;
+      });
+      return { ...data, home };
+    }
+
+    async function post(path: string): Promise<Response> {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jobData()),
+      });
+      if (response.ok) return response;
+      const body = await response.json().catch(() => ({}));
+      const detail = Array.isArray(body.detail) ? body.detail[0]?.msg : body.detail;
+      throw new Error(detail || `API returned ${response.status}`);
+    }
+
+    function showError(error: unknown) {
+      errorBox.textContent = error instanceof Error ? error.message : 'Request failed.';
+      errorBox.classList.remove('hidden');
+    }
+
+    function render(result: Result) {
+      el('#summary').textContent = result.ready ? 'All checks pass' : 'This job needs a fix before submittal';
+      const sizing: [string, string][] = [
+        ['Service load', `${result.computed_amps} A`],
+        ['Spare capacity', `${result.spare_amps} A`],
+        ['Breaker', `${result.breaker} A`],
+        ['Wire', result.wire],
+        ['Ground', result.ground],
+        ['Voltage drop', `${result.voltage_drop_percent}%`],
+      ];
+      if (result.underground_conduit) sizing.push(['Underground', `${result.underground_conduit} PVC`]);
+      sizing.push(['Above ground', `${result.interior_conduit} EMT`]);
+      if (result.disconnect_amps) sizing.push(['Disconnect', `${result.disconnect_amps} A`]);
+      el('#sizing').innerHTML = sizing
+        .map(([name, value]) => `<div><dt class="text-[var(--muted)]">${esc(name)}</dt><dd class="font-semibold">${esc(value)}</dd></div>`)
+        .join('');
+      el('#checks').innerHTML = result.checks
+        .map((check) => `<li><span class="font-semibold ${check.passed ? 'text-emerald-700' : 'text-red-700'}">${check.passed ? 'Pass' : 'Fix'}</span> ${esc(check.name)}: ${esc(check.result)}</li>`)
+        .join('');
+      el('#flags').innerHTML = result.flags.map((flag) => `<li>${esc(flag)}</li>`).join('');
+      el('#results').classList.remove('hidden');
+    }
+
+    form.addEventListener('input', () => { download.disabled = true; });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorBox.classList.add('hidden');
+      try {
+        const response = await post('/api/permit-packets/ev/check');
+        render(await response.json() as Result);
+        download.disabled = false;
+      } catch (error) {
+        showError(error);
+      }
+    });
+
+    download.addEventListener('click', async () => {
+      download.disabled = true;
+      errorBox.classList.add('hidden');
+      try {
+        const response = await post('/api/permit-packets/ev/pdf');
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'ev-permit-packet-demo.pdf';
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        showError(error);
+      } finally {
+        download.disabled = false;
+      }
+    });
+  </script>
+</AppLayout>
