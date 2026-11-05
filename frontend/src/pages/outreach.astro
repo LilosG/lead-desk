@@ -364,7 +364,7 @@ const stages = [
       angleSelect.innerHTML = `<option value="rotate">Rotate (A/B test)</option>${options}`;
       angleSelect.value = current.angles.some((a) => a.key === state.angle) ? state.angle : 'rotate';
       state.angle = angleSelect.value;
-      el('#draft-angle').innerHTML = options;
+      el('#draft-angle').innerHTML = `<option value="">Rotate</option>${options}`;
     }
 
     async function loadResults() {
@@ -522,7 +522,7 @@ const stages = [
       el<HTMLInputElement>('#draft-subject').value = item.subject || '';
       el<HTMLTextAreaElement>('#draft-body').value = item.body || '';
       el<HTMLSelectElement>('#draft-status').value = item.status;
-      if (item.angle) el<HTMLSelectElement>('#draft-angle').value = item.angle;
+      el<HTMLSelectElement>('#draft-angle').value = item.angle ?? '';
       el<HTMLSelectElement>('#draft-verification').value = item.verification_status;
       el('#draft-error').classList.add('hidden');
 

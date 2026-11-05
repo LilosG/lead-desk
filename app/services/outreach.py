@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -50,6 +51,19 @@ def _configured_postal_address() -> str | None:
 
 
 CAN_SPAM_FOOTER = _footer(_configured_postal_address())
+_EMAIL_SHAPE = re.compile(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", re.I)
+
+
+def looks_like_email(address: str | None) -> bool:
+    return bool(_EMAIL_SHAPE.fullmatch((address or "").strip()))
+
+
+def uses_old_copy(item: dict) -> bool:
+    """A draft written before the current emails. Older rows have no angle behind them."""
+    current = {"ev_permit_offer": ev_offer.PROMPT_VERSION, "audit_report": seo_offer.PROMPT_VERSION}
+    expected = current.get(item.get("claim_signal"))
+    version = item.get("generation_prompt_version")
+    return bool(expected and version and version != expected)
 
 
 class OutreachConflict(RuntimeError):
@@ -540,6 +554,10 @@ class OutreachService:
             raise OutreachBlocked("Gmail drafts are available for email queue items only")
         if current.get("gmail_draft_id"):
             raise OutreachBlocked("a Gmail draft already exists for this queue item")
+        if current.get("to_address") and not looks_like_email(current["to_address"]):
+            raise OutreachBlocked("That isn't a complete email address. Fix it in the To field first.")
+        if uses_old_copy(current):
+            raise OutreachBlocked("This draft has the old email. Click Regenerate draft first.")
         if current["status"] not in {"draft_ready", "approved"}:
             raise OutreachBlocked(
                 "mark the draft ready after human review before creating it in Gmail"

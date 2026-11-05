@@ -10,7 +10,12 @@ from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
 from app.services.email_angles import angle_label, angle_options
-from app.services.outreach import FOLLOW_UP_GAPS, OutreachIntegrationUnavailable
+from app.services.outreach import (
+    FOLLOW_UP_GAPS,
+    OutreachIntegrationUnavailable,
+    looks_like_email,
+    uses_old_copy,
+)
 
 Stage = Literal[
     "to_prep", "verify", "call", "review", "attention",
@@ -116,10 +121,14 @@ def gmail_block_reason(item: dict[str, Any], *, gmail_connected: bool) -> str | 
         return "This address is on the do-not-contact list."
     if not (item.get("to_address") or "").strip():
         return "Add a recipient address first."
+    if not looks_like_email(item["to_address"]):
+        return "That isn't a complete email address. Fix it in the To field."
     if not item.get("subject") or not item.get("body"):
         return "There's no draft yet. Click Generate draft first."
     if item.get("verification_status") not in {"verified", "not_required"}:
         return "The claim in this draft failed verification. Regenerate the draft."
+    if uses_old_copy(item):
+        return "This draft has the old email. Click Regenerate draft to update it."
     campaign = get_campaign(item.get("campaign_key"))
     if item.get("claim_signal") != campaign.claim_signal:
         if campaign.uses_audit:

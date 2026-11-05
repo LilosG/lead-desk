@@ -15,8 +15,9 @@ from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
 from app.services import ev_offer, seo_offer
 from app.services.email_angles import ANGLES, ROTATION, angle_label, resolve_angle
-from app.services.outreach import OutreachBlocked, OutreachService
-from app.services.outreach_board import OutreachBoardService
+from app.services.outreach import OutreachBlocked, OutreachService, looks_like_email, uses_old_copy
+from app.services.outreach_board import OutreachBoardService, gmail_block_reason
+from app.services.outreach_bulk import fast_track
 
 LEAD = {"place_id": "p1", "city": "Oro Valley", "state": "AZ", "name": "Five Point Electric LLC",
         "to_address": "aaron@fivepoint.com",
@@ -140,6 +141,67 @@ def test_audit_pdf_only_goes_on_the_attached_angle():
     assert service.audit_attachments({"claim_signal": "audit_report", "place_id": "p", "angle": "local_gap"}) is None
 
 
+def test_an_incomplete_address_is_caught():
+    assert looks_like_email("info@ampereelectricnv.com")
+    assert not looks_like_email("info@southwest")
+
+
+def _ready_item(**changes):
+    return {"campaign_key": EV_PERMITS, "status": "draft_ready", "channel": "email", "stage": "review",
+            "to_address": "a@sparks.com", "subject": "s", "body": "b", "verification_status": "verified",
+            "claim_signal": "ev_permit_offer", "generation_prompt_version": ev_offer.PROMPT_VERSION,
+            **changes}
+
+
+def test_gmail_is_blocked_for_a_bad_address_and_for_old_copy():
+    assert gmail_block_reason(_ready_item(), gmail_connected=True) is None
+    assert "complete email" in gmail_block_reason(_ready_item(to_address="info@southwest"), gmail_connected=True)
+    old = _ready_item(generation_prompt_version="ev-offer-v3")
+    assert uses_old_copy(old)
+    assert "old email" in gmail_block_reason(old, gmail_connected=True)
+
+
+def test_ai_written_notes_without_an_audit_are_not_called_old():
+    assert not uses_old_copy({"claim_signal": "no_ssl", "generation_prompt_version": "outreach-v12"})
+    assert uses_old_copy({"claim_signal": "audit_report", "generation_prompt_version": "outreach-v12"})
+
+
+def test_bulk_prep_rewrites_old_copy_but_leaves_current_drafts_alone():
+    class Repo:
+        def __init__(self, version):
+            self.item = {"id": "q", "place_id": "p", "body": "Old", "subject": "S", "status": "draft_ready",
+                         "claim_signal": "ev_permit_offer", "version": 1, "gmail_draft_id": None,
+                         "generation_prompt_version": version}
+
+        def find_email_item(self, place_id, campaign_key):
+            return self.item
+
+        def get_item(self, item_id):
+            return self.item
+
+    class Service:
+        def __init__(self, version):
+            self.repository = Repo(version)
+            self.regenerated = 0
+
+        def cooldown_block(self, place_id, campaign_key):
+            return None
+
+        def create_item(self, place_id, channel, to_address, campaign_key):
+            return self.repository.item
+
+        def generate_draft(self, item_id, *, expected_version, angle=None):
+            self.regenerated += 1
+            return {**self.repository.item, "body": "New"}
+
+    old = Service("ev-offer-v3")
+    assert fast_track(old, None, "p", gmail=False, campaign_key=EV_PERMITS)["ok"]
+    assert old.regenerated == 1
+    current = Service(ev_offer.PROMPT_VERSION)
+    assert fast_track(current, None, "p", gmail=False, campaign_key=EV_PERMITS)["ok"]
+    assert current.regenerated == 0
+
+
 # --- follow-ups, against real SQL ---
 
 class Gmail:
@@ -184,6 +246,25 @@ def item(pool):
                        'Who draws your EV site plans?', %s, 'thread-1', 'drawings')
                returning id::text as id""", (days_ago,)).fetchone()
     return row["id"]
+
+
+def test_the_cleanup_replaces_bad_addresses_only_on_unsent_items(pool, item):
+    sql = open("sql/migrations/025_fix_bad_queue_addresses.sql").read()
+    with pool.connection() as conn:
+        conn.execute("""insert into website_enrichment (place_id, emails_found)
+                        values ('fu-1', '{real@fivepoint.com}')
+                        on conflict (place_id) do update set emails_found = excluded.emails_found""")
+        conn.execute("""update outreach_queue set to_address = 'info@southwest', contacted_at = null,
+                        status = 'draft_ready' where id = %s::uuid""", (item,))
+        conn.execute(sql)
+        fixed = conn.execute("select to_address from outreach_queue where id = %s::uuid", (item,)).fetchone()
+        conn.execute("""update outreach_queue set to_address = 'info@southwest', contacted_at = now()
+                        where id = %s::uuid""", (item,))
+        conn.execute(sql)
+        sent = conn.execute("select to_address from outreach_queue where id = %s::uuid", (item,)).fetchone()
+        conn.execute("delete from website_enrichment where place_id = 'fu-1'")
+    assert fixed["to_address"] == "real@fivepoint.com"
+    assert sent["to_address"] == "info@southwest"
 
 
 def test_a_saved_draft_keeps_its_angle_so_the_pdf_rule_holds(pool, item):

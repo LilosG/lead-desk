@@ -992,7 +992,8 @@ class OutreachRepository:
         self, place_id: str, campaign_key: str = DEFAULT_CAMPAIGN,
     ) -> dict[str, Any] | None:
         query = """
-            select id::text as id, status, body, claim_signal, gmail_draft_id, version
+            select id::text as id, status, body, claim_signal, gmail_draft_id, version,
+                   generation_prompt_version
             from outreach_queue
             where place_id = %s and channel = 'email' and campaign_key = %s
         """

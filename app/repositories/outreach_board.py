@@ -314,7 +314,7 @@ class OutreachBoardRepository:
                 q.verification_note, q.generation_model, q.draft_generated_at,
                 q.gmail_draft_id, q.gmail_message_id, q.gmail_draft_created_at,
                 q.gmail_draft_left_at, q.contacted_at, q.version, q.updated_at,
-                q.campaign_key, q.angle,
+                q.campaign_key, q.angle, q.generation_prompt_version,
                 b.name, b.city, vs.stage, cd.cooldown_campaign, cd.cooldown_until,
                 exists (
                     select 1 from gmail_draft_operations o
