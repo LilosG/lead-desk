@@ -9,14 +9,11 @@ import hashlib
 import re
 from typing import Any
 
-from app.campaigns import permit_city
+from app.campaigns import EV_SERVICE_PATTERN, permit_city
 from app.services.outreach_audit_copy import clean_business_name, contact_first_name
 
 PROMPT_VERSION = "ev-offer-v2"
-_EV_WORDS = re.compile(
-    r"\b(ev|evs|electric vehicles?|tesla)\b.{0,30}charg|charg.{0,30}\b(ev|evs|electric vehicles?)\b|\bevse\b",
-    re.I,
-)
+_EV_WORDS = re.compile(EV_SERVICE_PATTERN, re.I)
 _CLOSES = (
     "Want me to build one from a recent job of yours? It's free, so you can see the result "
     "before deciding anything.",

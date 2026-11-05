@@ -308,6 +308,20 @@ def test_campaign_routes(client, pool):
     ("Levy charge notice", False),
     ("Service charge may apply", False),
     ("Panel upgrades", False),
+    ("Electric car charger install", True),
+    ("Car charging at home", True),
+    ("Vehicle charging for your garage", True),
+    ("Charging stations", True),
+    ("Level 2 chargers", True),
+    ("Wall Connector setup", True),
+    ("EV installation", True),
+    ("Electric vehicle ready homes", True),
+    ("Car audio repair", False),
+    ("We take charge of your wiring", False),
+    ("Credit card charge", False),
+    ("Level 2 technician", False),
+    ("Every install is inspected", False),
+    ("Seven outlets", False),
 ])
 def test_site_signal_and_board_filter_agree(pool, text, expected):
     assert bool(site_signals.EV_SERVICE.search(text)) is expected
@@ -322,6 +336,17 @@ def test_collect_reads_ev_work_from_the_homepage():
         business={"name": "Sparks", "city": "Tucson", "vertical": "electrician"},
         soup=BeautifulSoup(html, "html.parser"), html=html,
         final_url="https://sparks.example.com/", headers={}, word_count=6, robots=None,
+        has_sitemap=False, offering_paths=[], location_paths=[], offering_words=[],
+    )
+    assert signals["ev_service"] is True
+
+
+def test_collect_reads_ev_work_from_a_link_with_no_text():
+    html = '<html><title>Sparks</title><body><a href="/services/ev-charger-installation/"><img src="a.png"></a></body></html>'
+    signals = site_signals.collect(
+        business={"name": "Sparks", "city": "Tucson", "vertical": "electrician"},
+        soup=BeautifulSoup(html, "html.parser"), html=html,
+        final_url="https://sparks.example.com/", headers={}, word_count=1, robots=None,
         has_sitemap=False, offering_paths=[], location_paths=[], offering_words=[],
     )
     assert signals["ev_service"] is True

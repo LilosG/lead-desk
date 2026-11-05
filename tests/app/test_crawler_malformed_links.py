@@ -58,3 +58,9 @@ def test_one_failed_site_does_not_stop_the_batch(monkeypatch):
 
     monkeypatch.setattr(rescore.E, "crawl_business", crash)
     assert rescore.read_site({"name": "Sparks"}) is None
+
+
+def test_a_mistyped_mailto_address_is_dropped():
+    found = E._clean_emails({"info@southwest", "info@southwestelectric.com"},
+                            "southwestelectric.com", "Southwest Electric")
+    assert found == ["info@southwestelectric.com"]
