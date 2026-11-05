@@ -67,6 +67,20 @@ def test_ev_proof_falls_back_when_the_site_says_less():
     assert "Saw Five Point does EV charger installs in Boise." in ev_offer.write_email(mention, "free_packet")["body"]
 
 
+@pytest.mark.parametrize("angle", [a.key for a in ANGLES[EV_PERMITS]])
+def test_no_ev_proof_means_the_email_asks_and_claims_nothing(angle):
+    lead = {**LEAD, "city": "Fresno", "state": "CA", "site_signals": {},
+            "name": "Allied Electric a Buckles-Smith Company"}
+    written = ev_offer.write_email(lead, angle)
+    assert "Saw " not in written["body"]
+    assert "If Allied installs EV chargers" in written["body"]
+    assert "Buckles" not in written["subject"]
+
+
+def test_short_name_drops_trailing_detail():
+    assert ev_offer.short_name("Fuse Service HVAC, Electrical & Appliance Repair Fresno") == "Fuse Service HVAC"
+
+
 def test_ev_subject_uses_a_short_name_that_fits_on_a_phone():
     assert ev_offer.write_email(LEAD, "free_packet")["subject"] == "Five Point's next EV permit"
 

@@ -58,6 +58,15 @@ def test_a_service_hub_is_read_when_the_homepage_shows_nothing():
     assert found["ev_service"] is True
 
 
+def test_ev_work_listed_on_a_nested_service_page_is_found():
+    # 911 Plumbing & Electric lists it on /electric-c10/residential-services/.
+    nav = ('<a href="/plumbing-services/drains">Drains</a>'
+           '<a href="/electric-c10/residential-services/">Residential</a><p>Licensed.</p>')
+    page = "<li>Panel Upgrades</li><li>Electric Vehicle (EV) Charging Stations Sales / Installation</li>"
+    found = _profile(nav, pages={"/electric-c10/residential-services": page})
+    assert found["ev_service"] is True
+
+
 def test_the_ev_page_supplies_brands_and_commercial_work():
     page = "<h1>EV chargers</h1><p>We install Tesla Wall Connector and ChargePoint units, " \
            "plus commercial EV charging for workplaces.</p>"
