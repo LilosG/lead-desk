@@ -314,6 +314,10 @@ FOREIGN_TYPES = {
 }
 
 
+CHARGING_STATION = "electric_vehicle_charging_station"
+CHARGING_NAMES = re.compile(r"supercharger|charging station|destination charger", re.I)
+
+
 def wrong_vertical(rec: dict, vertical: str) -> bool:
     """True when evidence shows the result belongs to another trade.
 
@@ -336,7 +340,11 @@ def wrong_vertical(rec: dict, vertical: str) -> bool:
     if types & target_types:
         return False
 
+    # A public charger is a place to plug in, not a business to pitch.
     ptype = rec.get("primary_type") or ""
+    if CHARGING_STATION in types or ptype == CHARGING_STATION or CHARGING_NAMES.search(name):
+        return True
+
     if ptype in FOREIGN_TYPES:
         words = C.VERTICAL_SITE_WORDS.get(vertical, [])
         competing_noise = (
