@@ -20,11 +20,13 @@ import re
 from typing import Any
 
 # Order in which a finding makes the strongest opening line.
+# Money gaps first: a broken path from Maps to the site, reviews, missing service
+# pages. Owners don't buy speed scores, so PageSpeed only leads when nothing else does.
 LEAD_PRIORITY = [
-    "noindex_homepage", "website_not_on_gbp", "broken_profile_link", "no_website",
-    "ai_crawlers_blocked", "psi_mobile_critical", "no_reviews",
-    "reviews_bottom_quartile", "no_ssl", "js_only_content", "psi_mobile_poor", "reviews_below_median",
-    "no_review_replies", "no_service_pages", "no_service_city_pages", "no_hours", "no_photos",
+    "noindex_homepage", "website_not_on_gbp", "broken_profile_link", "no_website", "no_ssl",
+    "no_reviews", "reviews_bottom_quartile", "no_service_pages", "ai_crawlers_blocked",
+    "js_only_content", "reviews_below_median", "no_review_replies", "no_service_city_pages",
+    "psi_mobile_critical", "psi_mobile_poor", "no_hours", "no_photos",
     "no_services_listed", "no_title", "title_missing_location", "no_click_to_call",
     "no_city_pages", "no_localbusiness_schema", "no_business_description", "no_gbp_link",
 ]
@@ -432,7 +434,7 @@ def _benchmark_email(snapshot: dict[str, Any], name: str,
         gap = (f"The clearest gap: {top['count']} of them have their own {top['label']} page, "
                "and your site doesn't.")
         lead_signal = "no_service_pages"
-    parts = [f"I compared {name} with {n} other {_plural_niche(comparison.get('niche'))} in {city}.", gap]
+    parts = [f"Checked {name} against the other {_plural_niche(comparison.get('niche'))} in {city}.", gap]
     support = _support_sentence(lead_signal, snapshot)
     if support:
         parts.append(support)

@@ -704,7 +704,10 @@ class OutreachRepository:
             select
                 q.id::text as id, q.place_id, q.channel, q.campaign_key, q.status, q.to_address,
                 q.subject, q.angle, q.contacted_at, q.gmail_thread_id,
-                b.name, b.city, b.state, we.site_signals,
+                b.name, b.city, b.state, b.vertical, we.site_signals,
+                (select par.snapshot from prospect_audit_reports par
+                 where par.place_id = q.place_id and par.status = 'generated'
+                 order by par.created_at desc limit 1) as audit_snapshot,
                 (select o.message_id_header from gmail_draft_operations o
                  where o.queue_id = q.id and o.state = 'created'
                  order by o.created_at desc limit 1) as first_message_id,
