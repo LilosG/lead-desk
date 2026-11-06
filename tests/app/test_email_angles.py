@@ -43,13 +43,13 @@ def _words(text: str) -> int:
 
 
 @pytest.mark.parametrize("angle", [a.key for a in ANGLES[EV_PERMITS]])
-def test_every_ev_angle_is_short_personal_and_link_free(angle):
+def test_every_ev_angle_is_short_personal_and_links_the_overview(angle):
     written = ev_offer.write_email(LEAD, angle)
     assert written["body"].startswith("Hi Aaron,")
     assert "Five Point" in written["subject"] + written["body"]
-    assert _words(written["body"]) <= 100
+    assert _words(written["body"]) <= 115
     assert len(written["subject"]) <= 40
-    assert "http" not in written["body"]
+    assert written["body"].count("https://ev-permit-packets.vercel.app/") == 1
 
 
 def test_ev_copy_uses_what_the_site_and_city_actually_say():
@@ -294,6 +294,7 @@ def test_a_follow_up_is_a_threaded_gmail_draft_with_the_opt_out(pool, item):
     assert draft["thread_id"] == "thread-1"
     assert draft["body"].startswith("Hi Aaron,")
     assert "no thanks" in draft["body"]
+    assert "https://ev-permit-packets.vercel.app/" in draft["body"]
 
 
 def test_a_sequence_stops_at_three_emails_and_waits_for_each_send(pool, item):

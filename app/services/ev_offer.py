@@ -2,7 +2,7 @@
 
 They're written from fixed copy instead of AI. Every sentence is either true of
 the offer as Mike sells it or comes from the lead's own site and its city's
-published checklist. No links or attachments in the first email.
+published checklist. Every EV email links the overview page.
 
 Never promise permit approval or a set number of hours. The city decides
 approvals, and hours depend on the shop. "About 90%" is Mike's figure for
@@ -23,7 +23,9 @@ from app.services.outreach_audit_copy import (
     team_greeting,
 )
 
-PROMPT_VERSION = "ev-offer-v4"
+PROMPT_VERSION = "ev-offer-v5"
+OVERVIEW_URL = "https://ev-permit-packets.vercel.app/"
+_OVERVIEW_LINE = f"Here's how it works, with a sample packet: {OVERVIEW_URL}"
 _EV_WORDS = re.compile(EV_SERVICE_PATTERN, re.I)
 
 
@@ -181,21 +183,18 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str]:
             if rules and rules.get("asks_for") else "No city-specific permit claim was made.")
     if not facts["first_name"]:
         note += " No contact name found."
-    return {"subject": subject, "body": "\n\n".join([facts["greeting"], *paragraphs]), "note": note}
+    body = "\n\n".join([facts["greeting"], *paragraphs, _OVERVIEW_LINE])
+    return {"subject": subject, "body": body, "note": note}
 
 
 def write_follow_up(context: dict[str, Any], step: int) -> str:
     facts = _facts(context)
     if step == 2:
-        paragraphs = [
-            "Easiest way to judge this: I can send a 1-minute demo and a sample packet, so you can see "
-            "the actual drawings.",
-            "Want me to send them over?",
-        ]
+        paragraphs = ["Easiest way to judge this is to see the actual drawings."]
     else:
         paragraphs = [
             f"Last note on this from me. If EV permits aren't a time sink at {facts['short']}, no problem "
             "and I'll leave you alone.",
             "If they are, reply with one EV job and I'll build the packet for free.",
         ]
-    return "\n\n".join([facts["greeting"], *paragraphs])
+    return "\n\n".join([facts["greeting"], *paragraphs, _OVERVIEW_LINE])
