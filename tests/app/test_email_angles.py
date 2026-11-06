@@ -175,6 +175,14 @@ def test_seo_touch_two_gives_away_the_fastest_fix():
     both = {**gap, "findings": [{"signal": "no_hours"}]}
     told = seo_offer.write_follow_up({**LEAD, "angle": "competitor", "audit_snapshot": both}, 2)
     assert "business hours" in told and "panel upgrade" not in told
+    # Findings outside the fix list still beat repeating Touch 1's missing page.
+    other = {**gap, "findings": [{"signal": "no_photos"}, {"signal": "no_service_pages"}]}
+    fell = seo_offer.write_follow_up({**LEAD, "angle": "local_gap", "audit_snapshot": other}, 2)
+    assert "Quick one regardless: I'd start with photos on your Google listing." in fell
+    assert "panel upgrade" not in fell and "first thing I'd fix" not in fell
+    only_gap = {**gap, "findings": [{"signal": "no_service_pages"}]}
+    assert "panel upgrade" in seo_offer.write_follow_up(
+        {**LEAD, "angle": "competitor", "audit_snapshot": only_gap}, 2)
     bare = seo_offer.write_follow_up(LEAD, 2)
     assert "Quick follow-up." in bare and "Quick one regardless" not in bare
     last = seo_offer.write_follow_up(LEAD, 3)

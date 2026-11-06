@@ -222,15 +222,15 @@ def fix_one(snapshot: dict[str, Any] | None, short: str, *, gap_already_named: b
             continue
         if key in found:
             return _FIX_LINES[key]
-    if gap_line:
-        return gap_line
     ordered = sorted(findings, key=lambda f: LEAD_PRIORITY.index(f["signal"])
                      if f["signal"] in LEAD_PRIORITY else 99)
     for item in ordered:
+        if gap_already_named and item["signal"] in {"no_service_pages", "no_service_city_pages"}:
+            continue
         phrase = _email_phrase(item)
         if phrase:
-            return f"the first thing I'd fix is {phrase}."
-    return None
+            return f"I'd start with {phrase}. It's a quick fix and it's costing you calls right now."
+    return gap_line
 
 
 def write_follow_up(context: dict[str, Any], step: int) -> str:
