@@ -2,19 +2,22 @@
 
 They're written from fixed copy instead of AI. Every sentence is either true of
 the offer as Mike sells it or comes from the lead's own site and its city's
-published checklist. Every EV email links the overview page.
+published checklist.
+
+Touch 1 carries no link: it only asks whether they want the sample. Touch 2
+sends the sample packet and offers to run one of their past installs free.
 
 Never promise permit approval or a set number of hours. The city decides
-approvals, and hours depend on the shop. "About 90%" is Mike's figure for
-residential EV charger packets.
+approvals, and hours depend on the shop. "Four electrical shops" is Mike's
+figure for shops that have used the automation.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
 from app.campaigns import EV_SERVICE_PATTERN, permit_city
-from app.services.email_angles import stable_pick
 from app.services.outreach_audit_copy import (
     clean_business_name,
     contact_first_name,
@@ -23,10 +26,14 @@ from app.services.outreach_audit_copy import (
     team_greeting,
 )
 
-PROMPT_VERSION = "ev-offer-v5"
-OVERVIEW_URL = "https://ev-permit-packets.vercel.app/"
-_OVERVIEW_LINE = f"Here's how it works, with a sample packet: {OVERVIEW_URL}"
+PROMPT_VERSION = "ev-offer-v6"
+DEFAULT_OVERVIEW_URL = "https://ev-permit-packets.vercel.app/"
 _EV_WORDS = re.compile(EV_SERVICE_PATTERN, re.I)
+
+
+def overview_url() -> str:
+    """The sample packet page. EV_OVERVIEW_URL points it at a custom domain."""
+    return (os.environ.get("EV_OVERVIEW_URL") or "").strip() or DEFAULT_OVERVIEW_URL
 
 
 def ev_evidence(context: dict[str, Any]) -> str | None:
@@ -49,107 +56,41 @@ def _join(names: list[str]) -> str:
     return " and ".join(names[:2])
 
 
-def _proof_line(name: str, signals: dict[str, Any], city: str | None) -> str:
-    """What we saw on their own site, as specific as the site allows."""
-    where = f" in {city}" if city else ""  # Callers pass no city when the next line names it.
-    brands = signals.get("ev_brands") or []
-    if brands:
-        return f"Saw {name} installs {_join(brands)} chargers{where}."
-    if signals.get("ev_strength") == "page":
-        return f"Saw the EV charger page on {possessive(name)} site."
-    return f"Saw {name} does EV charger installs{where}."
-
-
-def _paperwork_line(rules: dict[str, str] | None, city: str | None) -> str:
-    if rules and rules.get("asks_for"):
-        return f"{city} wants {rules['asks_for']} on those jobs."
-    return "Each one means a load calc, drawings and checking what the city wants."
-
-
-_FREE_PACKET_ASKS = (
-    "Send me your next EV job and I'll build the whole packet for free. If your office could've done "
-    "better, you've lost nothing.",
-    "Send me a recent EV job and I'll build that packet for free, so you can compare it with what "
-    "your office does now.",
-)
-_DRAWINGS_ASKS = (
-    "Want to see it on a real job? Send me a recent EV job and I'll build it for free.",
-    "Send me one recent EV job and I'll draw it up for free.",
-)
-
-
-def _opening(ctx: dict[str, Any]) -> str:
-    """What we saw on their site, or a question when the site doesn't show EV work."""
-    if ctx["shows_ev"]:
-        return f"{ctx['proof']} {ctx['paperwork']}"
-    rules = ctx["rules"]
-    if rules and rules.get("asks_for"):
-        return (f"If {ctx['short']} installs EV chargers, {ctx['city']} wants {rules['asks_for']} "
-                "on those jobs.")
-    return (f"If {ctx['short']} installs EV chargers, you know each job means a load calc, drawings "
-            "and checking what the city wants.")
-
-
-def _free_packet(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    return f"{possessive(ctx['short'])} next EV permit", [
-        _opening(ctx),
-        "We built a system that does about 90% of that packet. Your tech fills out one short form, and "
-        "it handles the city research, drawings and load calc and flags anything missing. Your office "
-        "just reviews and submits, so it gets that time back on every install.",
-        stable_pick(ctx["place_id"], _FREE_PACKET_ASKS),
-    ]
+def _brands_line(ctx: dict[str, Any]) -> str:
+    """Proof we looked at their site, when it names the chargers they install."""
+    brands = ctx["brands"]
+    return f"Saw {ctx['short']} installs {_join(brands)} chargers. " if brands else ""
 
 
 def _drawings(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     rules = ctx["rules"]
     if rules and rules.get("asks_for"):
-        opener = (f"{ctx['city']} wants {rules['asks_for']} on EV jobs. Who draws those at {ctx['short']}?"
-                  if ctx["shows_ev"] else
-                  f"{ctx['city']} wants {rules['asks_for']} on EV jobs. If {ctx['short']} does those, "
-                  "who draws them?")
-    elif ctx["shows_ev"]:
-        opener = f"Who draws the site plans and one-lines on {possessive(ctx['short'])} EV jobs?"
+        ask = f"{ctx['city']} wants {rules['asks_for']} on every residential charger permit."
     else:
-        opener = f"If {ctx['short']} installs EV chargers, who draws the site plans and one-lines?"
-    return "Who draws your EV site plans?", [
-        opener,
-        "We built a system that does it from one short job form. It draws the site plan on the actual "
-        "property, the one-line diagram and the load calc, then builds the rest of the packet and "
-        "flags anything missing.",
-        "Your team reviews and signs off, so nothing goes to the city without them.",
-        stable_pick(ctx["place_id"], _DRAWINGS_ASKS),
+        ask = ("A lot of cities want a site plan, single-line and load calc on residential charger "
+               "permits.")
+    return f"Who draws {possessive(ctx['short'])} EV site plans?", [
+        f"{_brands_line(ctx)}{ask} Who's stuck drawing those at {ctx['short']}, you or the office?",
+        "Four electrical shops have stopped doing it by hand. Their tech fills out a quick job form "
+        "on site, and the site plan on the actual property, the single-line and the load calc come "
+        "back ready to sign and submit.",
+        "Want me to send a sample packet so you can judge the drawings?",
     ]
 
 
-def _time_back(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    return f"Time on EV permits at {ctx['short']}", [
-        ("How long does your office spend putting together one EV permit packet?" if ctx["shows_ev"]
-         else f"If {ctx['short']} installs EV chargers, how long does your office spend on one permit "
-              "packet?"),
-        f"{ctx['proof'] + ' ' if ctx['shows_ev'] else ''}Whatever that number is, we can take about 90% "
-        "of it off your plate. One short form from your tech, and the city research, load calc, "
-        "drawings and packet are done and waiting for review.",
-        "That's office time back on every install, without adding staff.",
-        "What's your number? A rough guess is fine.",
-    ]
-
-
-def _guarantee(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    return "30-day EV permit test", [
-        _opening(ctx),
-        "We set up a system around the cities you work in. From one short job form it builds about 90% "
-        "of the packet: site plan, one-line, load calc and the rest, ready for your team to review.",
-        "If it isn't producing packets you'd be comfortable submitting within the first 30 days, you get "
-        "your initial payment back.",
-        "Worth a look?",
+def _desk_work(ctx: dict[str, Any]) -> tuple[str, list[str]]:
+    return f"EV permit desk work at {ctx['short']}", [
+        f"{_brands_line(ctx)}On a residential EV charger, the install is the easy part. The site "
+        "plan, single-line and load calc are the desk work nobody gets paid for.",
+        "We built a setup that draws all three from one tech form on site, on the actual property, "
+        "ready for your sign-off. Four electrical shops have used it so far.",
+        "Want me to send a sample packet so you can see the drawings?",
     ]
 
 
 _WRITERS = {
-    "free_packet": _free_packet,
     "drawings": _drawings,
-    "time_back": _time_back,
-    "guarantee": _guarantee,
+    "desk_work": _desk_work,
 }
 
 
@@ -157,21 +98,16 @@ def _facts(context: dict[str, Any]) -> dict[str, Any]:
     city = context.get("city")
     signals = context.get("site_signals") or {}
     name = clean_business_name(context.get("name"))
-    rules = permit_city(city, context.get("state"))
     first_name = contact_first_name(context.get("to_address"), context.get("name"),
                                     signals.get("owner_name"))
-    named_city = bool(rules and rules.get("asks_for"))
     return {
-        "place_id": context["place_id"],
         "name": name,
         "short": short_name(name),
         "city": city,
         "first_name": first_name,
-        "shows_ev": ev_evidence(context) is not None,
+        "brands": [b for b in signals.get("ev_brands") or [] if b],
         "greeting": team_greeting(first_name, name),
-        "proof": _proof_line(short_name(name), signals, None if named_city else city),
-        "paperwork": _paperwork_line(rules, city),
-        "rules": rules,
+        "rules": permit_city(city, context.get("state")),
     }
 
 
@@ -183,18 +119,22 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str]:
             if rules and rules.get("asks_for") else "No city-specific permit claim was made.")
     if not facts["first_name"]:
         note += " No contact name found."
-    body = "\n\n".join([facts["greeting"], *paragraphs, _OVERVIEW_LINE])
+    body = "\n\n".join([facts["greeting"], *paragraphs])
     return {"subject": subject, "body": body, "note": note}
 
 
 def write_follow_up(context: dict[str, Any], step: int) -> str:
     facts = _facts(context)
     if step == 2:
-        paragraphs = ["Easiest way to judge this is to see the actual drawings."]
+        paragraphs = [
+            "Figured it's easier to just show you. Here's a full sample packet with the site plan, "
+            f"single-line and load calc, all from one tech form: {overview_url()}",
+            "If you want to test it against what your office turns in now, reply with the address "
+            "and panel size from a past install and I'll run that packet free.",
+        ]
     else:
         paragraphs = [
-            f"Last note on this from me. If EV permits aren't a time sink at {facts['short']}, no problem "
-            "and I'll leave you alone.",
-            "If they are, reply with one EV job and I'll build the packet for free.",
+            "Last note from me. If your office still draws EV site plans and load calcs by hand, "
+            "reply with a past install and I'll draw it up free. If not, no worries.",
         ]
-    return "\n\n".join([facts["greeting"], *paragraphs, _OVERVIEW_LINE])
+    return "\n\n".join([facts["greeting"], *paragraphs])

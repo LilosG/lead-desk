@@ -19,7 +19,7 @@ from app.services.outreach import OutreachBlocked, OutreachService, looks_like_e
 from app.services.outreach_board import OutreachBoardService, gmail_block_reason
 from app.services.outreach_bulk import fast_track
 
-LEAD = {"place_id": "p1", "city": "Oro Valley", "state": "AZ", "name": "Five Point Electric LLC",
+LEAD = {"place_id": "p1", "city": "Oro Valley", "state": "AZ", "name": "Five Point Electric LLC", "vertical": "electrician",
         "to_address": "aaron@fivepoint.com",
         "site_signals": {"ev_service": True, "ev_strength": "page", "ev_page_path": "/ev",
                          "ev_brands": ["Tesla", "ChargePoint"]}}
@@ -43,46 +43,61 @@ def _words(text: str) -> int:
 
 
 @pytest.mark.parametrize("angle", [a.key for a in ANGLES[EV_PERMITS]])
-def test_every_ev_angle_is_short_personal_and_links_the_overview(angle):
+def test_every_ev_first_touch_is_short_personal_and_link_free(angle):
     written = ev_offer.write_email(LEAD, angle)
     assert written["body"].startswith("Hi Aaron,")
     assert "Five Point" in written["subject"] + written["body"]
     assert _words(written["body"]) <= 115
     assert len(written["subject"]) <= 40
-    assert written["body"].count("https://ev-permit-packets.vercel.app/") == 1
+    assert "http" not in written["body"]
+    assert "Want me to send a sample packet" in written["body"]
+    assert "Four electrical shops" in written["body"]
 
 
 def test_ev_copy_uses_what_the_site_and_city_actually_say():
-    body = ev_offer.write_email(LEAD, "free_packet")["body"]
-    assert "Saw Five Point installs Tesla and ChargePoint chargers." in body
-    assert "Oro Valley wants a site plan, one-line diagram and load calculation" in body
-    assert "about 90%" in body
-    assert "for free" in body
-
-
-def test_ev_proof_falls_back_when_the_site_says_less():
-    page = {**LEAD, "site_signals": {"ev_service": True, "ev_strength": "page"}}
-    assert "Saw the EV charger page on Five Point's site." in ev_offer.write_email(page, "free_packet")["body"]
-    mention = {**LEAD, "city": "Boise", "state": "ID", "site_signals": {"ev_service": True}}
-    assert "Saw Five Point does EV charger installs in Boise." in ev_offer.write_email(mention, "free_packet")["body"]
+    body = ev_offer.write_email(LEAD, "drawings")["body"]
+    assert ("Saw Five Point installs Tesla and ChargePoint chargers. Oro Valley wants a site plan, "
+            "one-line diagram and load calculation on every residential charger permit.") in body
+    assert "Who's stuck drawing those at Five Point, you or the office?" in body
+    desk = ev_offer.write_email(LEAD, "desk_work")["body"]
+    assert desk.startswith("Hi Aaron,\n\nSaw Five Point installs Tesla and ChargePoint chargers. On a residential")
+    assert "Oro Valley" not in desk  # the city's checklist is Angle A's line, not repeated here
 
 
 @pytest.mark.parametrize("angle", [a.key for a in ANGLES[EV_PERMITS]])
-def test_no_ev_proof_means_the_email_asks_and_claims_nothing(angle):
+def test_no_ev_proof_and_no_city_rules_means_no_claim_about_either(angle):
     lead = {**LEAD, "city": "Fresno", "state": "CA", "site_signals": {},
             "name": "Allied Electric a Buckles-Smith Company"}
     written = ev_offer.write_email(lead, angle)
     assert "Saw " not in written["body"]
-    assert "If Allied installs EV chargers" in written["body"]
+    assert "Fresno" not in written["body"]
+    assert "If Allied" not in written["body"]
     assert "Buckles" not in written["subject"]
+    assert "No city-specific permit claim" in written["note"]
+
+
+def test_ev_subjects_fit_on_a_phone():
+    assert ev_offer.write_email(LEAD, "drawings")["subject"] == "Who draws Five Point's EV site plans?"
+    assert ev_offer.write_email(LEAD, "desk_work")["subject"] == "EV permit desk work at Five Point"
+
+
+def test_ev_sample_link_can_point_at_a_custom_domain(monkeypatch):
+    assert ev_offer.overview_url() == "https://ev-permit-packets.vercel.app/"
+    monkeypatch.setenv("EV_OVERVIEW_URL", "https://permits.example.com/")
+    assert "https://permits.example.com/" in ev_offer.write_follow_up(LEAD, 2)
+
+
+def test_ev_follow_ups_send_the_sample_then_close():
+    second = ev_offer.write_follow_up(LEAD, 2)
+    assert "https://ev-permit-packets.vercel.app/" in second
+    assert "address and panel size from a past install" in second
+    third = ev_offer.write_follow_up(LEAD, 3)
+    assert third.startswith("Hi Aaron,\n\nLast note from me.")
+    assert "http" not in third
 
 
 def test_short_name_drops_trailing_detail():
     assert ev_offer.short_name("Fuse Service HVAC, Electrical & Appliance Repair Fresno") == "Fuse Service HVAC"
-
-
-def test_ev_subject_uses_a_short_name_that_fits_on_a_phone():
-    assert ev_offer.write_email(LEAD, "free_packet")["subject"] == "Five Point's next EV permit"
 
 
 def test_an_unknown_name_says_so_in_the_note():
@@ -104,8 +119,74 @@ def _seo(angle, **changes):
 def test_seo_competitor_names_the_real_local_leader_not_the_lead_itself():
     written = _seo("competitor")
     assert written["angle"] == "competitor"
-    assert written["subject"] == "Sparks vs Five Point"
-    assert "Sparks Electric shows 640 reviews next to your 38" in written["body"]
+    assert written["subject"] == "Calls going to Sparks"
+    assert ("Checked electricians in Henderson. Sparks Electric is out front on Google Maps with 640 "
+            "reviews to your 38.") in written["body"]
+    assert "Want me to send the plan for how I'd get Five Point those calls in Henderson?" in written["body"]
+
+
+def test_seo_page_gap_is_credited_to_city_peers_not_the_leader():
+    gaps = {"gaps": [{"label": "EV charger installation", "count": 6}]}
+    body = _seo("competitor", page_gaps=gaps)["body"]
+    assert ("640 reviews to your 38, and 6 other electricians there have a dedicated EV charger "
+            "installation page that Five Point's site is missing.") in body
+    assert "Sparks Electric has" not in body
+
+
+def test_seo_proof_credits_wheyland_only_where_it_should():
+    body = _seo("competitor")["body"]
+    assert "We rebuilt Wheyland Electric's site and local search setup in March." in body
+    assert "about 60 calls and quote requests a month" in body
+    assert "Google's AI answers for 20 searches" in body
+    assert "month-to-month" in body
+    neighbor = seo_offer.write_email({**LEAD, "city": "Carlsbad", "state": "CA", "vertical": "electrician",
+                                      "audit_snapshot": SNAPSHOT}, "competitor")["body"]
+    assert "a North County electrical shop's site" in neighbor and "Wheyland" not in neighbor
+    spa = seo_offer.write_email({**LEAD, "vertical": "med_spa", "audit_snapshot": SNAPSHOT}, "competitor")["body"]
+    assert "a local electrical contractor's site" in spa and "Wheyland" not in spa
+
+
+def test_seo_local_gap_gets_the_proof_and_the_calls_ask_without_the_scanner_line():
+    written = _seo("local_gap")
+    assert "I compared" not in written["body"]
+    assert "Checked Five Point Electric against the other electricians in Henderson." in written["body"]
+    assert "Wheyland Electric" in written["body"]
+    assert "those calls in Henderson?" in written["body"]
+    assert written["subject"] == "Five Point on Google Maps in Henderson"
+
+
+def test_seo_local_gap_opens_on_the_missing_page_unless_calls_are_leaking_now():
+    gaps = {"gaps": [{"label": "panel upgrade", "count": 7}]}
+    slow = _seo("local_gap", page_gaps=gaps, findings=[{"signal": "psi_mobile_poor"}], benchmarks={})["body"]
+    assert "Checked electricians in Henderson. 7 other electricians there have a dedicated panel upgrade page" in slow
+    assert "mobile speed" not in slow
+    leak = _seo("local_gap", page_gaps=gaps, findings=[{"signal": "website_not_on_gbp"}], benchmarks={})["body"]
+    assert "doesn't link to your website" in leak
+
+
+def test_seo_touch_two_gives_away_the_fastest_fix():
+    snapshot = {**SNAPSHOT, "findings": [{"signal": "psi_mobile_poor"}, {"signal": "website_not_on_gbp"}]}
+    body = seo_offer.write_follow_up({**LEAD, "audit_snapshot": snapshot}, 2)
+    assert "Quick one regardless: your Google Maps listing doesn't link to your website" in body
+    assert "I'll send the rest of the Henderson plan." in body
+    gap = {**SNAPSHOT, "page_gaps": {"gaps": [{"label": "panel upgrade", "count": 5}]}}
+    assert "5 other electricians in Henderson have a dedicated panel upgrade page" in \
+        seo_offer.write_follow_up({**LEAD, "audit_snapshot": gap}, 2)
+    both = {**gap, "findings": [{"signal": "no_hours"}]}
+    told = seo_offer.write_follow_up({**LEAD, "angle": "competitor", "audit_snapshot": both}, 2)
+    assert "business hours" in told and "panel upgrade" not in told
+    # Findings outside the fix list still beat repeating Touch 1's missing page.
+    other = {**gap, "findings": [{"signal": "no_photos"}, {"signal": "no_service_pages"}]}
+    fell = seo_offer.write_follow_up({**LEAD, "angle": "local_gap", "audit_snapshot": other}, 2)
+    assert "Quick one regardless: I'd start with photos on your Google listing." in fell
+    assert "panel upgrade" not in fell and "first thing I'd fix" not in fell
+    only_gap = {**gap, "findings": [{"signal": "no_service_pages"}]}
+    assert "panel upgrade" in seo_offer.write_follow_up(
+        {**LEAD, "angle": "competitor", "audit_snapshot": only_gap}, 2)
+    bare = seo_offer.write_follow_up(LEAD, 2)
+    assert "Quick follow-up." in bare and "Quick one regardless" not in bare
+    last = seo_offer.write_follow_up(LEAD, 3)
+    assert 'reply "plan"' in last and "30" not in last
 
 
 def test_seo_competitor_falls_back_without_a_clear_leader():
@@ -136,13 +217,16 @@ def test_rotation_is_stable_and_stays_inside_the_campaign():
     assert resolve_angle(EV_PERMITS, "p1", None, None) == resolve_angle(EV_PERMITS, "p1", "rotate", None)
     picks = {resolve_angle(EV_PERMITS, f"p{i}", None, None) for i in range(40)}
     assert picks == set(ROTATION[EV_PERMITS])
-    assert resolve_angle(EV_PERMITS, "p1", "guarantee", "drawings") == "guarantee"
-    assert resolve_angle(EV_PERMITS, "p1", None, "time_back") == "time_back"
+    assert resolve_angle(EV_PERMITS, "p1", "desk_work", "drawings") == "desk_work"
+    assert resolve_angle(EV_PERMITS, "p1", None, "desk_work") == "desk_work"
+    # A lead still on a retired angle moves into the current rotation.
+    assert resolve_angle(EV_PERMITS, "p1", None, "free_packet") in ROTATION[EV_PERMITS]
 
 
 def test_angle_labels_cover_old_rows():
     assert angle_label(SEO_WEBSITES, None) == "Original email"
-    assert angle_label(SEO_WEBSITES, "competitor") == "Named competitor"
+    assert angle_label(SEO_WEBSITES, "competitor") == "Calls going to the leader"
+    assert angle_label(EV_PERMITS, "free_packet") == "Free packet"
 
 
 def test_audit_pdf_only_goes_on_the_attached_angle():

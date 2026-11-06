@@ -82,9 +82,10 @@ def test_email_leads_with_the_local_benchmark():
     }
     paragraph, subject = audit_email_paragraph(snapshot, "Desert Bloom Aesthetics LLC")
     assert subject == "How Desert Bloom Aesthetics compares in Scottsdale"
-    assert paragraph.startswith("I compared Desert Bloom Aesthetics with 29 other med spas in Scottsdale")
-    assert "scored 23/100 on Google's speed test and took about 14 seconds" in paragraph
-    assert "The typical one there scores 50/100." in paragraph
+    # Reviews lead now; a speed score only leads when nothing better is wrong.
+    assert paragraph.startswith("Checked Desert Bloom Aesthetics against the other med spas in Scottsdale. "
+                                "The biggest gap is reviews: you have 11 on Google")
+    assert "I compared" not in paragraph and "/100" not in paragraph
     assert "22 of them also have their own Botox & Dysport page; your site doesn't." in paragraph
     assert "star rating is strong" not in paragraph  # one supporting fact keeps it short
     assert len(paragraph.split()) < 90

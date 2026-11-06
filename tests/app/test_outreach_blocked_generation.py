@@ -271,11 +271,9 @@ def test_audit_grounding_covers_profile_and_speed_findings_for_volume():
 
     assert verifier.context is None
     assert claim_signal == "audit_report"
-    # Leads with the concrete number, then names the others plainly.
-    assert visible_claim.startswith("I ran Glow Med Spa's homepage through Google's mobile speed test")
-    assert "scored 38 out of 100" in visible_claim
-    assert "about 9 seconds" in visible_claim
+    # The missing service pages lead; the speed score is demoted behind money gaps.
+    assert visible_claim.startswith("I looked over Glow Med Spa's Google listing and website, and the clearest "
+                                    "thing to fix is dedicated treatment pages.")
     assert "your number of Google reviews" in visible_claim
-    assert "treatment pages" in visible_claim
+    assert "how slowly your site loads on phones" in visible_claim
     assert "online presence" not in visible_claim
-    assert context["_audit_subject"] == "Glow Med Spa website on phones"
