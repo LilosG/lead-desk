@@ -265,3 +265,24 @@ def test_photo_prompts_ban_people_and_collages():
     prompt = DemoMediaService._prompt({"primary_type": "electrician", "vertical": "electrician", "city": "Fresno"},
                                       role="work", direction=None)
     assert "Show no people" in prompt and "never a collage" in prompt
+
+
+def test_hero_photo_prompt_is_a_place_with_no_people_even_when_asked_for_one():
+    from app.services.demo_media import DemoMediaService
+    prompt = DemoMediaService._prompt({"primary_type": "electrician", "vertical": "electrician", "city": "Henderson"},
+                                      role="hero", direction="electrician working on residential home")
+    assert "no faces, bodies, arms or hands" in prompt
+    assert "never the person" in prompt
+    assert "modern home at blue hour" in prompt
+    assert "for an electrician" in prompt
+
+
+def test_featured_review_prefers_a_quote_that_fits_and_is_not_shouting():
+    from app.services.demo_site_renderer_v4 import _featured_review
+    cards = [
+        {"text": "GREAT WORK THANK YOU SO MUCH " * 12},
+        {"text": "They walked me through every option, kept the site tidy and finished when they said they would. "
+                 "The new panel works perfectly and the crew was easy to talk to."},
+        {"text": "Good."},
+    ]
+    assert _featured_review(cards) is cards[1]

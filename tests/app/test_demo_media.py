@@ -151,8 +151,11 @@ def test_each_trade_gets_its_own_scene_and_direction_overrides_it():
     plumber = DemoMediaService._prompt(
         {"primary_type": "plumber", "vertical": "plumber"}, role="hero", direction=None,
     )
-    assert "electrical panel" in electrician and "Tucson, AZ" in electrician
-    assert "copper pipework" in plumber and "electrical panel" not in plumber
+    # Heroes are calm architectural shots of the trade's finished work; close-up craft is the work photo.
+    assert "EV charger" in electrician and "Tucson, AZ" in electrician
+    assert "chrome faucet" in plumber and "EV charger" not in plumber
+    work = DemoMediaService._prompt({"primary_type": "plumber", "vertical": "plumber"}, role="work", direction=None)
+    assert "copper pipework" in work
 
     directed = DemoMediaService._prompt(
         {"primary_type": "plumber", "vertical": "plumber"}, role="hero", direction="water heater in a garage",

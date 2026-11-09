@@ -16,7 +16,7 @@ from app.repositories.prospects import ProspectRepository
 from pipeline import verticals as vertical_config
 
 
-PROMPT_VERSION = "demo-media-v5"
+PROMPT_VERSION = "demo-media-v6"
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_IMAGE_WIDTH = 2000
 WEBP_QUALITY = 82
@@ -65,6 +65,25 @@ TRADE_SCENES = {
     "party_rentals": (
         "an elegant outdoor event set up with tables, chairs and string lights, ready for guests"
     ),
+}
+# The hero sits behind the headline (left) and a lead form (right), so it is a
+# calm architectural shot that sets the scene: a beautiful finished space with
+# the trade's work in it, no people or hands. Close-up craft goes in the work photo.
+HERO_TRADE_SCENES = {
+    "electrician": (
+        "a beautiful modern home at blue hour, warm interior and landscape lighting glowing, "
+        "an EV charger neatly mounted in the open, tidy garage"
+    ),
+    "plumber": "a bright, newly finished modern kitchen and open-plan living space with a polished chrome faucet",
+    "hvac": "a calm, comfortable modern living room in soft daylight, with a sleek wall-mounted mini-split unit",
+    "roofing": "a beautiful home with a crisp new roof, photographed from the street at golden hour",
+    "restoration": "a bright, freshly restored home interior with new floors and clean walls in soft daylight",
+    "landscaping": "a lush, freshly landscaped front yard and stone path leading to a welcoming home at golden hour",
+    "handyman": "a warm, well-kept modern home interior with freshly finished trim and paint in soft daylight",
+    "party_rentals": "an elegant outdoor event set up with tables, chairs and string lights at dusk, ready for guests",
+}
+HERO_NICHE_SCENES = {
+    "home_service": "a beautiful, well-kept modern home at golden hour with warm lights glowing inside",
 }
 VALID_ROLES = {"hero", "work", "secondary"}
 ROLE_ASPECT_RATIO = {
@@ -215,24 +234,36 @@ class DemoMediaService:
         scene = TRADE_SCENES.get(trade) or NICHE_SCENES.get(
             profile, NICHE_SCENES["generic_local_business"]
         ).format(category=category)
+        hero_scene = (
+            HERO_TRADE_SCENES.get(trade)
+            or HERO_NICHE_SCENES.get(profile)
+            or NICHE_SCENES.get(profile, NICHE_SCENES["generic_local_business"]).format(category=category)
+        )
         role_direction = {
             "hero": (
-                f"Wide cinematic hero photograph of {scene}, main subject in the right two-thirds "
-                "of the frame, golden-hour light, real depth with a clear foreground and background."
+                f"Wide architectural photograph of {hero_scene}. Balanced composition with detail spread "
+                "across the frame, because website text covers the left side and a form covers the right. "
+                "Real depth, inviting light."
             ),
             "work": f"Close, detailed photograph showing the craft of {scene}, shallow depth of field.",
             "secondary": f"Wide photograph of {scene}, from a different angle than a typical hero shot.",
         }[role]
+        people_rule = (
+            "Show no people at all: no faces, bodies, arms or hands. "
+            if role == "hero" else
+            "Show no people: no faces, heads or bodies. At most a gloved hand may enter the edge of the frame. "
+        )
         place = f" Fits the look of {location}." if location else ""
         optional = (
-            f" Art direction, which takes priority over the scene described above: {direction.strip()}"
+            f" Art direction, which takes priority over the scene described above: {direction.strip()}. "
+            "If it mentions a person or a worker, show the place and the finished work instead, never the person."
             if direction and direction.strip() else ""
         )
         return (
-            f"Create a photorealistic website photograph for a {category}.{place} {role_direction} "
+            f"Create a photorealistic website photograph for {'an' if category[:1].lower() in 'aeiou' else 'a'} "
+            f"{category}.{place} {role_direction} "
             "Do not place any business name, logo, signage, text, phone number, badge, license "
-            "number, watermark, or branded vehicle graphics in the image. Show no people: no faces, "
-            "heads or bodies. At most a gloved hand may enter the edge of the frame. "
+            f"number, watermark, or branded vehicle graphics in the image. {people_rule}"
             "One single continuous photograph from one camera position: never a collage, diptych, "
             "split screen, grid, inset or before-and-after. "
             "Premium editorial commercial photography, shot on a full-frame camera with a 35mm lens, "
