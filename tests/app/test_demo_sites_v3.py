@@ -172,7 +172,11 @@ def test_stars_match_the_real_rating_and_copy_fits_the_niche():
 def test_demo_options_prefill_services_and_areas():
     service = DemoSiteService(LowRatedMedSpaRepository(), FakeDemoRepository())
     defaults = service.options_for_prospect("spa-place")["defaults"]
-    assert defaults["services"] == ["Botox", "Dermal Fillers", "HydraFacial"]
+    # Their own three first, then the med spa core offerings not already listed.
+    assert defaults["services"] == [
+        "Botox", "Dermal Fillers", "HydraFacial",
+        "Laser Hair Removal", "Chemical Peels", "Microneedling",
+    ]
     assert defaults["service_areas"] == ["Scottsdale"]
 
 

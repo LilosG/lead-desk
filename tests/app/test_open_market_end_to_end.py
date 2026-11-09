@@ -203,8 +203,11 @@ def test_demo_defaults_are_prefilled_for_one_click_mockups(client, seeded_run):
     response = client.get("/api/demo-sites/prospects/e2e-target/options")
     assert response.status_code == 200, response.text
     defaults = response.json()["defaults"]
-    assert defaults["services"] == ["Dental Implants", "Invisalign", "Teeth Whitening"]
-    assert defaults["service_areas"] == ["Austin"]
+    # The dentist's own services first, then core dental services to fill six cards.
+    assert defaults["services"][:3] == ["Dental Implants", "Invisalign", "Teeth Whitening"]
+    assert len(defaults["services"]) == 6
+    assert "General Dentistry" in defaults["services"]
+    assert defaults["service_areas"][0] == "Austin"
 
 
 def test_set_website_by_hand_rescores_and_audits_the_site(client, seeded_run, monkeypatch):

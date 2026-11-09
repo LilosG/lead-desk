@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from app.repositories.demo_sites import DemoSiteRepository
 from app.repositories.prospects import ProspectRepository
 from app.services import audit_benchmarks
+from app.services.demo_autofill import MAX_AREAS, MAX_SERVICES, suggested_areas, suggested_services
 from app.services.demo_site_renderer import palette_for, render_demo_site, template_options
 from app.services.demo_site_renderer_v3 import V3_TEMPLATE_OPTION, niche_copy, render_demo_site_v3
 from pipeline import verticals as vertical_config
@@ -64,9 +65,14 @@ def _market_city(market: str | None) -> str | None:
     return first or None
 
 
-def _auto_services(audit: dict[str, Any] | None) -> list[str]:
+def _site_services(audit: dict[str, Any] | None) -> list[str]:
     """Offering names read from the prospect's own site navigation."""
-    return _normalize_list(audit_benchmarks.offering_titles(audit or {}), max_items=6)
+    return _normalize_list(audit_benchmarks.offering_titles(audit or {}), max_items=MAX_SERVICES)
+
+
+def _auto_services(prospect: dict[str, Any], audit: dict[str, Any] | None) -> list[str]:
+    """Their own services first, topped up with the niche's core offerings."""
+    return suggested_services(_site_services(audit), prospect.get("vertical"))
 
 
 def _review_month(published: Any) -> str | None:
@@ -99,9 +105,9 @@ def showcase_reviews(reviews: list[dict[str, Any]], limit: int = 3) -> list[dict
     return [{k: v for k, v in r.items() if k != "published"} for r in usable[:limit]]
 
 
-def _auto_areas(prospect: dict[str, Any]) -> list[str]:
+def _own_areas(prospect: dict[str, Any]) -> list[str]:
     areas = [prospect.get("city"), _market_city(prospect.get("market"))]
-    return _normalize_list([a for a in areas if a], max_items=8)
+    return _normalize_list([a for a in areas if a], max_items=MAX_AREAS)
 
 
 def _template_options() -> list[dict[str, str]]:
@@ -153,8 +159,8 @@ class DemoSiteService:
                 "subheadline": _default_subheadline(prospect, city),
                 # Pre-filled from the prospect's own site and market so a demo
                 # can be generated in one click; still editable before saving.
-                "services": _auto_services(audit),
-                "service_areas": _auto_areas(prospect),
+                "services": _auto_services(prospect, audit),
+                "service_areas": self._auto_areas(prospect),
                 "hero_image_url": None,
                 "work_image_url": None,
                 "secondary_image_url": None,
@@ -169,6 +175,19 @@ class DemoSiteService:
             return lookup(place_id)
         except Exception:
             return []
+
+    def _auto_areas(self, prospect: dict[str, Any]) -> list[str]:
+        """Their own town, then nearby towns from businesses already swept."""
+        own = _own_areas(prospect)
+        lookup = getattr(self.prospect_repository, "nearby_towns", None)
+        lat, lng = prospect.get("lat"), prospect.get("lng")
+        nearby: list[str] = []
+        if lookup is not None and lat is not None and lng is not None:
+            try:
+                nearby = lookup(float(lat), float(lng), exclude=own, limit=MAX_AREAS)
+            except Exception:
+                nearby = []
+        return suggested_areas(own, nearby)
 
     def _website_audit(self, place_id: str) -> dict[str, Any] | None:
         lookup = getattr(self.prospect_repository, "get_website_audit", None)
@@ -204,9 +223,9 @@ class DemoSiteService:
         normalized_services = _normalize_list(services, max_items=6)
         normalized_areas = _normalize_list(service_areas, max_items=8)
         if not normalized_services:
-            normalized_services = _auto_services(self._website_audit(place_id))
+            normalized_services = _auto_services(prospect, self._website_audit(place_id))
         if not normalized_areas:
-            normalized_areas = _auto_areas(prospect)
+            normalized_areas = self._auto_areas(prospect)
 
         source_snapshot = {
             "place_id": place_id,
