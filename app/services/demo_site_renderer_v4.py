@@ -179,6 +179,17 @@ def _area_line(index: int, town: str, services: list[str], audience: str, catego
     return lines[index % len(lines)]
 
 
+def _featured_review(cards: list[dict[str, str]]) -> dict[str, str]:
+    """The review that reads best as a big pull quote: a full thought that fits, not shouting."""
+    def score(card: dict[str, str]) -> float:
+        text = card["text"]
+        letters = [ch for ch in text if ch.isalpha()]
+        caps = sum(ch.isupper() for ch in letters) / max(1, len(letters))
+        fits = len(_quote_excerpt(text)) == len(text)
+        return abs(min(len(text), 400) - 220) + (0 if fits else 60) + (150 if caps > 0.2 else 0)
+    return min(cards, key=score)
+
+
 def _excerpt(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
@@ -391,7 +402,8 @@ def render_demo_site_v4(*, source: dict[str, Any], content: dict[str, Any], bran
     # --- reviews --------------------------------------------------------------
     reviews_section = ""
     if review_cards and has_rating:
-        feature, rest = review_cards[0], review_cards[1:3]
+        feature = _featured_review(review_cards)
+        rest = [card for card in review_cards if card is not feature][:2]
 
         def who(card: dict[str, str]) -> str:
             avatar = f'<img src="{_safe(card["photo"])}" alt="" loading="lazy" referrerpolicy="no-referrer" />' if card["photo"] else ""
