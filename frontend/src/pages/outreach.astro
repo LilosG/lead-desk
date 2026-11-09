@@ -215,6 +215,8 @@ const stages = [
       lead_note: string | null;
       follow_up_due: boolean;
       next_step: string;
+      has_audit?: boolean;
+      mockup_status?: 'published' | 'ready' | null;
     };
 
     type Campaign = {
@@ -418,6 +420,15 @@ const stages = [
       return '';
     }
 
+    function assetBadges(row: Row): string {
+      const badge = (text: string, tone: string) => `<span class="rounded-full px-2 py-0.5 text-[10px] font-medium ${tone}">${text}</span>`;
+      const parts: string[] = [];
+      if (row.has_audit) parts.push(badge('Audit ✓', 'bg-emerald-50 text-emerald-800'));
+      if (row.mockup_status === 'published') parts.push(badge('Mockup live ✓', 'bg-sky-50 text-sky-800'));
+      else if (row.mockup_status === 'ready') parts.push(badge('Mockup not published', 'bg-amber-50 text-amber-800'));
+      return parts.length ? `<div class="mt-1.5 flex flex-wrap gap-1">${parts.join('')}</div>` : '';
+    }
+
     function renderRows() {
       const body = el('#rows');
       body.innerHTML = rows.map((row) => `
@@ -425,7 +436,7 @@ const stages = [
           <td class="px-4 py-3"><input type="checkbox" data-select="${esc(rowKey(row))}" aria-label="Select ${esc(row.name)}" ${selected.has(rowKey(row)) ? 'checked' : ''} /></td>
           <td class="max-w-xs px-3 py-3">
             <a href="/prospects/${encodeURIComponent(row.place_id)}" class="font-medium hover:underline">${esc(row.name)}</a>
-            <div class="mt-0.5 text-xs text-[var(--muted)]">${esc([row.city, row.vertical?.replaceAll('_', ' ')].filter(Boolean).join(' · '))}</div>
+            <div class="mt-0.5 text-xs text-[var(--muted)]">${esc([row.city, row.vertical?.replaceAll('_', ' ')].filter(Boolean).join(' · '))}</div>${assetBadges(row)}
           </td>
           <td class="px-3 py-3 text-xs">${esc(row.email || row.phone || '—')}</td>
           <td class="whitespace-nowrap px-3 py-3 text-xs">${currentCampaign()?.uses_audit ? `<span class="font-semibold">${esc(row.tier ?? '—')}</span> · ${esc(row.total_score ?? '—')}` : esc(row.lead_note ?? '—')}</td>

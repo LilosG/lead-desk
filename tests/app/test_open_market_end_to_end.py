@@ -350,3 +350,18 @@ def test_premium_v4_demo_builds_through_the_api(client, seeded_run, monkeypatch,
         assert "Dental Implants" in preview.text
     finally:
         get_settings.cache_clear()
+
+
+def test_outreach_shows_which_leads_already_have_an_audit_or_mockup(client, seeded_run):
+    """Built assets show on the Outreach list, and those leads sort to the top of To prep."""
+    board = client.get("/api/outreach/board?stage=to_prep&page_size=100").json()
+    rows = {row["place_id"]: row for row in board["items"]}
+    if "e2e-target" not in rows:
+        import pytest
+        pytest.skip("e2e target is not in To prep for this campaign")
+    target = rows["e2e-target"]
+    assert target["has_audit"] is True
+    assert target["mockup_status"] in {"ready", "published"}
+    assert target["next_step"] == "Audit ready. Draft the email"
+    started = [row["has_audit"] or row["mockup_status"] is not None for row in board["items"]]
+    assert started == sorted(started, reverse=True)

@@ -92,7 +92,9 @@ _BOARD_CTE = """
             {ev_eligible} as ev_eligible,
             coalesce(fu.drafted, 0) as follow_ups_drafted,
             coalesce(fu.open, false) as follow_up_open,
-            coalesce(fu.last_sent, q.contacted_at) as last_touch_at
+            coalesce(fu.last_sent, q.contacted_at) as last_touch_at,
+            {has_audit_q} as has_audit,
+            {mockup_q} as mockup_status
         from outreach_queue q
         join v_outreach_stage vs on vs.id = q.id
         join businesses b on b.place_id = q.place_id
@@ -149,7 +151,9 @@ _BOARD_CTE = """
             {ev_eligible},
             0,
             false,
-            null::timestamptz
+            null::timestamptz,
+            {has_audit_w},
+            {mockup_w}
         from v_lead_worklist w
         join businesses b on b.place_id = w.place_id
         left join v_lead_findings f on f.place_id = w.place_id
@@ -178,9 +182,25 @@ _BOARD_CTE = """
 """
 
 
+def _has_audit(place: str) -> str:
+    return (f"exists (select 1 from prospect_audit_reports ar "
+            f"where ar.place_id = {place} and ar.status = 'generated')")
+
+
+def _mockup(place: str) -> str:
+    """'published', 'ready' (built, not yet published) or null."""
+    return (f"(select case when bool_or(ds.status = 'published') then 'published' else 'ready' end "
+            f"from prospect_demo_sites ds where ds.place_id = {place} "
+            f"and ds.status in ('published', 'ready_for_review'))")
+
+
 def board_cte(campaign: str) -> str:
     return (
         _BOARD_CTE
+        .replace("{has_audit_q}", _has_audit("q.place_id"))
+        .replace("{mockup_q}", _mockup("q.place_id"))
+        .replace("{has_audit_w}", _has_audit("w.place_id"))
+        .replace("{mockup_w}", _mockup("w.place_id"))
         .replace("{queue_cooldown}", cooldown_join("q.place_id", "%(campaign)s"))
         .replace("{candidate_cooldown}", cooldown_join("w.place_id", "%(campaign)s"))
         .replace("{lead_rule}", _LEAD_RULES.get(campaign, ""))
@@ -271,6 +291,9 @@ class OutreachBoardRepository:
             campaign=campaign, q=q, vertical=vertical, market=market, qualified_only=qualified_only,
         )
         order = _ORDER_BY.get(stage, default_order(campaign))
+        if stage == "to_prep":
+            # Leads you've already started (audit built or mockup made) come first.
+            order = f"case when has_audit or mockup_status is not null then 0 else 1 end, {order}"
         cte = board_cte(campaign)
         rows_query = f"""
             {cte}

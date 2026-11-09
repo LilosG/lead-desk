@@ -100,3 +100,8 @@ def test_gmail_is_blocked_when_a_draft_has_no_audit_behind_it():
     item = ready_item(claim_signal="no_localbusiness_schema")
     assert "Regenerate draft" in gmail_block_reason(item, gmail_connected=True)
     assert gmail_block_reason(ready_item(claim_signal="audit_report"), gmail_connected=True) is None
+
+
+def test_to_prep_says_when_the_audit_is_already_built():
+    assert next_step({"stage": "to_prep", "has_audit": True}) == "Audit ready. Draft the email"
+    assert next_step({"stage": "to_prep"}) == "Build the audit and draft the email"
