@@ -42,6 +42,16 @@ const { place_id } = Astro.params;
               <span>Use their logo and brand colour from their current website when it has them. Falls back to the niche colours.</span>
             </label>
           </div>
+          <div id="ai-copy-row" class="hidden rounded-md border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <label class="flex items-start gap-2 text-xs leading-5">
+                <input id="use-ai-copy" type="checkbox" checked class="mt-0.5" />
+                <span>Write the headline, intro, about and service lines with AI from their listing, reviews and site. Under 1 cent. Anything that makes an unbacked claim is dropped.</span>
+              </label>
+              <button id="write-copy" type="button" class="rounded-md border border-[var(--line)] bg-white px-3 py-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40">Write copy now</button>
+            </div>
+            <div id="copy-status" class="mt-2 hidden text-[11px] leading-4 text-[var(--muted)]"></div>
+          </div>
           <div>
             <label for="headline" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Hero headline</label>
             <input id="headline" maxlength="120" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm" />
@@ -49,6 +59,10 @@ const { place_id } = Astro.params;
           <div>
             <label for="subheadline" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">Hero supporting copy</label>
             <textarea id="subheadline" maxlength="280" rows="3" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
+          </div>
+          <div id="about-row">
+            <label for="about" class="mb-1.5 block text-xs font-medium text-[var(--muted)]">About paragraph</label>
+            <textarea id="about" maxlength="600" rows="3" placeholder="Leave blank for the standard wording" class="w-full rounded-md border border-[var(--line)] px-3 py-2 text-sm"></textarea>
           </div>
           <div class="grid gap-5 sm:grid-cols-2">
             <div>
@@ -110,7 +124,7 @@ const { place_id } = Astro.params;
   <script>
     type TemplateOption = { key: string; name: string; description: string };
     type DemoSummary = { id: string; status: string; template_key: string; public_url: string | null; created_at: string };
-    type DemoOptions = { business_name: string; templates: TemplateOption[]; defaults: { headline: string; subheadline: string; services: string[]; service_areas: string[]; hero_image_url?: string | null; work_image_url?: string | null; secondary_image_url?: string | null } };
+    type DemoOptions = { business_name: string; ai_copy_available?: boolean; templates: TemplateOption[]; defaults: { headline: string; subheadline: string; services: string[]; service_areas: string[]; hero_image_url?: string | null; work_image_url?: string | null; secondary_image_url?: string | null } };
 
     const required = <T extends HTMLElement>(selector: string): T => { const element = document.querySelector<T>(selector); if (!element) throw new Error(`Missing required element: ${selector}`); return element; };
     const escapeHtml = (value: unknown): string => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
@@ -228,6 +242,55 @@ const { place_id } = Astro.params;
     heroButton.addEventListener('click', () => runGeneration(['hero'], heroButton, 'Generating, about 20 seconds…', 'Another hero'));
     generateSet.addEventListener('click', () => runGeneration(['hero', 'work', 'secondary'], generateSet, 'Generating 3 photos, about 30 seconds…', 'Generate another set'));
 
+    const aboutField = required<HTMLTextAreaElement>('#about');
+    const aboutRow = required('#about-row');
+    const aiCopyRow = required('#ai-copy-row');
+    const useAiCopy = required<HTMLInputElement>('#use-ai-copy');
+    const writeCopyButton = required<HTMLButtonElement>('#write-copy');
+    const copyStatus = required('#copy-status');
+    type DemoCopy = { headline?: string | null; subheadline?: string | null; about?: string | null; service_blurbs?: Record<string, string> };
+    let serviceBlurbs: Record<string, string> = {};
+    let copyWritten = false;
+    let copyEdited = false;
+    [headline, subheadline, aboutField].forEach((field) => field.addEventListener('input', () => { copyEdited = true; }));
+
+    function showCopyStatus(text: string, isError = false): void {
+      copyStatus.textContent = text;
+      copyStatus.classList.toggle('text-red-700', isError);
+      copyStatus.classList.remove('hidden');
+    }
+
+    async function writeCopy(): Promise<void> {
+      writeCopyButton.disabled = true;
+      writeCopyButton.textContent = 'Writing…';
+      try {
+        const response = await fetch(`/api/demo-sites/prospects/${encodeURIComponent(placeId)}/copy`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ services: items(services.value).slice(0, 6), service_areas: items(serviceAreas.value).slice(0, 8) }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
+        const copy = body as DemoCopy;
+        if (copy.headline) headline.value = copy.headline;
+        if (copy.subheadline) subheadline.value = copy.subheadline;
+        if (copy.about) aboutField.value = copy.about;
+        serviceBlurbs = copy.service_blurbs ?? {};
+        copyWritten = true;
+        copyEdited = false;
+        const blurbCount = Object.keys(serviceBlurbs).length;
+        showCopyStatus(`AI copy filled in${blurbCount ? `, with ${blurbCount} service line${blurbCount === 1 ? '' : 's'}` : ''}. Edit anything before generating.`);
+      } catch (error) {
+        showCopyStatus(`AI copy skipped, using the standard wording. ${error instanceof Error ? error.message : ''}`, true);
+      } finally {
+        writeCopyButton.disabled = false;
+        writeCopyButton.textContent = 'Rewrite copy';
+      }
+    }
+
+    writeCopyButton.addEventListener('click', () => { void writeCopy(); });
+    let aiCopyAvailable = false;
+
     let templates: TemplateOption[] = [];
     let currentDemoId: string | null = null;
     let currentPublicUrl: string | null = null;
@@ -254,7 +317,10 @@ const { place_id } = Astro.params;
     const brandingRow = required('#branding-row');
     const updateTemplateDescription = (): void => {
       templateDescription.textContent = templates.find((item) => item.key === templateSelect.value)?.description ?? '';
-      brandingRow.classList.toggle('hidden', !templateSelect.value.startsWith('premium-v4'));
+      const isV4 = templateSelect.value.startsWith('premium-v4');
+      brandingRow.classList.toggle('hidden', !isV4);
+      aboutRow.classList.toggle('hidden', !isV4);
+      aiCopyRow.classList.toggle('hidden', !isV4 || !aiCopyAvailable);
     };
 
     async function loadOptions(): Promise<void> {
@@ -263,6 +329,7 @@ const { place_id } = Astro.params;
       if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
       const options = body as DemoOptions;
       businessName.textContent = options.business_name;
+      aiCopyAvailable = Boolean(options.ai_copy_available);
       templates = options.templates;
       templateSelect.innerHTML = templates.map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.name)}</option>`).join('');
       headline.value = options.defaults.headline ?? '';
@@ -280,7 +347,9 @@ const { place_id } = Astro.params;
     form.addEventListener('submit', async (event) => {
       event.preventDefault(); builderError.classList.add('hidden'); reviewPanel.classList.add('hidden'); publishSuccess.classList.add('hidden'); generateButton.disabled = true;
       try {
-        const response = await fetch(`/api/demo-sites/prospects/${encodeURIComponent(placeId)}`, { method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ template_key: templateSelect.value, headline: headline.value.trim() || null, subheadline: subheadline.value.trim() || null, services: items(services.value).slice(0, 6), service_areas: items(serviceAreas.value).slice(0, 8), hero_image_url: heroImageUrl.value.trim() || null, work_image_url: workImageUrl.value.trim() || null, secondary_image_url: secondaryImageUrl.value.trim() || null, use_site_branding: useSiteBranding.checked }) });
+        const isV4 = templateSelect.value.startsWith('premium-v4');
+        if (isV4 && aiCopyAvailable && useAiCopy.checked && !copyWritten && !copyEdited) await writeCopy();
+        const response = await fetch(`/api/demo-sites/prospects/${encodeURIComponent(placeId)}`, { method: 'POST', headers: { 'content-type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ template_key: templateSelect.value, headline: headline.value.trim() || null, subheadline: subheadline.value.trim() || null, services: items(services.value).slice(0, 6), service_areas: items(serviceAreas.value).slice(0, 8), hero_image_url: heroImageUrl.value.trim() || null, work_image_url: workImageUrl.value.trim() || null, secondary_image_url: secondaryImageUrl.value.trim() || null, use_site_branding: useSiteBranding.checked, about: templateSelect.value.startsWith('premium-v4') ? (aboutField.value.trim() || null) : null, service_blurbs: templateSelect.value.startsWith('premium-v4') ? serviceBlurbs : {} }) });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(body.detail || `API returned ${response.status}`);
         currentDemoId = body.id; currentPublicUrl = null; previewDemo.href = `/api/demo-sites/${encodeURIComponent(body.id)}/preview`; publishButton.disabled = false; publishButton.textContent = 'Approve & publish'; reviewPanel.classList.remove('hidden'); await loadExistingDemos(); reviewPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });

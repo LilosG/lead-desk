@@ -12,6 +12,7 @@ from app.services import audit_benchmarks
 from app.services.demo_autofill import MAX_AREAS, MAX_SERVICES, suggested_areas, suggested_services
 from app.services.demo_site_renderer import palette_for, render_demo_site, template_options
 from app.services.demo_brand import extract_brand
+from app.services.demo_copywriter import DemoCopyError, write_demo_copy
 from app.services.demo_design import palette_with_brand, style_for
 from app.services.demo_site_renderer_v3 import V3_TEMPLATE_OPTION, niche_copy, render_demo_site_v3
 from app.services.demo_site_renderer_v4 import V4_KEYS, V4_TEMPLATE_OPTIONS, render_demo_site_v4, style_override
@@ -243,6 +244,8 @@ class DemoSiteService:
         hero_image_url: str | None = None,
         work_image_url: str | None = None,
         secondary_image_url: str | None = None,
+        about: str | None = None,
+        service_blurbs: dict[str, str] | None = None,
         use_site_branding: bool = True,
         media_root: Path | None = None,
         media_base_url: str | None = None,
@@ -288,6 +291,12 @@ class DemoSiteService:
             "hero_image_url": _normalize_media_url(hero_image_url),
             "work_image_url": _normalize_media_url(work_image_url),
             "secondary_image_url": _normalize_media_url(secondary_image_url),
+            "about": (about or "").strip() or None,
+            "service_blurbs": {
+                name: " ".join(str(text).split())
+                for name, text in (service_blurbs or {}).items()
+                if name in normalized_services and str(text).strip()
+            },
         }
         brand_snapshot = {
             "template_key": template_key,
@@ -337,6 +346,41 @@ class DemoSiteService:
             brand_snapshot=brand_snapshot,
             html_document=html_document,
         )
+
+    def write_copy(
+        self,
+        place_id: str,
+        *,
+        services: list[str],
+        service_areas: list[str],
+        api_key: str,
+        model: str,
+    ) -> dict[str, Any]:
+        """Suggested headline, intro, about and service lines; nothing is saved."""
+        prospect = self.prospect_repository.get_prospect(place_id)
+        if prospect is None:
+            raise DemoSiteError("prospect not found")
+        audit = self._website_audit(place_id)
+        normalized_services = _normalize_list(services, max_items=MAX_SERVICES) or _auto_services(prospect, audit)
+        normalized_areas = _normalize_list(service_areas, max_items=MAX_AREAS) or self._auto_areas(prospect)
+        profile = vertical_config.vertical_profile(prospect.get("vertical") or "")
+        reviews = showcase_reviews(self._google_reviews(place_id), limit=3)
+        facts = {
+            "name": prospect.get("name") or "Business",
+            "category": _display_type(prospect.get("primary_type")),
+            "city": prospect.get("city") or (normalized_areas[0] if normalized_areas else ""),
+            "areas": normalized_areas,
+            "services": normalized_services,
+            "audience": niche_copy(profile)["audience"],
+            "rating": float(prospect["rating"]) if prospect.get("rating") is not None else None,
+            "review_count": int(prospect["review_count"]) if prospect.get("review_count") is not None else None,
+            "review_texts": [r["text"] for r in reviews],
+            "site_summary": (audit or {}).get("meta_description") or (audit or {}).get("h1_text"),
+        }
+        try:
+            return write_demo_copy(facts, api_key=api_key, model=model)
+        except DemoCopyError as exc:
+            raise DemoSiteError(f"couldn't write copy: {exc}") from exc
 
     def get_demo(self, demo_id: str) -> dict[str, Any] | None:
         return self.demo_repository.get_demo(demo_id)
