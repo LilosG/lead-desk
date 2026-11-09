@@ -102,6 +102,7 @@ def generate_prospect_demo_media(
     status_code=201,
 )
 def create_demo_site(place_id: str, payload: DemoSiteCreateRequest) -> dict:
+    settings = get_settings()
     try:
         return get_service().create_demo(
             place_id,
@@ -113,6 +114,9 @@ def create_demo_site(place_id: str, payload: DemoSiteCreateRequest) -> dict:
             hero_image_url=payload.hero_image_url,
             work_image_url=payload.work_image_url,
             secondary_image_url=payload.secondary_image_url,
+            use_site_branding=payload.use_site_branding,
+            media_root=Path(settings.demo_site_root),
+            media_base_url=settings.demo_site_base_url,
         )
     except DemoSiteError as exc:
         message = str(exc)

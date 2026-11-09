@@ -274,6 +274,18 @@ class ProspectRepository:
                 row = cur.fetchone()
         return (row or {}).get("reviews") or []
 
+    def get_demo_details(self, place_id: str) -> dict[str, Any] | None:
+        """Listing details a demo page can show: opening hours and street address."""
+        query = """
+            select hours_json, street, formatted_address, postal_code
+            from businesses
+            where place_id = %s
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (place_id,))
+                return cur.fetchone()
+
     def nearby_towns(
         self,
         lat: float,
