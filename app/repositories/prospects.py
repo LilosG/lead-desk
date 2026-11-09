@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 from psycopg import sql
@@ -272,6 +273,53 @@ class ProspectRepository:
                 cur.execute(query, (place_id,))
                 row = cur.fetchone()
         return (row or {}).get("reviews") or []
+
+    def nearby_towns(
+        self,
+        lat: float,
+        lng: float,
+        *,
+        exclude: list[str] | None = None,
+        radius_km: float = 30.0,
+        limit: int = 8,
+    ) -> list[str]:
+        """Towns of businesses already swept near a point, nearest first.
+
+        Reads only our own table: no Google calls. A bounding box keeps the
+        scan small before the exact distance is computed.
+        """
+        lat_pad = radius_km / 110.574
+        lng_pad = radius_km / max(1.0, 111.320 * abs(math.cos(math.radians(lat))))
+        query = """
+            select city, min(dist_km) as dist_km
+            from (
+                select initcap(trim(city)) as city,
+                       6371 * 2 * asin(sqrt(
+                           power(sin(radians(lat - %(lat)s) / 2), 2)
+                           + cos(radians(%(lat)s)) * cos(radians(lat))
+                             * power(sin(radians(lng - %(lng)s) / 2), 2)
+                       )) as dist_km
+                from businesses
+                where lat between %(lat_lo)s and %(lat_hi)s
+                  and lng between %(lng_lo)s and %(lng_hi)s
+                  and coalesce(trim(city), '') <> ''
+            ) nearby
+            where dist_km <= %(radius)s
+              and lower(city) <> all(%(exclude)s)
+            group by city
+            order by min(dist_km)
+            limit %(limit)s
+        """
+        params = {
+            "lat": lat, "lng": lng, "radius": radius_km, "limit": limit,
+            "lat_lo": lat - lat_pad, "lat_hi": lat + lat_pad,
+            "lng_lo": lng - lng_pad, "lng_hi": lng + lng_pad,
+            "exclude": [str(x).strip().lower() for x in (exclude or []) if x],
+        }
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                return [row["city"] for row in cur.fetchall()]
 
     def get_website_audit(self, place_id: str) -> dict[str, Any] | None:
         query = """
