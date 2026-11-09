@@ -27,19 +27,35 @@ BANNED = re.compile(
     re.I,
 )
 
-SYSTEM_PROMPT = """You write homepage copy for a concept website of a real local business.
-Write in the third person about the business by name. Do not write as the business ("we", "our", "us").
-Use ONLY the facts provided. Never state or imply: licences, insurance, certifications, years in
-business, founding dates, family ownership, awards, rankings, "best", guarantees, warranties, prices,
-discounts, free offers, speed, response times, 24/7 or same-day availability, or customer counts.
-The only numbers you may use are the Google rating and review count given.
-Plain, warm, specific language. No exclamation marks, no clichés like "look no further".
+SYSTEM_PROMPT = """You are a senior conversion copywriter writing the homepage for a premium concept website
+of a real local business. The copy should read like a polished agency site, not a directory listing.
+
+Voice: confident, specific, warm. Short sentences. Concrete words about the work and the outcome the
+customer wants (a safe panel, a charger that works, a smile they like). No filler, no clichés
+("look no further", "one-stop shop", "your needs", "top-notch", "second to none"), no exclamation marks.
+
+Facts: use ONLY the facts provided. Write in the third person about the business by name, never as the
+business ("we", "our", "us"). Never state or imply licences, insurance, certifications, years in business,
+founding dates, family ownership, awards, rankings, "best", guarantees, warranties, prices, discounts,
+free offers, speed, response times, 24/7 or same-day availability, or customer counts. The only numbers
+allowed are the Google rating and review count given.
+
+Headlines: write 3 different options. Each one is a benefit-led line about the work and the place,
+4 to 9 words, at most 60 characters. Do NOT put the business name in a headline, and never write a label
+like "Name – City", "Category in City" or "City Category Services".
+Good patterns (adapt, don't copy):
+  "Electrical work done right in Fresno homes"
+  "Panel upgrades and EV chargers for Fresno homes"
+  "Fresno's 4.8-star choice for home electrical"
+  "Calm, modern dental care in Austin"
+  "Skin treatments that look like you, only rested"
+
 Return JSON only, with exactly these keys:
-{"headline": "...", "subheadline": "...", "about": "...", "service_blurbs": {"<service name exactly as given>": "..."}}
-headline: at most 60 characters, names the city or the main service.
-subheadline: one or two sentences, at most 180 characters.
-about: two or three sentences, at most 420 characters, drawing on what the reviews praise.
-service_blurbs: one line per service, at most 120 characters, describing the job and why someone needs it."""
+{"headlines": ["...", "...", "..."], "subheadline": "...", "about": "...",
+ "service_blurbs": {"<service name exactly as given>": "..."}}
+subheadline: one or two sentences, at most 180 characters. Names the business, the main services and the area.
+about: two or three sentences, at most 420 characters. Draw on what the reviews actually praise.
+service_blurbs: one line per service, at most 120 characters: the problem it solves or what the customer gets."""
 
 Post = Callable[..., Any]
 
@@ -108,6 +124,30 @@ def _clean(value: Any, limit: int, allowed_numbers: set[str]) -> str | None:
     return text
 
 
+_NAME_SUFFIXES = {"inc", "llc", "co", "corp", "corporation", "company", "ltd", "the", "and", "pllc", "pc", "pa"}
+
+
+def _strong_headline(text: str, facts: dict[str, Any]) -> bool:
+    """Reject directory-style labels: the business name, "X – City", or too few words."""
+    lowered = text.lower()
+    words = re.findall(r"[a-z0-9']+", lowered)
+    if len(words) < 4:
+        return False
+    if re.search(r"\s[–—|-]\s|\s[|]|:\s*$", text):
+        return False
+    places = {w for place in [facts.get("city"), *(facts.get("areas") or [])]
+              for w in re.findall(r"[a-z0-9']+", str(place or "").lower())}
+    category = set(re.findall(r"[a-z]+", str(facts.get("category") or "").lower()))
+    name_tokens = [
+        t for t in re.findall(r"[a-z0-9']+", str(facts.get("name") or "").lower())
+        if t not in _NAME_SUFFIXES and t not in places and t not in category and len(t) >= 3
+    ]
+    # The business's own distinctive name word ("Ernco") doesn't belong in the headline.
+    if name_tokens and name_tokens[0] in words:
+        return False
+    return True
+
+
 def checked_copy(data: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
     """Only the fields that pass every check; anything else falls back to standard wording."""
     # Numbers that are part of a real name ("Route 66 Electric") are fine too.
@@ -120,7 +160,13 @@ def checked_copy(data: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
         count = int(facts["review_count"])
         allowed |= {str(count), f"{count:,}"}
     result: dict[str, Any] = {}
-    for key in ("headline", "subheadline", "about"):
+    candidates = data.get("headlines") if isinstance(data.get("headlines"), list) else []
+    for candidate in [*candidates, data.get("headline")]:
+        text = _clean(candidate, LIMITS["headline"], allowed)
+        if text and _strong_headline(text, facts):
+            result["headline"] = text
+            break
+    for key in ("subheadline", "about"):
         text = _clean(data.get(key), LIMITS[key], allowed)
         if text:
             result[key] = text
