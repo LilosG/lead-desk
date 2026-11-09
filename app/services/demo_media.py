@@ -16,7 +16,7 @@ from app.repositories.prospects import ProspectRepository
 from pipeline import verticals as vertical_config
 
 
-PROMPT_VERSION = "demo-media-v4"
+PROMPT_VERSION = "demo-media-v5"
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_IMAGE_WIDTH = 2000
 WEBP_QUALITY = 82
@@ -231,8 +231,10 @@ class DemoMediaService:
         return (
             f"Create a photorealistic website photograph for a {category}.{place} {role_direction} "
             "Do not place any business name, logo, signage, text, phone number, badge, license "
-            "number, watermark, or branded vehicle graphics in the image. Do not show identifiable "
-            "faces, and do not imply that any person shown is the real owner or an employee. "
+            "number, watermark, or branded vehicle graphics in the image. Show no people: no faces, "
+            "heads or bodies. At most a gloved hand may enter the edge of the frame. "
+            "One single continuous photograph from one camera position: never a collage, diptych, "
+            "split screen, grid, inset or before-and-after. "
             "Premium editorial commercial photography, shot on a full-frame camera with a 35mm lens, "
             "tack sharp, rich natural color, no stock-photo poses. The photograph fills the whole frame "
             "edge to edge: no black bars, borders, gradients, vignettes, panels or darkened areas, "

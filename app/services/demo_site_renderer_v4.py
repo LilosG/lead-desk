@@ -7,6 +7,7 @@ states licences, years in business, guarantees, prices or response times.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from html import escape
 from typing import Any
@@ -136,6 +137,48 @@ def _lower_phrase(text: str) -> str:
     )
 
 
+def _quote_excerpt(text: str, limit: int = 260, floor: int = 140) -> str:
+    """A review quote cut at a sentence end when one falls in a good range."""
+    if len(text) <= limit:
+        return text
+    window = text[:limit]
+    ends = [m.end() for m in re.finditer(r"[.!?](?=\s)", window) if m.end() >= floor]
+    if ends:
+        return window[:ends[-1]]
+    return _excerpt(text, limit)
+
+
+def _lead_form(form_id: str, *, title: str, button: str, services: list[str], unit: str, dark: bool = False) -> str:
+    """A concept enquiry form. It never sends anything; submitting shows a note instead."""
+    options = "".join(f"<option>{_safe(s)}</option>" for s in services[:6])
+    return (
+        f'<form class="lead-form{" on-dark" if dark else ""}" id="{form_id}" action="#" autocomplete="off">'
+        f'<h3>{_safe(title)}</h3><p class="form-sub">Leave your details and get a call back.</p>'
+        f'<label>Name<input name="name" type="text" required placeholder="Your name" /></label>'
+        f'<label>Phone<input name="phone" type="tel" required placeholder="(555) 555-5555" /></label>'
+        f'<label>{_safe(unit.capitalize())} needed<select name="service">{options}<option>Something else</option></select></label>'
+        f'<label>Details <span>(optional)</span><textarea name="details" rows="3" placeholder="A few words about what you need"></textarea></label>'
+        f'<button class="btn btn-accent" type="submit">{_safe(button)}</button>'
+        f'<p class="form-note" hidden>This is a concept website, so nothing was sent. On the live site, this request would go straight to the business.</p>'
+        f'</form>'
+    )
+
+
+def _area_line(index: int, town: str, services: list[str], audience: str, category: str) -> str:
+    """One line per town, rotating wording and services so the cards don't read as copies."""
+    picks = list(dict.fromkeys(services[(index + offset) % len(services)] for offset in range(min(2, len(services)))))
+    first = _lower_phrase(picks[0])
+    second = _lower_phrase(picks[1]) if len(picks) > 1 else None
+    if second is None:
+        return f"{first[:1].upper() + first[1:]} for {audience} in {town}."
+    lines = (
+        f"{first[:1].upper() + first[1:]} and {second} for {audience} in {town}.",
+        f"Help across {town}, from {first} to {second}.",
+        f"Serving {town} {audience} with {first}, {second} and more.",
+    )
+    return lines[index % len(lines)]
+
+
 def _excerpt(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
@@ -262,7 +305,9 @@ def render_demo_site_v4(*, source: dict[str, Any], content: dict[str, Any], bran
         hero = (
             f'<section class="hero hero-bold{" has-photo" if hero_image else ""}" id="top">{photo}'
             f'{header}<div class="wrap hero-inner"><div class="hero-copy">{eyebrow}<h1>{headline}</h1>'
-            f'<p class="lead">{subheadline}</p>{actions}</div></div></section>'
+            f'<p class="lead">{subheadline}</p>{actions}</div>'
+            f'<div class="hero-form">{_lead_form("hero-form", title=copy["cta"], button=copy["cta"], services=services, unit=unit)}</div>'
+            f'</div></section>'
         )
     else:
         if hero_image:
@@ -379,7 +424,7 @@ def render_demo_site_v4(*, source: dict[str, Any], content: dict[str, Any], bran
             f'<div><div class="kicker">Google reviews</div><h2>What {_safe(audience)} say.</h2></div>'
             f'<div class="score"><strong>{rating_text}</strong><span><span class="stars">{stars}</span>{reviews_text} Google reviews</span></div></div>'
             f'<div class="reviews{" solo" if not rest else ""}"><article class="card quote featured"><div class="stars">{star_string(int(feature["rating"]))}</div>'
-            f'<blockquote>“{_safe(_excerpt(feature["text"], 360))}”</blockquote>{who(feature)}</article>'
+            f'<blockquote>“{_safe(_quote_excerpt(feature["text"]))}”</blockquote>{who(feature)}</article>'
             f'{stack}</div>'
             f'<p class="after">{all_link}</p></div></section>'
         )
@@ -418,11 +463,32 @@ def render_demo_site_v4(*, source: dict[str, Any], content: dict[str, Any], bran
             f'<div class="map"><iframe title="Map to {name}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" '
             f'src="https://maps.google.com/maps?q={_safe(query)}&amp;z=13&amp;output=embed"></iframe></div>'
         )
-    areas_section = (
-        f'<section class="section alt" id="areas"><div class="wrap {"split" if map_markup else "areas-solo"}">'
-        f'<div><div class="kicker">Areas served</div><h2>Serving {city} and nearby communities.</h2>'
-        f'<p class="body">Not sure if you’re covered? Call and ask.</p><ul class="chips">{chips}</ul></div>{map_markup}</div></section>'
-    )
+    if len(areas) > 1:
+        area_cards = "".join(
+            f'<article class="area-card"><div class="area-top">{icon_svg("pin", size=18)}<h3>{_safe(category_raw)} in {_safe(town)}</h3></div>'
+            f'<p>{_safe(_area_line(index, town, services, audience, category_raw))}</p>'
+            f'<a class="more" href="{call_href}">Call about {_safe(town)} <span aria-hidden="true">→</span></a></article>'
+            for index, town in enumerate(areas[:6])
+        )
+        more = areas[6:8]
+        more_line = f'<p class="area-more">Also serving {_safe(_join(more, 2))}.</p>' if more else ""
+        area_title = (
+            f"Serving {_safe(', '.join(areas[:3]))} and nearby." if len(areas) > 3
+            else f"Serving {_safe(_join(areas, 3))}."
+        )
+        areas_section = (
+            f'<section class="section alt" id="areas"><div class="wrap"><div class="head"><div>'
+            f'<div class="kicker">Areas served</div><h2>{area_title}</h2></div>'
+            f'<p>{name} works with {_safe(audience)} across {_safe(_join(areas, 8))}. Not sure if you’re covered? Call and ask.</p></div>'
+            f'<div class="areas-layout{" with-map" if map_markup else ""}">{map_markup}'
+            f'<div class="area-grid">{area_cards}</div></div>{more_line}</div></section>'
+        )
+    else:
+        areas_section = (
+            f'<section class="section alt" id="areas"><div class="wrap {"split" if map_markup else "areas-solo"}">'
+            f'<div><div class="kicker">Areas served</div><h2>Serving {city} and nearby communities.</h2>'
+            f'<p class="body">Not sure if you’re covered? Call and ask.</p><ul class="chips">{chips}</ul></div>{map_markup}</div></section>'
+        )
 
     # --- faq ------------------------------------------------------------------
     faqs = [
@@ -446,6 +512,7 @@ def render_demo_site_v4(*, source: dict[str, Any], content: dict[str, Any], bran
         f'<div class="hours-card"><h3>{icon_svg("clock", size=20)}Hours</h3><ul>{hours_markup}</ul></div>'
         if hours else ""
     )
+    contact_form = _lead_form("contact-form", title=copy["cta"], button=copy["cta"], services=services, unit=unit)
     contact_details = []
     if phone:
         contact_details.append(f'<a class="contact-line" href="{call_href}">{icon_svg("phone", size=20)}<span>{phone}</span></a>')
@@ -456,9 +523,8 @@ def render_demo_site_v4(*, source: dict[str, Any], content: dict[str, Any], bran
     contact_section = (
         f'<section class="cta" id="contact"><div class="wrap cta-grid"><div><div class="kicker">Contact</div>'
         f'<h2>Ready when you are.</h2><p>Talk to {name} about your {_safe(engagement)}.</p>'
-        f'<div class="contact-lines">{"".join(contact_details)}</div>'
-        f'<a class="btn btn-accent btn-lg" href="{call_href}">{cta_label}</a></div>'
-        f'{hours_card}</div></section>'
+        f'<div class="contact-lines">{"".join(contact_details)}</div>{hours_card}</div>'
+        f'<div class="contact-form">{contact_form}</div></div></section>'
     )
 
     # --- footer ---------------------------------------------------------------
@@ -494,15 +560,16 @@ h1{{font-size:clamp(42px,6vw,76px);margin:16px 0 20px;max-width:15ch}}.lead{{fon
 .section{{padding:104px 0}}.section.alt{{background:var(--surface)}}.head{{display:flex;align-items:flex-end;justify-content:space-between;gap:40px;margin-bottom:44px}}.head p{{max-width:420px;color:var(--muted);margin:0}}h2{{font-size:clamp(34px,4.2vw,52px);margin-top:12px;max-width:20ch}}
 .grid{{display:grid;grid-template-columns:repeat(var(--cols,3),minmax(0,1fr));gap:20px}}.card{{background:#fff;border:1px solid var(--line);border-radius:var(--rl);padding:30px}}.service{{display:flex;flex-direction:column;transition:transform .2s ease,box-shadow .2s ease}}.service:hover{{transform:translateY(-3px);box-shadow:0 30px 50px -34px #0005}}.icon{{width:52px;height:52px;border-radius:var(--r);display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-text)}}.service h3{{font-size:23px;margin:22px 0 10px}}.service p{{color:var(--muted);font-size:15px;margin:0 0 24px}}.more{{margin-top:auto;font-weight:700;font-size:14px;color:var(--accent-text)}}
 .split{{display:grid;grid-template-columns:1fr 1fr;gap:72px;align-items:center}}.about-visual img{{width:100%;aspect-ratio:5/4.6;object-fit:cover;border-radius:var(--rl)}}.about-panel{{border-radius:var(--rl);background:linear-gradient(150deg,var(--ink),var(--dark));padding:28px}}.tiles{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}.tile{{background:color-mix(in srgb,#fff 6%,transparent);border:1px solid var(--line-dark);border-radius:var(--r);padding:22px;color:#fff;min-height:132px;display:flex;flex-direction:column;justify-content:space-between;gap:16px}}.tile span{{color:var(--accent-dark)}}.tile b{{font-family:var(--hf);font-weight:var(--hw);font-size:17px;line-height:1.25}}.stats-spacer{{height:24px}}.body{{color:var(--muted);font-size:17px;margin:20px 0 0}}.checks{{list-style:none;padding:0;margin:28px 0 34px;display:grid;gap:14px}}.checks li{{display:flex;gap:12px;align-items:flex-start;font-weight:500}}.checks svg{{color:var(--accent-text);flex:none;margin-top:2px}}
-.score{{display:flex;align-items:center;gap:14px}}.score strong{{font-family:var(--hf);font-size:60px;line-height:1;font-weight:var(--hw)}}.score span{{color:var(--muted);font-size:14px;display:block}}.score .stars{{font-size:20px}}.reviews{{display:grid;grid-template-columns:1.2fr 1fr;gap:20px}}.reviews.solo{{grid-template-columns:1fr}}.quote-stack{{display:grid;gap:20px}}.quote{{display:flex;flex-direction:column}}.quote p{{flex:1;color:var(--ink);margin:12px 0 20px}}.featured{{background:var(--ink);color:#fff;border:0;padding:44px}}.featured blockquote{{flex:1;margin:18px 0 28px;font-family:var(--hf);font-size:clamp(22px,2.3vw,30px);line-height:1.35;font-weight:var(--hw);letter-spacing:-.01em}}.quote footer{{display:flex;gap:12px;align-items:center}}.avatar{{position:relative;width:44px;height:44px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);font-weight:700;flex:none}}.avatar img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}.quote small{{display:block;color:var(--muted);font-size:13px}}.featured small{{color:var(--muted-dark)}}.quote small a{{text-decoration:underline}}.after{{margin:28px 0 0}}.text-link{{font-weight:700;border-bottom:2px solid var(--accent);color:var(--ink)}}.rating-band{{display:grid;grid-template-columns:auto 1fr;gap:56px;align-items:center}}.score.big strong{{font-size:110px}}
+.score{{display:flex;align-items:center;gap:14px}}.score strong{{font-family:var(--hf);font-size:60px;line-height:1;font-weight:var(--hw)}}.score span{{color:var(--muted);font-size:14px;display:block}}.score .stars{{font-size:20px}}.reviews{{display:grid;grid-template-columns:1.2fr 1fr;gap:20px}}.reviews.solo{{grid-template-columns:1fr}}.quote-stack{{display:grid;gap:20px}}.quote{{display:flex;flex-direction:column}}.quote p{{flex:1;color:var(--ink);margin:12px 0 20px}}.featured{{background:var(--ink);color:#fff;border:0;padding:44px}}.featured blockquote{{flex:1;margin:18px 0 28px;font-family:var(--hf);font-size:clamp(20px,2vw,26px);line-height:1.35;font-weight:var(--hw);letter-spacing:-.01em}}.quote footer{{display:flex;gap:12px;align-items:center}}.avatar{{position:relative;width:44px;height:44px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);font-weight:700;flex:none}}.avatar img{{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}}.quote small{{display:block;color:var(--muted);font-size:13px}}.featured small{{color:var(--muted-dark)}}.quote small a{{text-decoration:underline}}.after{{margin:28px 0 0}}.text-link{{font-weight:700;border-bottom:2px solid var(--accent);color:var(--ink)}}.rating-band{{display:grid;grid-template-columns:auto 1fr;gap:56px;align-items:center}}.score.big strong{{font-size:110px}}
 .dark{{background:var(--dark);color:#fff}}.style-soft .dark{{background:var(--accent-soft);color:var(--ink)}}.style-soft .dark .kicker,.style-soft .num{{color:var(--accent-text)}}.style-soft .step{{background:#fff;border-color:var(--line)}}.style-soft .step p{{color:var(--muted)}}.dark .kicker{{color:var(--accent-dark)}}.steps{{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:44px}}.step{{border:1px solid var(--line-dark);border-radius:var(--rl);padding:30px;background:color-mix(in srgb,#fff 4%,transparent)}}.num{{font-family:var(--hf);font-size:15px;font-weight:700;color:var(--accent-dark)}}.step h3{{font-size:22px;margin:18px 0 10px}}.step p{{margin:0;color:var(--muted-dark);font-size:15px}}
 .chips{{list-style:none;padding:0;margin:28px 0 0;display:flex;flex-wrap:wrap;gap:10px}}.chips li{{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:10px 16px;font-weight:600;font-size:14px}}.chips svg{{color:var(--accent-text)}}.map{{border-radius:var(--rl);overflow:hidden;border:1px solid var(--line);aspect-ratio:4/3;background:#e9ecee}}.map iframe{{width:100%;height:100%;border:0}}.areas-solo h2{{max-width:22ch}}
 .faq-split{{align-items:start;grid-template-columns:.8fr 1.2fr}}.faq details{{border-top:1px solid var(--line);padding:22px 0}}.faq details:last-child{{border-bottom:1px solid var(--line)}}.faq summary{{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:24px;font-weight:700;font-size:17px}}.faq summary::-webkit-details-marker{{display:none}}.faq summary:after{{content:"+";color:var(--accent-text);font-size:22px;line-height:1}}.faq details[open] summary:after{{content:"–"}}.faq p{{color:var(--muted);margin:12px 40px 0 0}}
 .cta{{background:var(--ink);color:#fff;padding:96px 0}}.cta .kicker{{color:var(--accent-dark)}}.cta-grid{{display:grid;grid-template-columns:1.2fr .8fr;gap:64px;align-items:center}}.cta p{{color:var(--muted-dark);font-size:18px;margin:16px 0 0}}.contact-lines{{display:grid;gap:12px;margin:28px 0 32px}}.contact-line{{display:flex;gap:12px;align-items:center;font-size:18px;font-weight:600}}.contact-line svg{{color:var(--accent-dark)}}.hours-card{{background:color-mix(in srgb,#fff 6%,transparent);border:1px solid var(--line-dark);border-radius:var(--rl);padding:30px}}.hours-card h3{{display:flex;gap:10px;align-items:center;font-size:20px;margin-bottom:16px}}.hours-card svg{{color:var(--accent-dark)}}.hours-card ul{{list-style:none;margin:0;padding:0}}.hours-card li{{display:flex;justify-content:space-between;gap:20px;padding:10px 0;border-top:1px solid var(--line-dark);font-size:15px}}.hours-card li span:first-child{{font-weight:600}}.hours-card li span:last-child{{color:var(--muted-dark);text-align:right}}
+.hero-form{{width:380px;flex:none;position:relative;z-index:3}}.lead-form{{background:#fff;color:var(--ink);border-radius:var(--rl);padding:28px;box-shadow:0 40px 80px -40px #0008;display:grid;gap:12px}}.lead-form h3{{font-size:22px}}.lead-form .form-sub{{margin:-6px 0 4px;color:var(--muted);font-size:14px}}.cta .lead-form p{{color:var(--muted)}}.lead-form label{{display:grid;gap:6px;font-size:13px;font-weight:600}}.lead-form label span{{font-weight:400;color:var(--muted)}}.lead-form input,.lead-form select,.lead-form textarea{{font:inherit;font-size:15px;font-weight:400;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;width:100%}}.lead-form textarea{{resize:vertical}}.lead-form input:focus,.lead-form select:focus,.lead-form textarea:focus{{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}}.lead-form button{{width:100%;margin-top:4px;border:0;cursor:pointer;font:inherit;font-weight:700}}.lead-form button:disabled{{opacity:.6;cursor:default}}.form-note{{margin:0;font-size:13px;color:var(--muted);background:var(--accent-soft);border-radius:var(--r);padding:10px 12px}}.areas-layout{{display:grid;gap:24px}}.areas-layout.with-map{{grid-template-columns:1fr 1.15fr;align-items:stretch}}.areas-layout.with-map .map{{aspect-ratio:auto;min-height:100%}}.area-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}.areas-layout:not(.with-map) .area-grid{{grid-template-columns:repeat(3,minmax(0,1fr))}}.area-card{{background:#fff;border:1px solid var(--line);border-radius:var(--rl);padding:22px;display:flex;flex-direction:column;gap:10px}}.area-top{{display:flex;gap:10px;align-items:center}}.area-top svg{{color:var(--accent-text);flex:none}}.area-card h3{{font-size:18px;line-height:1.2}}.area-card p{{margin:0;color:var(--muted);font-size:14px;flex:1}}.area-more{{margin:24px 0 0;color:var(--muted)}}.contact-form .lead-form{{box-shadow:0 40px 80px -40px #000a}}.cta .hours-card{{margin-top:28px;max-width:440px}}
 .site-footer{{background:var(--dark);color:var(--muted-dark);padding:72px 0 30px;font-size:14px}}.foot{{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:48px}}.foot-name{{display:block;color:#fff;font-family:var(--hf);font-size:22px;font-weight:var(--hw)}}.foot p{{margin:8px 0 0}}.foot-phone{{display:inline-block;margin-top:16px;color:#fff;font-size:20px;font-weight:700}}.site-footer h4{{margin:0 0 14px;color:#fff;font-size:12px;letter-spacing:.14em;text-transform:uppercase}}.site-footer ul{{list-style:none;margin:0;padding:0;display:grid;gap:8px}}.foot-base{{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-top:48px;padding-top:24px;border-top:1px solid var(--line-dark);font-size:12px}}
 .mobile-call{{display:none;position:fixed;z-index:40;left:12px;right:12px;bottom:12px;background:var(--accent);color:var(--on-accent);padding:15px;border-radius:var(--r);text-align:center;font-weight:700;box-shadow:0 18px 40px #0005}}
-@media(max-width:1020px){{.nav-links{{display:none}}.nav-cta{{margin-left:auto}}.hero-split .hero-inner,.split,.cta-grid,.faq-split,.rating-band{{grid-template-columns:1fr;gap:40px}}.hero-visual .proof{{left:16px;bottom:16px}}.reviews{{grid-template-columns:1fr}}.grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}.steps{{grid-template-columns:1fr}}}}
-@media(max-width:680px){{.wrap{{width:calc(100% - 32px)}}.wordmark{{font-size:19px;max-width:200px}}.logo-chip img{{height:36px;max-width:160px}}.nav-cta{{display:none}}.hero-bold{{min-height:640px}}.hero-bold .hero-inner{{flex-direction:column;align-items:flex-start;padding:130px 0 80px}}.hero-split .hero-inner{{padding:20px 0 80px}}.lead{{font-size:17px}}.btn-lg{{width:100%}}.stats{{grid-template-columns:1fr 1fr}}.stat{{padding:20px}}.stat:nth-child(3){{border-left:0}}.stat:nth-child(n+3){{border-top:1px solid var(--line)}}.section{{padding:72px 0}}.head{{display:block}}.head p{{margin-top:14px}}.grid{{grid-template-columns:1fr}}.featured{{padding:30px}}.score.big strong{{font-size:80px}}.foot{{grid-template-columns:1fr 1fr}}.foot>div:first-child{{grid-column:1/-1}}.mobile-call{{display:block}}.site-footer{{padding-bottom:100px}}.hero-visual img,.hero-panel{{aspect-ratio:4/3.4}}.about-panel{{display:none}}.style-soft .hero-visual img,.style-soft .hero-panel{{border-radius:var(--rl)}}}}
+@media(max-width:1020px){{.nav-links{{display:none}}.nav-cta{{margin-left:auto}}.hero-split .hero-inner,.split,.cta-grid,.faq-split,.rating-band{{grid-template-columns:1fr;gap:40px}}.hero-visual .proof{{left:16px;bottom:16px}}.reviews{{grid-template-columns:1fr}}.grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}.steps{{grid-template-columns:1fr}}.hero-bold .hero-inner{{flex-direction:column;align-items:flex-start}}.hero-form{{width:100%;max-width:440px}}.areas-layout.with-map{{grid-template-columns:1fr}}.areas-layout.with-map .map{{aspect-ratio:4/3}}.areas-layout:not(.with-map) .area-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
+@media(max-width:680px){{.wrap{{width:calc(100% - 32px)}}.wordmark{{font-size:19px;max-width:200px}}.logo-chip img{{height:36px;max-width:160px}}.nav-cta{{display:none}}.hero-bold{{min-height:640px}}.hero-bold .hero-inner{{flex-direction:column;align-items:flex-start;padding:130px 0 80px}}.hero-split .hero-inner{{padding:20px 0 80px}}.lead{{font-size:17px}}.btn-lg{{width:100%}}.stats{{grid-template-columns:1fr 1fr}}.stat{{padding:20px}}.stat:nth-child(3){{border-left:0}}.stat:nth-child(n+3){{border-top:1px solid var(--line)}}.section{{padding:72px 0}}.head{{display:block}}.head p{{margin-top:14px}}.grid{{grid-template-columns:1fr}}.featured{{padding:30px}}.score.big strong{{font-size:80px}}.foot{{grid-template-columns:1fr 1fr}}.foot>div:first-child{{grid-column:1/-1}}.mobile-call{{display:block}}.site-footer{{padding-bottom:100px}}.hero-visual img,.hero-panel{{aspect-ratio:4/3.4}}.about-panel{{display:none}}.hero-form{{display:none}}.area-grid,.areas-layout:not(.with-map) .area-grid{{grid-template-columns:1fr}}.lead-form{{padding:22px}}.style-soft .hero-visual img,.style-soft .hero-panel{{border-radius:var(--rl)}}}}
 """
 
     return f'''<!doctype html>
@@ -535,5 +602,6 @@ h1{{font-size:clamp(42px,6vw,76px);margin:16px 0 20px;max-width:15ch}}.lead{{fon
 </main>
 {footer}
 {mobile_call}
+<script>document.querySelectorAll("form.lead-form").forEach(function(f){{f.addEventListener("submit",function(e){{e.preventDefault();f.querySelector(".form-note").hidden=false;f.querySelector("button").disabled=true;}});}});</script>
 </body>
 </html>'''
