@@ -83,7 +83,7 @@ def test_demo_media_generation_is_explicit_single_role_and_persisted(monkeypatch
     assert captured["json"]["image_config"] == {"aspect_ratio": "16:9"}
     prompt = captured["json"]["messages"][0]["content"].lower()
     assert "do not place any business name, logo" in prompt
-    assert "do not imply that any person shown is the real owner" in prompt
+    assert "show no people" in prompt and "never a collage" in prompt
     assert "southern california" not in prompt
     assert result["role"] == "hero"
     assert result["public_url"].startswith("https://demo.example.test/_media/")

@@ -231,3 +231,37 @@ def test_v3_demos_are_unchanged_by_v4(tmp_path):
     )
     assert "style" not in demo["brand_snapshot"] and "hours" not in demo["source_snapshot"]
     assert "Concept website prepared by Lilos Growth" in demo["html_document"]
+
+
+# --- polish: forms, areas, quotes, photo rules ------------------------------
+
+def test_concept_lead_forms_never_send_anything():
+    html = _render()
+    assert 'id="hero-form"' in html and 'id="contact-form"' in html
+    assert 'action="#"' in html and "e.preventDefault()" in html
+    assert "nothing was sent" in html
+    assert "<option>Panel Upgrades</option>" in html
+
+
+def test_areas_section_has_a_card_per_town():
+    html = _render(content=_content(service_areas=["Vista", "Oceanside", "San Marcos", "Carlsbad"]))
+    assert html.count('class="area-card"') == 4
+    assert "Electrician in Oceanside" in html
+    assert "Serving Vista, Oceanside, San Marcos and nearby." in html
+    single = _render(content=_content(service_areas=["Vista"]))
+    assert 'class="area-card"' not in single and 'class="chips"' in single
+
+
+def test_featured_quote_ends_at_a_sentence_when_it_can():
+    from app.services.demo_site_renderer_v4 import _quote_excerpt
+    text = ("They came out the same week and walked me through every option. " * 3) + "The rest is long " * 30
+    quote = _quote_excerpt(text)
+    assert 140 <= len(quote) <= 260 and quote.endswith(".")
+    assert _quote_excerpt("Short and sweet.") == "Short and sweet."
+
+
+def test_photo_prompts_ban_people_and_collages():
+    from app.services.demo_media import DemoMediaService
+    prompt = DemoMediaService._prompt({"primary_type": "electrician", "vertical": "electrician", "city": "Fresno"},
+                                      role="work", direction=None)
+    assert "Show no people" in prompt and "never a collage" in prompt
