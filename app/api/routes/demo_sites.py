@@ -8,6 +8,8 @@ from app.repositories.demo_media import DemoMediaRepository
 from app.repositories.demo_sites import DemoSiteRepository
 from app.repositories.prospects import ProspectRepository
 from app.schemas.demo_sites import (
+    DemoCopyRequest,
+    DemoCopyResponse,
     DemoMediaGenerateRequest,
     DemoMediaItem,
     DemoSiteCreateRequest,
@@ -42,9 +44,31 @@ def get_media_service() -> DemoMediaService:
 )
 def demo_site_options(place_id: str) -> dict:
     try:
-        return get_service().options_for_prospect(place_id)
+        options = get_service().options_for_prospect(place_id)
     except DemoSiteError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {**options, "ai_copy_available": get_settings().openrouter_configured}
+
+
+@router.post(
+    "/prospects/{place_id}/copy",
+    response_model=DemoCopyResponse,
+)
+def write_demo_copy(place_id: str, payload: DemoCopyRequest) -> dict:
+    settings = get_settings()
+    if not settings.openrouter_configured:
+        raise HTTPException(status_code=503, detail="AI copy is not configured")
+    try:
+        return get_service().write_copy(
+            place_id,
+            services=payload.services,
+            service_areas=payload.service_areas,
+            api_key=settings.openrouter_api_key or "",
+            model=settings.openrouter_model,
+        )
+    except DemoSiteError as exc:
+        message = str(exc)
+        raise HTTPException(status_code=404 if message == "prospect not found" else 422, detail=message) from exc
 
 
 @router.get(
@@ -115,6 +139,8 @@ def create_demo_site(place_id: str, payload: DemoSiteCreateRequest) -> dict:
             work_image_url=payload.work_image_url,
             secondary_image_url=payload.secondary_image_url,
             use_site_branding=payload.use_site_branding,
+            about=payload.about,
+            service_blurbs=payload.service_blurbs,
             media_root=Path(settings.demo_site_root),
             media_base_url=settings.demo_site_base_url,
         )

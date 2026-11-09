@@ -14,6 +14,21 @@ class DemoSiteCreateRequest(BaseModel):
     work_image_url: str | None = Field(default=None, max_length=2048)
     secondary_image_url: str | None = Field(default=None, max_length=2048)
     use_site_branding: bool = True
+    about: str | None = Field(default=None, max_length=600)
+    service_blurbs: dict[str, str] = Field(default_factory=dict, max_length=12)
+
+
+class DemoCopyRequest(BaseModel):
+    services: list[str] = Field(default_factory=list, max_length=12)
+    service_areas: list[str] = Field(default_factory=list, max_length=16)
+
+
+class DemoCopyResponse(BaseModel):
+    headline: str | None = None
+    subheadline: str | None = None
+    about: str | None = None
+    service_blurbs: dict[str, str] = Field(default_factory=dict)
+    model: str
 
 
 class DemoMediaGenerateRequest(BaseModel):
@@ -37,6 +52,7 @@ class DemoSiteOptionsResponse(BaseModel):
     business_name: str
     templates: list[dict[str, str]]
     defaults: dict[str, Any]
+    ai_copy_available: bool = False
 
 
 class DemoSiteSummary(BaseModel):
