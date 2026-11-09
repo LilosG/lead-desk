@@ -210,6 +210,15 @@ class OutreachBoardService:
             "gmail_block_reason": gmail_block_reason(item, gmail_connected=self.gmail is not None),
         }
 
+    def reopen_unsent(self, item_ids: list[str]) -> dict[str, Any]:
+        """Move items back to Review when their Gmail draft was deleted, not sent."""
+        results = []
+        for item_id in list(dict.fromkeys(item_ids))[:50]:
+            ok = self.gmail_repository.reopen_unsent(item_id)
+            results.append({"id": item_id, "ok": ok, "detail": None if ok else
+                            "Only drafts the Gmail check marked as contacted, with no follow-up yet, can be moved back"})
+        return {"reopened": sum(r["ok"] for r in results), "results": results}
+
     def sync_gmail(self) -> dict[str, int]:
         """Find drafts that have left Gmail, meaning they were sent or deleted.
 
