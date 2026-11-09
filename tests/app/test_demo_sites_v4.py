@@ -286,3 +286,8 @@ def test_featured_review_prefers_a_quote_that_fits_and_is_not_shouting():
         {"text": "Good."},
     ]
     assert _featured_review(cards) is cards[1]
+
+
+def test_logo_is_large_enough_to_recognise():
+    html = _render(logo_url="https://demo.example/_media/k/logo.png")
+    assert ".logo-chip img{height:68px" in html
