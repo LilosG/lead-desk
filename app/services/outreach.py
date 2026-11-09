@@ -20,7 +20,7 @@ from app.services.outreach_audit_copy import (
     personal_greeting,
 )
 from app.services import ev_offer, seo_offer
-from app.services.email_angles import is_known, resolve_angle
+from app.services.email_angles import BEST, ROTATE, is_known, resolve_angle
 from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
@@ -283,7 +283,7 @@ class OutreachService:
         """
         if not item or item.get("claim_signal") != "audit_report" or not item.get("place_id"):
             return None
-        if item.get("angle") not in {None, seo_offer.AUDIT_ATTACHED}:
+        if item.get("angle") is not None and item.get("angle") not in seo_offer.ATTACHES_AUDIT:
             return None
         lookup = getattr(self.repository, "latest_audit_report", None)
         if lookup is None:
@@ -363,6 +363,8 @@ class OutreachService:
         if context.get("vertical") != "electrician":
             raise OutreachBlocked("EV Permits is only for electricians.")
         evidence = ev_offer.ev_evidence(context)
+        if angle == BEST:
+            angle = ROTATE  # EV emails carry no audit or mockup.
         chosen = resolve_angle(EV_PERMITS, context["place_id"], angle, context.get("angle"))
         if not is_known(EV_PERMITS, chosen):
             raise OutreachBlocked(f"Unknown email angle: {chosen}")
@@ -383,6 +385,8 @@ class OutreachService:
     def write_seo_draft(self, context: dict, angle: str | None = None) -> dict | None:
         """The audit-led email. None when the audit gives it nothing to say."""
         campaign = get_campaign(context.get("campaign_key")).key
+        if angle == BEST:
+            angle = seo_offer.FREE_HOMEPAGE if context.get("demo_url") else seo_offer.AUDIT_ATTACHED
         chosen = resolve_angle(campaign, context["place_id"], angle, context.get("angle"))
         if not is_known(campaign, chosen):
             raise OutreachBlocked(f"Unknown email angle: {chosen}")

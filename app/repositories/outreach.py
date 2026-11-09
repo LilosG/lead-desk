@@ -290,7 +290,14 @@ class OutreachRepository:
                 we.crawl_error,
                 coalesce(f.needs_manual_check, false) as needs_manual_check,
                 audit.snapshot as audit_snapshot,
-                audit.source_checked_at as audit_source_checked_at
+                audit.source_checked_at as audit_source_checked_at,
+                (
+                    select ds.public_url from prospect_demo_sites ds
+                    where ds.place_id = q.place_id and ds.status = 'published'
+                      and ds.public_url is not null
+                    order by ds.published_at desc nulls last
+                    limit 1
+                ) as demo_url
             from outreach_queue q
             join businesses b on b.place_id = q.place_id
             left join v_lead_worklist w on w.place_id = q.place_id

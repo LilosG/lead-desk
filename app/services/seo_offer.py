@@ -5,8 +5,10 @@ PDF's do. The proof is Wheyland Electric, Mike's own results: about 60 calls and
 quote requests a month from the first month after the March relaunch, and 20
 Google AI Overview spots by summer. The ask is calls, not a fix list.
 
-Only the Audit attached angle carries a file, because a first email with a PDF
-is more likely to land in spam.
+The Audit attached and Free homepage angles carry the PDF. Best fit (the
+default) picks Free homepage when a mockup is published, otherwise Audit
+attached: Mike chose showing the work over the lighter spam risk of a plain
+first email (Nov 2026). Local gap and Competitor stay attachment-free.
 """
 from __future__ import annotations
 
@@ -26,6 +28,9 @@ from app.services.outreach_audit_copy import (
 
 PROMPT_VERSION = "seo-offer-v2"
 AUDIT_ATTACHED = "audit_attached"
+FREE_HOMEPAGE = "free_homepage"
+# Angles whose email says the audit PDF is attached.
+ATTACHES_AUDIT = {AUDIT_ATTACHED, FREE_HOMEPAGE}
 
 # Wheyland's own neighbors get the case study without the name.
 _WHEYLAND_NEIGHBORS = {"carlsbad", "vista", "oceanside", "encinitas", "san marcos"}
@@ -138,7 +143,9 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
     greeting = team_greeting(first_name, name)
     city = _city(snapshot) or context.get("city")
     subject = subject.replace(name, short)
-    demo_url = (snapshot.get("next_step") or {}).get("demo_url")
+    # The live published mockup wins, so it doesn't matter whether the audit or
+    # the mockup was built first.
+    demo_url = context.get("demo_url") or (snapshot.get("next_step") or {}).get("demo_url")
 
     if angle == "competitor":
         rival = _competitor_line(snapshot, name)
@@ -154,6 +161,7 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
         paragraphs = [
             f"I built a new homepage for {name}. It's yours to look at, no strings: {demo_url}",
             finding,
+            "I also attached a short audit with what I'd fix first.",
             "If you like it, tell me what you'd change. If not, no harm done.",
         ]
     elif angle == AUDIT_ATTACHED:

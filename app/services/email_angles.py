@@ -8,6 +8,9 @@ from typing import Any
 from app.campaigns import EV_PERMITS, SEO_WEBSITES
 
 ROTATE = "rotate"
+# Uses what's been built for the lead: the mockup link when one is published,
+# and the audit PDF attached. Resolved by the campaign's writer.
+BEST = "best"
 
 
 @dataclass(frozen=True)

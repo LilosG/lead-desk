@@ -86,6 +86,8 @@ def next_step(row: dict[str, Any], now: datetime | None = None) -> str:
     if stage == "to_prep":
         if not get_campaign(row.get("campaign_key")).uses_audit:
             return "Draft the email"
+        if row.get("has_audit"):
+            return "Audit ready. Draft the email"
         return "Build the audit and draft the email"
     if stage == "verify":
         return "Open the site, then mark it checked or add an email"

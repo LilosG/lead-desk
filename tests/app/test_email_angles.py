@@ -209,8 +209,54 @@ def test_seo_first_touch_is_link_free_and_does_not_promise_an_attachment():
         assert "audit" not in body.lower()
 
 
-def test_only_the_attached_angle_says_attached():
+def test_only_the_angles_that_attach_the_pdf_say_attached():
     assert "attached PDF" in _seo("audit_attached")["body"]
+    assert "attached a short audit" in _seo("free_homepage")["body"]
+
+
+def _seo_service():
+    class Repo:
+        @staticmethod
+        def latest_audit_report(place_id):
+            return {"name": "Five Point Electric", "snapshot": {"findings": []}}
+
+    return OutreachService(Repo())
+
+
+def test_best_fit_uses_the_published_mockup_and_attaches_the_audit(monkeypatch):
+    from app.services import outreach as outreach_module
+    monkeypatch.setattr("app.services.audit_report_pdf.render_audit_report_pdf", lambda report: b"%PDF-1.4")
+    service = _seo_service()
+    context = {**LEAD, "campaign_key": SEO_WEBSITES, "audit_snapshot": {**SNAPSHOT, "next_step": {}},
+               "demo_url": "https://demo.example.com/live-mockup"}
+    written = service.write_seo_draft(context, "best")
+    assert written["angle"] == "free_homepage"
+    assert "https://demo.example.com/live-mockup" in written["body"]
+    assert "attached a short audit" in written["body"]
+    item = {"claim_signal": "audit_report", "place_id": "p1", "angle": written["angle"]}
+    assert service.audit_attachments(item)[0][1] == b"%PDF-1.4"
+    assert outreach_module.BEST == "best"
+
+
+def test_best_fit_without_a_mockup_sends_the_audit_attached_email():
+    written = _seo_service().write_seo_draft(
+        {**LEAD, "campaign_key": SEO_WEBSITES, "audit_snapshot": {**SNAPSHOT, "next_step": {}}}, "best")
+    assert written["angle"] == "audit_attached"
+    assert "demo.example.com" not in written["body"]
+    assert "attached PDF" in written["body"]
+
+
+def test_a_mockup_published_after_the_audit_still_gets_linked():
+    # The audit snapshot has no demo_url; the live published mockup is used.
+    written = seo_offer.write_email({**LEAD, "audit_snapshot": {**SNAPSHOT, "next_step": {}},
+                                     "demo_url": "https://demo.example.com/after"}, "free_homepage")
+    assert written["angle"] == "free_homepage" and "https://demo.example.com/after" in written["body"]
+
+
+def test_best_fit_on_ev_falls_back_to_the_rotation():
+    service = OutreachService(object())
+    written = service.write_ev_draft({**LEAD, "campaign_key": EV_PERMITS}, "best")
+    assert written["angle"] in ROTATION[EV_PERMITS]
 
 
 def test_rotation_is_stable_and_stays_inside_the_campaign():

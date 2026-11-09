@@ -215,6 +215,8 @@ const stages = [
       lead_note: string | null;
       follow_up_due: boolean;
       next_step: string;
+      has_audit?: boolean;
+      mockup_status?: 'published' | 'ready' | null;
     };
 
     type Campaign = {
@@ -310,7 +312,7 @@ const stages = [
     const params = new URLSearchParams(window.location.search);
     const state = {
       campaign: params.get('campaign') || 'seo_websites',
-      angle: 'rotate',
+      angle: 'best',
       stage: params.get('stage') || 'to_prep',
       q: params.get('q') || '',
       vertical: params.get('vertical') || '',
@@ -361,10 +363,12 @@ const stages = [
       el('#bulk-prep').textContent = current.prep_label;
       const options = current.angles.map((a) => `<option value="${esc(a.key)}" title="${esc(a.summary)}">${esc(a.label)}</option>`).join('');
       const angleSelect = el<HTMLSelectElement>('#angle-select');
-      angleSelect.innerHTML = `<option value="rotate">Rotate (A/B test)</option>${options}`;
-      angleSelect.value = current.angles.some((a) => a.key === state.angle) ? state.angle : 'rotate';
+      const best = current.uses_audit ? `<option value="best" title="Mockup link when one is published, audit PDF attached">Best fit (mockup link + audit PDF)</option>` : '';
+      angleSelect.innerHTML = `${best}<option value="rotate">Rotate (A/B test)</option>${options}`;
+      const known = current.angles.some((a) => a.key === state.angle) || state.angle === 'rotate' || (current.uses_audit && state.angle === 'best');
+      angleSelect.value = known ? state.angle : (current.uses_audit ? 'best' : 'rotate');
       state.angle = angleSelect.value;
-      el('#draft-angle').innerHTML = `<option value="">Rotate</option>${options}`;
+      el('#draft-angle').innerHTML = `${best}<option value="">Rotate</option>${options}`;
     }
 
     async function loadResults() {
@@ -418,6 +422,15 @@ const stages = [
       return '';
     }
 
+    function assetBadges(row: Row): string {
+      const badge = (text: string, tone: string) => `<span class="rounded-full px-2 py-0.5 text-[10px] font-medium ${tone}">${text}</span>`;
+      const parts: string[] = [];
+      if (row.has_audit) parts.push(badge('Audit ✓', 'bg-emerald-50 text-emerald-800'));
+      if (row.mockup_status === 'published') parts.push(badge('Mockup live ✓', 'bg-sky-50 text-sky-800'));
+      else if (row.mockup_status === 'ready') parts.push(badge('Mockup not published', 'bg-amber-50 text-amber-800'));
+      return parts.length ? `<div class="mt-1.5 flex flex-wrap gap-1">${parts.join('')}</div>` : '';
+    }
+
     function renderRows() {
       const body = el('#rows');
       body.innerHTML = rows.map((row) => `
@@ -425,7 +438,7 @@ const stages = [
           <td class="px-4 py-3"><input type="checkbox" data-select="${esc(rowKey(row))}" aria-label="Select ${esc(row.name)}" ${selected.has(rowKey(row)) ? 'checked' : ''} /></td>
           <td class="max-w-xs px-3 py-3">
             <a href="/prospects/${encodeURIComponent(row.place_id)}" class="font-medium hover:underline">${esc(row.name)}</a>
-            <div class="mt-0.5 text-xs text-[var(--muted)]">${esc([row.city, row.vertical?.replaceAll('_', ' ')].filter(Boolean).join(' · '))}</div>
+            <div class="mt-0.5 text-xs text-[var(--muted)]">${esc([row.city, row.vertical?.replaceAll('_', ' ')].filter(Boolean).join(' · '))}</div>${assetBadges(row)}
           </td>
           <td class="px-3 py-3 text-xs">${esc(row.email || row.phone || '—')}</td>
           <td class="whitespace-nowrap px-3 py-3 text-xs">${currentCampaign()?.uses_audit ? `<span class="font-semibold">${esc(row.tier ?? '—')}</span> · ${esc(row.total_score ?? '—')}` : esc(row.lead_note ?? '—')}</td>
@@ -522,7 +535,7 @@ const stages = [
       el<HTMLInputElement>('#draft-subject').value = item.subject || '';
       el<HTMLTextAreaElement>('#draft-body').value = item.body || '';
       el<HTMLSelectElement>('#draft-status').value = item.status;
-      el<HTMLSelectElement>('#draft-angle').value = item.angle ?? '';
+      el<HTMLSelectElement>('#draft-angle').value = item.angle ?? (currentCampaign()?.uses_audit ? 'best' : '');
       el<HTMLSelectElement>('#draft-verification').value = item.verification_status;
       el('#draft-error').classList.add('hidden');
 
