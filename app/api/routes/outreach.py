@@ -198,6 +198,16 @@ def sync_gmail_drafts() -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+class NotSentRequest(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=50)
+
+
+@router.post('/bulk/not-sent')
+def mark_not_sent(payload: NotSentRequest) -> dict:
+    """Undo Contacted for drafts that were deleted from Gmail instead of sent."""
+    return get_board_service().reopen_unsent(payload.ids)
+
+
 @router.get('/readiness/{place_id}')
 def outreach_readiness(
     place_id: str,

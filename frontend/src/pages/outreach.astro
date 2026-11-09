@@ -78,6 +78,7 @@ const stages = [
         <div class="ml-auto flex flex-wrap items-center gap-2">
           <button id="bulk-prep" type="button" class="hidden rounded-md bg-[var(--dark)] px-3 py-1.5 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Audit + email + Gmail draft</button>
           <button id="bulk-follow-up" type="button" class="hidden rounded-md bg-[var(--dark)] px-3 py-1.5 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">Draft follow-ups</button>
+          <button id="bulk-not-sent" type="button" title="For drafts you deleted in Gmail instead of sending" class="hidden rounded-md border border-[var(--line)] bg-white px-3 py-1.5 font-medium disabled:cursor-not-allowed disabled:opacity-40">Not sent: back to Review</button>
           <div id="bulk-status-group" class="hidden items-center gap-2">
             <select id="bulk-status" class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5">
               <option value="contacted">Contacted</option>
@@ -457,6 +458,8 @@ const stages = [
       const canStatus = STATUS_STAGES.has(state.stage);
       el('#bulk-prep').classList.toggle('hidden', !canPrep);
       el('#bulk-follow-up').classList.toggle('hidden', state.stage !== 'contacted');
+      el('#bulk-not-sent').classList.toggle('hidden', state.stage !== 'contacted');
+      el<HTMLButtonElement>('#bulk-not-sent').disabled = !rows.some((r) => r.id && selected.has(rowKey(r)));
       el<HTMLButtonElement>('#bulk-follow-up').disabled = !rows.some((r) => r.follow_up_due && selected.has(rowKey(r)));
       el('#bulk-status-group').classList.toggle('hidden', !canStatus);
       el('#bulk-status-group').classList.toggle('flex', canStatus);
@@ -751,6 +754,24 @@ const stages = [
         const failed = (result.results as { id: string; ok: boolean; detail?: string }[]).filter((r) => !r.ok);
         box.className = `border-b border-[var(--line)] px-4 py-3 text-xs leading-5 ${failed.length ? 'text-red-700' : 'text-emerald-700'}`;
         box.innerHTML = `Updated ${result.updated} of ${ids.length}.`
+          + (failed.length ? '<br>' + failed.map((f) => `${esc(rows.find((r) => r.id === f.id)?.name || f.id)}: ${esc(f.detail)}`).join('<br>') : '');
+        selected.clear();
+        await loadBoard();
+      } catch (error) {
+        showError(error);
+      }
+    });
+
+    el<HTMLButtonElement>('#bulk-not-sent').addEventListener('click', async () => {
+      const ids = rows.filter((r) => r.id && selected.has(rowKey(r))).map((r) => r.id as string);
+      if (!ids.length) return;
+      if (!window.confirm(`Move ${ids.length} back to Review? Only do this for drafts you deleted in Gmail without sending.`)) return;
+      const box = el('#bulk-result');
+      try {
+        const result = await api('/api/outreach/bulk/not-sent', { method: 'POST', body: JSON.stringify({ ids }) });
+        const failed = (result.results as { id: string; ok: boolean; detail?: string }[]).filter((r) => !r.ok);
+        box.className = `border-b border-[var(--line)] px-4 py-3 text-xs leading-5 ${failed.length ? 'text-red-700' : 'text-emerald-700'}`;
+        box.innerHTML = `Moved ${result.reopened} of ${ids.length} back to Review. Pick Best fit, regenerate, then create the Gmail draft.`
           + (failed.length ? '<br>' + failed.map((f) => `${esc(rows.find((r) => r.id === f.id)?.name || f.id)}: ${esc(f.detail)}`).join('<br>') : '');
         selected.clear();
         await loadBoard();

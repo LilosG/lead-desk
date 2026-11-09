@@ -82,6 +82,49 @@ class OutreachGmailRepository:
                     )
                     return True
 
+    def reopen_unsent(self, item_id: str) -> bool:
+        """Undo a 'left Gmail' that was a deleted draft, not a send.
+
+        Only for items the Gmail sync moved to Contacted, with no follow-up
+        drafted yet. The item goes back to Review with no Gmail draft, so a
+        fresh draft (with its attachment) can be created.
+        """
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        update outreach_queue q
+                        set status = 'draft_ready',
+                            contacted_at = null,
+                            gmail_draft_id = null,
+                            gmail_message_id = null,
+                            gmail_thread_id = null,
+                            gmail_draft_created_at = null,
+                            gmail_draft_left_at = null,
+                            version = version + 1,
+                            updated_at = now()
+                        where q.id = %s::uuid
+                          and q.status = 'contacted'
+                          and q.gmail_draft_left_at is not null
+                          and not exists (select 1 from outreach_follow_ups f where f.queue_id = q.id)
+                        returning place_id
+                        """,
+                        (item_id,),
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        return False
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (
+                            queue_id, place_id, event_type, changes
+                        ) values (%s::uuid, %s, 'gmail_draft_not_sent', %s)
+                        """,
+                        (item_id, row["place_id"], Jsonb({"reopened": True})),
+                    )
+                    return True
+
     def clear_stale_draft(
         self,
         item_id: str,

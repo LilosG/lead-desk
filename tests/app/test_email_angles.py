@@ -470,3 +470,42 @@ def test_reply_rates_split_by_angle(pool, item):
     assert board.angle_results(EV_PERMITS) == [
         {"angle": "Who draws your plans", "sent": 1, "replied": 0, "reply_rate": 0.0},
     ]
+
+
+def test_a_deleted_draft_can_be_moved_back_to_review(pool, item):
+    gmail_repo = OutreachGmailRepository(pool)
+    with pool.connection() as conn:
+        conn.execute("""update outreach_queue set status = 'draft_ready', contacted_at = null,
+                        gmail_draft_id = 'gone-draft', gmail_message_id = 'm-gone',
+                        gmail_draft_created_at = now() - interval '1 hour' where id = %s::uuid""", (item,))
+    assert gmail_repo.mark_draft_left_gmail(item, "gone-draft")
+    assert gmail_repo.reopen_unsent(item)
+    with pool.connection() as conn:
+        row = conn.execute("""select q.status, q.contacted_at, q.gmail_draft_id, q.gmail_draft_left_at, s.stage
+                              from outreach_queue q join v_outreach_stage s on s.id = q.id
+                              where q.id = %s::uuid""", (item,)).fetchone()
+        event = conn.execute("""select 1 from outreach_queue_events
+                                where queue_id = %s::uuid and event_type = 'gmail_draft_not_sent'""", (item,)).fetchone()
+    assert row["stage"] == "review" and row["status"] == "draft_ready"
+    assert row["contacted_at"] is None and row["gmail_draft_id"] is None and row["gmail_draft_left_at"] is None
+    assert event is not None
+    # Once reopened there's nothing left to undo.
+    assert not gmail_repo.reopen_unsent(item)
+
+
+def test_only_unconfirmed_sends_without_follow_ups_can_be_reopened(pool, item):
+    gmail_repo = OutreachGmailRepository(pool)
+    # Marked contacted by hand, not by the Gmail check.
+    assert not gmail_repo.reopen_unsent(item)
+    with pool.connection() as conn:
+        conn.execute("update outreach_queue set gmail_draft_left_at = now() where id = %s::uuid", (item,))
+    OutreachService(OutreachRepository(pool), gmail=Gmail()).draft_follow_up(item)
+    # A follow-up exists, so the first email really went.
+    assert not gmail_repo.reopen_unsent(item)
+
+
+def test_board_reopen_reports_each_item(pool, item):
+    from app.repositories.outreach_board import OutreachBoardRepository
+    service = OutreachBoardService(OutreachBoardRepository(pool), gmail_repository=OutreachGmailRepository(pool), gmail=None)
+    result = service.reopen_unsent([item])
+    assert result["reopened"] == 0 and result["results"][0]["detail"]
