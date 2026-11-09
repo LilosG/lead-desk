@@ -11,7 +11,10 @@ from app.repositories.prospects import ProspectRepository
 from app.services import audit_benchmarks
 from app.services.demo_autofill import MAX_AREAS, MAX_SERVICES, suggested_areas, suggested_services
 from app.services.demo_site_renderer import palette_for, render_demo_site, template_options
+from app.services.demo_brand import extract_brand
+from app.services.demo_design import palette_with_brand, style_for
 from app.services.demo_site_renderer_v3 import V3_TEMPLATE_OPTION, niche_copy, render_demo_site_v3
+from app.services.demo_site_renderer_v4 import V4_KEYS, V4_TEMPLATE_OPTIONS, render_demo_site_v4, style_override
 from pipeline import verticals as vertical_config
 
 
@@ -111,12 +114,13 @@ def _own_areas(prospect: dict[str, Any]) -> list[str]:
 
 
 def _template_options() -> list[dict[str, str]]:
-    """What the builder offers. Older templates stay valid for existing demos."""
-    return [dict(V3_TEMPLATE_OPTION)]
+    """What the builder offers, recommended first. Older templates stay valid for existing demos."""
+    classic = {**V3_TEMPLATE_OPTION, "name": "Classic homepage (v3)"}
+    return [*(dict(item) for item in V4_TEMPLATE_OPTIONS), classic]
 
 
 def _valid_template_keys() -> set[str]:
-    return {V3_TEMPLATE_OPTION["key"], *(item["key"] for item in template_options())}
+    return {V3_TEMPLATE_OPTION["key"], *V4_KEYS, *(item["key"] for item in template_options())}
 
 
 def _default_headline(prospect: dict[str, Any], category: str, city: str) -> str:
@@ -189,6 +193,35 @@ class DemoSiteService:
                 nearby = []
         return suggested_areas(own, nearby)
 
+    def _demo_details(self, place_id: str) -> dict[str, Any]:
+        lookup = getattr(self.prospect_repository, "get_demo_details", None)
+        if lookup is None:
+            return {}
+        try:
+            return lookup(place_id) or {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _site_brand(
+        prospect: dict[str, Any],
+        place_id: str,
+        *,
+        enabled: bool,
+        root: Path | None,
+        base_url: str | None,
+    ) -> dict[str, Any]:
+        """Logo and brand colour from their current site; empty when unavailable."""
+        website = prospect.get("website_url")
+        if not enabled or not website or root is None or not base_url:
+            return {}
+        try:
+            return extract_brand(
+                website, place_id=place_id, business_name=prospect.get("name"), root=root, base_url=base_url,
+            )
+        except Exception:
+            return {}
+
     def _website_audit(self, place_id: str) -> dict[str, Any] | None:
         lookup = getattr(self.prospect_repository, "get_website_audit", None)
         if lookup is None:
@@ -210,6 +243,9 @@ class DemoSiteService:
         hero_image_url: str | None = None,
         work_image_url: str | None = None,
         secondary_image_url: str | None = None,
+        use_site_branding: bool = True,
+        media_root: Path | None = None,
+        media_base_url: str | None = None,
     ) -> dict[str, Any]:
         prospect = self.prospect_repository.get_prospect(place_id)
         if prospect is None:
@@ -257,7 +293,30 @@ class DemoSiteService:
             "template_key": template_key,
             "palette": palette_for(prospect.get("primary_type"), source_snapshot["niche_profile"]),
         }
-        if template_key == V3_TEMPLATE_OPTION["key"]:
+        if template_key in V4_KEYS:
+            details = self._demo_details(place_id)
+            source_snapshot.update({
+                "hours": details.get("hours_json"),
+                "street": details.get("street"),
+                "address": details.get("formatted_address"),
+            })
+            site_brand = self._site_brand(
+                prospect, place_id, enabled=use_site_branding, root=media_root, base_url=media_base_url,
+            )
+            brand_snapshot.update({
+                "style": style_for(source_snapshot["niche_profile"], style_override(template_key)),
+                "palette": palette_with_brand(brand_snapshot["palette"], site_brand.get("color")),
+                "logo_url": site_brand.get("logo_url"),
+                "logo_on_dark": bool(site_brand.get("logo_on_dark")),
+                "brand_color": site_brand.get("color"),
+                "brand_source": site_brand.get("source"),
+            })
+            html_document = render_demo_site_v4(
+                source=source_snapshot,
+                content=content_snapshot,
+                brand=brand_snapshot,
+            )
+        elif template_key == V3_TEMPLATE_OPTION["key"]:
             html_document = render_demo_site_v3(
                 source=source_snapshot,
                 content=content_snapshot,

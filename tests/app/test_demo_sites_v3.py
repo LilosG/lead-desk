@@ -44,10 +44,11 @@ class FakeDemoRepository:
         }
 
 
-def test_v3_is_first_controlled_template_option():
+def test_v4_is_recommended_and_v3_stays_available():
     service = DemoSiteService(FakeProspectRepository(), FakeDemoRepository())
-    options = service.options_for_prospect("volt-place")
-    assert options["templates"][0]["key"] == "trade-modern-v3"
+    keys = [item["key"] for item in service.options_for_prospect("volt-place")["templates"]]
+    assert keys[0] == "premium-v4"
+    assert "trade-modern-v3" in keys
 
 
 def test_v3_renders_complete_local_service_homepage_without_invented_credentials():

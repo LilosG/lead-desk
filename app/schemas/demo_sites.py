@@ -13,6 +13,7 @@ class DemoSiteCreateRequest(BaseModel):
     hero_image_url: str | None = Field(default=None, max_length=2048)
     work_image_url: str | None = Field(default=None, max_length=2048)
     secondary_image_url: str | None = Field(default=None, max_length=2048)
+    use_site_branding: bool = True
 
 
 class DemoMediaGenerateRequest(BaseModel):
