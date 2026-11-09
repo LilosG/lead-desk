@@ -54,6 +54,12 @@ class Settings(BaseSettings):
         default="qwen/qwen3-30b-a3b-instruct-2507",
         alias="OPENROUTER_MODEL",
     )
+    # Demo homepage copy is customer-facing marketing writing, so it uses a
+    # stronger writer than the outreach default. Still about a cent per demo.
+    demo_copy_model: str = Field(
+        default="anthropic/claude-haiku-4.5",
+        alias="DEMO_COPY_MODEL",
+    )
 
     gmail_client_id: str | None = Field(default=None, alias="GMAIL_CLIENT_ID")
     gmail_client_secret: str | None = Field(default=None, alias="GMAIL_CLIENT_SECRET")
@@ -77,13 +83,13 @@ class Settings(BaseSettings):
             raise ValueError("AUTH_PASSWORD_HASH must use pbkdf2_sha256 format")
         return value
 
-    @field_validator("openrouter_model")
+    @field_validator("openrouter_model", "demo_copy_model")
     @classmethod
     def validate_openrouter_model(cls, value: str) -> str:
         if value not in APPROVED_OPENROUTER_MODELS:
             approved = ", ".join(sorted(APPROVED_OPENROUTER_MODELS))
             raise ValueError(
-                f"OPENROUTER_MODEL must be an approved model: {approved}"
+                f"OPENROUTER_MODEL and DEMO_COPY_MODEL must be approved models: {approved}"
             )
         return value
 

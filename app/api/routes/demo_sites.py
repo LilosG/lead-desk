@@ -64,7 +64,7 @@ def write_demo_copy(place_id: str, payload: DemoCopyRequest) -> dict:
             services=payload.services,
             service_areas=payload.service_areas,
             api_key=settings.openrouter_api_key or "",
-            model=settings.openrouter_model,
+            model=settings.demo_copy_model,
         )
     except DemoSiteError as exc:
         message = str(exc)

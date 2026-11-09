@@ -64,7 +64,7 @@ def test_overlong_fields_are_dropped():
 def test_gpt5_requests_use_minimal_reasoning():
     captured = {}
     write_demo_copy(FACTS, api_key="k", model="openai/gpt-5-mini",
-                    post=_post(json.dumps({"headline": "Electrician in Tucson"}), captured))
+                    post=_post(json.dumps({"headlines": ["Panel upgrades and EV chargers for Tucson homes"]}), captured))
     assert captured["json"]["reasoning"]["effort"] == "minimal"
     assert "temperature" not in captured["json"]
 
@@ -111,3 +111,43 @@ def test_v4_page_uses_ai_about_and_blurbs(tmp_path):
     assert "Customers praise the tidy work." in demo["html_document"]
     assert "For panels that trip." in demo["html_document"]
     assert demo["content_snapshot"]["service_blurbs"] == {"Panel Upgrades": "For panels that trip."}
+
+
+ERNCO = {**FACTS, "name": "Ernco Electric Inc.", "city": "Fresno", "areas": ["Fresno", "Clovis"]}
+
+
+def test_directory_style_headlines_are_rejected_and_the_next_option_used():
+    data = {"headlines": ["Ernco Electric Inc. – Fresno", "Electrician in Fresno",
+                          "Panel upgrades and EV chargers for Fresno homes"]}
+    assert checked_copy(data, ERNCO)["headline"] == "Panel upgrades and EV chargers for Fresno homes"
+
+
+def test_no_strong_headline_leaves_the_standard_one_in_place():
+    data = {"headlines": ["Ernco Electric – Fresno", "Ernco powers Fresno homes safely"],
+            "subheadline": "Ernco Electric Inc. handles panel upgrades and EV chargers across Fresno and Clovis."}
+    result = checked_copy(data, ERNCO)
+    assert "headline" not in result
+    assert result["subheadline"].startswith("Ernco Electric Inc.")
+
+
+def test_city_named_businesses_can_still_get_city_headlines():
+    facts = {**ERNCO, "name": "Fresno Electric Co."}
+    assert checked_copy({"headlines": ["Electrical work done right in Fresno homes"]}, facts)["headline"]
+
+
+def test_prompt_asks_for_benefit_led_headlines_without_the_name():
+    from app.services.demo_copywriter import SYSTEM_PROMPT
+    assert '"headlines"' in SYSTEM_PROMPT and "Do NOT put the business name in a headline" in SYSTEM_PROMPT
+
+
+def test_demo_copy_model_defaults_to_the_stronger_writer(monkeypatch):
+    from app.core.config import Settings
+    monkeypatch.delenv("DEMO_COPY_MODEL", raising=False)
+    settings = Settings(
+        DATABASE_URL="postgresql://x", AUTH_USERNAME="u", AUTH_PASSWORD_HASH="pbkdf2_sha256$x",
+        AUTH_SESSION_SECRET="s" * 32,
+    )
+    assert settings.demo_copy_model == "anthropic/claude-haiku-4.5"
+    with pytest.raises(ValueError):
+        Settings(DATABASE_URL="postgresql://x", AUTH_USERNAME="u", AUTH_PASSWORD_HASH="pbkdf2_sha256$x",
+                 AUTH_SESSION_SECRET="s" * 32, DEMO_COPY_MODEL="some/unapproved-model")
