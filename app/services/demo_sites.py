@@ -11,7 +11,11 @@ from app.repositories.prospects import ProspectRepository
 from app.services import audit_benchmarks
 from app.services.demo_autofill import MAX_AREAS, MAX_SERVICES, suggested_areas, suggested_services
 from app.services.demo_site_renderer import palette_for, render_demo_site, template_options
+from app.services.demo_brand import extract_brand
+from app.services.demo_copywriter import DemoCopyError, write_demo_copy
+from app.services.demo_design import palette_with_brand, style_for
 from app.services.demo_site_renderer_v3 import V3_TEMPLATE_OPTION, niche_copy, render_demo_site_v3
+from app.services.demo_site_renderer_v4 import V4_KEYS, V4_TEMPLATE_OPTIONS, render_demo_site_v4, style_override
 from pipeline import verticals as vertical_config
 
 
@@ -111,12 +115,13 @@ def _own_areas(prospect: dict[str, Any]) -> list[str]:
 
 
 def _template_options() -> list[dict[str, str]]:
-    """What the builder offers. Older templates stay valid for existing demos."""
-    return [dict(V3_TEMPLATE_OPTION)]
+    """What the builder offers, recommended first. Older templates stay valid for existing demos."""
+    classic = {**V3_TEMPLATE_OPTION, "name": "Classic homepage (v3)"}
+    return [*(dict(item) for item in V4_TEMPLATE_OPTIONS), classic]
 
 
 def _valid_template_keys() -> set[str]:
-    return {V3_TEMPLATE_OPTION["key"], *(item["key"] for item in template_options())}
+    return {V3_TEMPLATE_OPTION["key"], *V4_KEYS, *(item["key"] for item in template_options())}
 
 
 def _default_headline(prospect: dict[str, Any], category: str, city: str) -> str:
@@ -189,6 +194,35 @@ class DemoSiteService:
                 nearby = []
         return suggested_areas(own, nearby)
 
+    def _demo_details(self, place_id: str) -> dict[str, Any]:
+        lookup = getattr(self.prospect_repository, "get_demo_details", None)
+        if lookup is None:
+            return {}
+        try:
+            return lookup(place_id) or {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _site_brand(
+        prospect: dict[str, Any],
+        place_id: str,
+        *,
+        enabled: bool,
+        root: Path | None,
+        base_url: str | None,
+    ) -> dict[str, Any]:
+        """Logo and brand colour from their current site; empty when unavailable."""
+        website = prospect.get("website_url")
+        if not enabled or not website or root is None or not base_url:
+            return {}
+        try:
+            return extract_brand(
+                website, place_id=place_id, business_name=prospect.get("name"), root=root, base_url=base_url,
+            )
+        except Exception:
+            return {}
+
     def _website_audit(self, place_id: str) -> dict[str, Any] | None:
         lookup = getattr(self.prospect_repository, "get_website_audit", None)
         if lookup is None:
@@ -210,6 +244,11 @@ class DemoSiteService:
         hero_image_url: str | None = None,
         work_image_url: str | None = None,
         secondary_image_url: str | None = None,
+        about: str | None = None,
+        service_blurbs: dict[str, str] | None = None,
+        use_site_branding: bool = True,
+        media_root: Path | None = None,
+        media_base_url: str | None = None,
     ) -> dict[str, Any]:
         prospect = self.prospect_repository.get_prospect(place_id)
         if prospect is None:
@@ -252,12 +291,41 @@ class DemoSiteService:
             "hero_image_url": _normalize_media_url(hero_image_url),
             "work_image_url": _normalize_media_url(work_image_url),
             "secondary_image_url": _normalize_media_url(secondary_image_url),
+            "about": (about or "").strip() or None,
+            "service_blurbs": {
+                name: " ".join(str(text).split())
+                for name, text in (service_blurbs or {}).items()
+                if name in normalized_services and str(text).strip()
+            },
         }
         brand_snapshot = {
             "template_key": template_key,
             "palette": palette_for(prospect.get("primary_type"), source_snapshot["niche_profile"]),
         }
-        if template_key == V3_TEMPLATE_OPTION["key"]:
+        if template_key in V4_KEYS:
+            details = self._demo_details(place_id)
+            source_snapshot.update({
+                "hours": details.get("hours_json"),
+                "street": details.get("street"),
+                "address": details.get("formatted_address"),
+            })
+            site_brand = self._site_brand(
+                prospect, place_id, enabled=use_site_branding, root=media_root, base_url=media_base_url,
+            )
+            brand_snapshot.update({
+                "style": style_for(source_snapshot["niche_profile"], style_override(template_key)),
+                "palette": palette_with_brand(brand_snapshot["palette"], site_brand.get("color")),
+                "logo_url": site_brand.get("logo_url"),
+                "logo_on_dark": bool(site_brand.get("logo_on_dark")),
+                "brand_color": site_brand.get("color"),
+                "brand_source": site_brand.get("source"),
+            })
+            html_document = render_demo_site_v4(
+                source=source_snapshot,
+                content=content_snapshot,
+                brand=brand_snapshot,
+            )
+        elif template_key == V3_TEMPLATE_OPTION["key"]:
             html_document = render_demo_site_v3(
                 source=source_snapshot,
                 content=content_snapshot,
@@ -278,6 +346,41 @@ class DemoSiteService:
             brand_snapshot=brand_snapshot,
             html_document=html_document,
         )
+
+    def write_copy(
+        self,
+        place_id: str,
+        *,
+        services: list[str],
+        service_areas: list[str],
+        api_key: str,
+        model: str,
+    ) -> dict[str, Any]:
+        """Suggested headline, intro, about and service lines; nothing is saved."""
+        prospect = self.prospect_repository.get_prospect(place_id)
+        if prospect is None:
+            raise DemoSiteError("prospect not found")
+        audit = self._website_audit(place_id)
+        normalized_services = _normalize_list(services, max_items=MAX_SERVICES) or _auto_services(prospect, audit)
+        normalized_areas = _normalize_list(service_areas, max_items=MAX_AREAS) or self._auto_areas(prospect)
+        profile = vertical_config.vertical_profile(prospect.get("vertical") or "")
+        reviews = showcase_reviews(self._google_reviews(place_id), limit=3)
+        facts = {
+            "name": prospect.get("name") or "Business",
+            "category": _display_type(prospect.get("primary_type")),
+            "city": prospect.get("city") or (normalized_areas[0] if normalized_areas else ""),
+            "areas": normalized_areas,
+            "services": normalized_services,
+            "audience": niche_copy(profile)["audience"],
+            "rating": float(prospect["rating"]) if prospect.get("rating") is not None else None,
+            "review_count": int(prospect["review_count"]) if prospect.get("review_count") is not None else None,
+            "review_texts": [r["text"] for r in reviews],
+            "site_summary": (audit or {}).get("meta_description") or (audit or {}).get("h1_text"),
+        }
+        try:
+            return write_demo_copy(facts, api_key=api_key, model=model)
+        except DemoCopyError as exc:
+            raise DemoSiteError(f"couldn't write copy: {exc}") from exc
 
     def get_demo(self, demo_id: str) -> dict[str, Any] | None:
         return self.demo_repository.get_demo(demo_id)

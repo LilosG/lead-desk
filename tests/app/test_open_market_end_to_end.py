@@ -330,3 +330,23 @@ def test_an_email_added_by_hand_comes_first_and_regrades_the_lead(client, seeded
 
     runs = client.get("/api/runs?page_size=100").json()["items"]
     assert not any(r["geo_label"].startswith("Contact updated") for r in runs)
+
+
+def test_premium_v4_demo_builds_through_the_api(client, seeded_run, monkeypatch, tmp_path):
+    monkeypatch.setenv("DEMO_SITE_ROOT", str(tmp_path))
+    from app.core.config import get_settings
+    get_settings.cache_clear()
+    try:
+        options = client.get("/api/demo-sites/prospects/e2e-target/options").json()
+        assert options["templates"][0]["key"] == "premium-v4"
+        response = client.post("/api/demo-sites/prospects/e2e-target", json={
+            "template_key": "premium-v4", "services": [], "service_areas": [], "use_site_branding": False,
+        })
+        assert response.status_code == 201, response.text
+        demo = response.json()
+        assert demo["brand_snapshot"]["style"] == "clean"  # a dentist
+        preview = client.get(f"/api/demo-sites/{demo['id']}/preview")
+        assert preview.status_code == 200 and 'class="style-clean"' in preview.text
+        assert "Dental Implants" in preview.text
+    finally:
+        get_settings.cache_clear()
