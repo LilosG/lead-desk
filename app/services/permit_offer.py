@@ -47,13 +47,13 @@ _PLURAL = {
     "ev_charger": "EV charger installs",
     "service_upgrade": "panel and service upgrades",
     "subpanel": "subpanels",
-    "appliance_circuit": "hot tub, sauna and mini-split circuits",
+    "appliance_circuit": "240 V circuits",
 }
 _SINGULAR = {
     "ev_charger": "EV charger",
     "service_upgrade": "panel upgrade",
     "subpanel": "subpanel",
-    "appliance_circuit": "hot tub or mini-split circuit",
+    "appliance_circuit": "240 V circuit",
 }
 _ANY_JOB = "panel upgrade, EV charger or subpanel"
 _ASK_GENERIC = ("A lot of cities want a site plan, single-line and load calc with the permit on "

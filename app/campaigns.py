@@ -83,7 +83,8 @@ PERMIT_JOBS: tuple[PermitJob, ...] = (
         r"|\bsaunas?\b"
         r"|\bheat\s+pumps?\b.{0,40}(wiring|circuit|install)"
         r"|\b(wiring|circuit|install)\w*\b.{0,40}\bheat\s+pumps?\b"
-        r"|\bmini[\s-]*splits?\b"
+        r"|\b(mini[\s-]*splits?|ductless)\b.{0,40}(install|wiring|circuit|electrical|hook[\s-]?up)"
+        r"|\b(install|wiring|circuit|electrical|hook[\s-]?up)\w*\b.{0,40}\b(mini[\s-]*splits?|ductless)\b"
         r"|\b(240|220)[\s-]*(v|volts?)\b[\s-]*(circuit|outlet|line)"
     ),
 )

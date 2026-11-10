@@ -96,7 +96,8 @@ def test_without_ev_brands_the_proof_line_names_the_jobs_shown():
     desk = permit_offer.write_email(_lead("subpanel"), "desk_work")["body"]
     assert "Saw Five Point does subpanels. On a subpanel, the install is the easy part." in desk
     circuit = permit_offer.write_email(_lead("appliance_circuit"), "desk_work")["body"]
-    assert "does hot tub, sauna and mini-split circuits. On a hot tub or mini-split circuit," in circuit
+    assert "does 240 V circuits. On a 240 V circuit," in circuit
+    assert "hot tub" not in circuit and "sauna" not in circuit and "mini-split" not in circuit
     assert "On a panel upgrade, the install" in permit_offer.write_email(_lead("service_upgrade"), "desk_work")["body"]
 
 

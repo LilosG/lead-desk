@@ -92,7 +92,8 @@ PERMIT_JOB_PATTERNS: tuple[tuple[str, str], ...] = (
      r"|\bsaunas?\b"
      r"|\bheat\s+pumps?\b.{0,40}(wiring|circuit|install)"
      r"|\b(wiring|circuit|install)\w*\b.{0,40}\bheat\s+pumps?\b"
-     r"|\bmini[\s-]*splits?\b"
+     r"|\b(mini[\s-]*splits?|ductless)\b.{0,40}(install|wiring|circuit|electrical|hook[\s-]?up)"
+     r"|\b(install|wiring|circuit|electrical|hook[\s-]?up)\w*\b.{0,40}\b(mini[\s-]*splits?|ductless)\b"
      r"|\b(240|220)[\s-]*(v|volts?)\b[\s-]*(circuit|outlet|line)"),
 )
 PERMIT_JOB_REGEX = {slug: re.compile(pattern, re.I) for slug, pattern in PERMIT_JOB_PATTERNS}
@@ -122,8 +123,8 @@ _EV_COMMERCIAL = re.compile(
     r"|\b(fleet|workplace|parking lot)\b.{0,40}charg",
     re.I,
 )
-# A blog post shows interest. A service page shows they sell it.
-_EDITORIAL_PATH = re.compile(r"/(blog|news|posts?|articles?|tag|category|resources)(/|$)", re.I)
+# A blog post, tip sheet or guide shows interest. A service page shows they sell it.
+_EDITORIAL_PATH = re.compile(r"/(blog|news|posts?|articles?|tag|category|resources|expert-tips|tips|learn|guides|faq|how-to)(/|$)", re.I)
 # Any page that could list what they do: /electric-c10/residential-services, /what-we-do.
 _SERVICE_HUB = re.compile(r"service|residential|electric|what[-_]we[-_]do", re.I)
 MAX_EV_PAGE_FETCHES = 4
@@ -220,14 +221,15 @@ def permit_profile(
 
     Reads pages the way ev_profile does and stays inside the same fetch limit:
     one service page per job type shown, or the service hubs when the homepage
-    shows none. permit_job_pages only holds service pages, never /blog posts.
+    shows none. permit_job_pages only holds service pages, never /blog posts, and a job
+    found only on an editorial path is not recorded.
     """
     found = {slug: _job_paths(rx, soup, site_paths, host)[0] for slug, rx in PERMIT_JOB_REGEX.items()}
     pages = {slug: [p for p in paths if not _EDITORIAL_PATH.search(p)] for slug, paths in found.items()}
     pages_read: list[str] = []
     if fetch_page is not None:
         wanted = [p[0] for p in pages.values() if p]
-        if not any(found.values()) and not any(rx.search(text) for rx in PERMIT_JOB_REGEX.values()):
+        if not any(pages.values()) and not any(rx.search(text) for rx in PERMIT_JOB_REGEX.values()):
             links = {_internal_path(a["href"], host) for a in soup.find_all("a", href=True)}
             wanted = sorted({p for p in [*links, *site_paths]
                              if p and _SERVICE_HUB.search(p) and not _EDITORIAL_PATH.search(p)},
@@ -237,7 +239,10 @@ def permit_profile(
             if page:
                 pages_read.append(_visible_text(BeautifulSoup(page, "html.parser")))
     combined = " ".join([text, *pages_read])
-    shown = [slug for slug, rx in PERMIT_JOB_REGEX.items() if found[slug] or rx.search(combined)]
+    # A job seen only on an editorial path (/blog, /expert-tips, /guides...) is not
+    # recorded: it needs a service page or the text rule on the homepage or a read
+    # service page.
+    shown = [slug for slug, rx in PERMIT_JOB_REGEX.items() if pages[slug] or rx.search(combined)]
     return {
         "permit_jobs": shown,
         "permit_job_pages": {slug: pages[slug][0] for slug in shown if pages[slug]},

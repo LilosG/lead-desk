@@ -372,6 +372,10 @@ PERMIT_CASES = [
     ("Sauna", "appliance_circuit"),
     ("Heat pump circuit", "appliance_circuit"),
     ("Mini-split install", "appliance_circuit"),
+    ("Mini-split installation", "appliance_circuit"),
+    ("Ductless mini-split installation", "appliance_circuit"),
+    ("Dedicated 240 V circuit for a mini-split", "appliance_circuit"),
+    ("Electrical hookup for a ductless unit", "appliance_circuit"),
     ("240V outlet", "appliance_circuit"),
     ("220 volt line", "appliance_circuit"),
     # Things that must not count as any permit job.
@@ -391,6 +395,9 @@ PERMIT_CASES = [
     ("Garage door repair", None),
     ("Radu electric", None),
     ("Heat pump tax credits", None),
+    ("Ductless mini-split repair and maintenance", None),
+    ("Mini-split service and repair", None),
+    ("Ductless heating and cooling", None),
     ("Splitting the cost", None),
 ]
 

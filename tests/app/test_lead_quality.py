@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import psycopg
+import pytest
 from bs4 import BeautifulSoup
 
 PIPELINE = Path(__file__).resolve().parents[2] / "pipeline"
@@ -208,6 +209,34 @@ def test_a_blog_post_shows_interest_but_is_not_a_service_page():
     found = _permit('<a href="/blog/200-amp-service-upgrade-cost">200 amp service upgrade cost</a>')
     assert found["permit_jobs"] == ["service_upgrade"]
     assert found["permit_job_pages"] == {}
+
+
+@pytest.mark.parametrize("folder", ["blog", "expert-tips", "tips", "learn", "guides", "faq", "how-to"])
+def test_a_job_found_only_on_an_editorial_path_is_not_recorded(folder):
+    found = _permit("<p>Licensed electricians.</p>", [f"/{folder}/200-amp-service-upgrade-cost"])
+    assert found["permit_jobs"] == []
+    assert found["permit_job_pages"] == {}
+
+
+@pytest.mark.parametrize("folder", ["expert-tips", "tips", "learn", "guides", "faq", "how-to"])
+def test_an_editorial_link_still_counts_when_the_homepage_text_shows_the_job(folder):
+    found = _permit(f'<p>We do panel upgrades.</p><a href="/{folder}/panel-upgrade-cost">Cost</a>')
+    assert found["permit_jobs"] == ["service_upgrade"]
+    assert found["permit_job_pages"] == {}
+
+
+def test_an_editorial_only_job_does_not_stop_the_service_hub_being_read():
+    found = _permit('<a href="/residential-services">Residential</a>',
+                    ["/guides/panel-upgrade-cost"],
+                    pages={"/residential-services": "<li>Panel Upgrades</li>"})
+    assert found["permit_jobs"] == ["service_upgrade"]
+
+
+def test_expert_tips_and_guides_paths_are_editorial_for_ev_pages_too():
+    for folder in ("expert-tips", "tips", "learn", "guides", "faq", "how-to"):
+        found = _profile("<p>Licensed electricians.</p>", [f"/{folder}/ev-charger-installation"])
+        assert found["ev_strength"] == "mention", folder
+        assert found["ev_page_path"] is None, folder
 
 
 def test_homepage_wording_alone_shows_a_job_without_a_page():
