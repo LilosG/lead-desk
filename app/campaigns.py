@@ -64,7 +64,8 @@ PERMIT_JOBS: tuple[PermitJob, ...] = (
     PermitJob(
         "service_upgrade", "Panel upgrades",
         r"(?<!solar\s)\b(breaker\s+box|(electrical\s+|breaker\s+)?panel)s?\s+(upgrad|replac|chang)\w*"
-        r"|\bservice\s+(upgrad|chang)\w*"
+        r"|\belectrical\s+service\s+(upgrad|chang|replac)\w*"
+        r"|\b(upgrad|chang)\w*\s+(your|the)\s+electrical\s+service\b"
         r"|\b(100|125|150|200|400)[\s-]*amps?\s+(electrical\s+)?(service|panel)"
     ),
     PermitJob(

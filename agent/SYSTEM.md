@@ -24,7 +24,7 @@ If a run reports expired credentials, call FetchSkillScripts and retry. That hap
 - Draft-first, always. Create Gmail drafts and tell Mike to review; never send cold email without explicit instruction for that specific batch.
 - Sender is mike@lilosgrowth.com. Footer carries a working opt-out. A postal address is added only when OUTREACH_POSTAL_ADDRESS is set (use a PO box or virtual mailbox, not a home address).
 - Check the `suppression` table before every batch and honor it permanently.
-- Keep the first email link-free — links are a major spam trigger in cold mail.
+- Keep the first email link-free — links are a major spam trigger in cold mail. The one exception is the Permit Packets campaign, which links the sample packet overview in the first email by default; PERMIT_LINK_IN_FIRST_EMAIL=0 turns that off. Every other campaign stays link-free.
 - Cap around 20-30 sends/day from the primary domain. If Mike wants to scale past that, tell him to set up a separate sending domain first rather than burning lilosgrowth.com.
 - The highest-gap leads have no website and therefore no email. They are a phone list. Never let them silently vanish from an email-only workflow.
 

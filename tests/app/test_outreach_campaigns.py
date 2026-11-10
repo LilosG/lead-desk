@@ -356,7 +356,11 @@ PERMIT_CASES = [
     ("200 amp service", "service_upgrade"),
     ("400-amp panel", "service_upgrade"),
     ("Electrical service change", "service_upgrade"),
-    ("Service upgrades", "service_upgrade"),
+    ("Electrical service upgrade", "service_upgrade"),
+    ("Electrical service replacement", "service_upgrade"),
+    ("We upgrade the electrical service to your home", "service_upgrade"),
+    ("Upgrade your electrical service", "service_upgrade"),
+    ("Change the electrical service", "service_upgrade"),
     ("Sub-panel installation", "subpanel"),
     ("Subpanel", "subpanel"),
     ("Power to a detached garage", "subpanel"),
@@ -378,6 +382,10 @@ PERMIT_CASES = [
     ("Control panel", None),
     ("Service area", None),
     ("Customer service", None),
+    ("Customer service change", None),
+    ("Service upgrade to our website", None),
+    ("Customer service upgrade", None),
+    ("Service upgrades", None),
     ("We upgrade your lighting", None),
     ("Subpanelist", None),
     ("Garage door repair", None),
@@ -395,6 +403,19 @@ def test_permit_job_patterns_agree_between_python_sql_and_the_crawler(pool, text
     with pool.connection() as conn:
         row = conn.execute("select %s ~* %s as match", (text, PERMIT_JOBS_SQL)).fetchone()
     assert row["match"] is bool(slug)
+
+
+def test_the_permit_packets_migration_renames_only_the_campaign_row():
+    sql = Path("sql/migrations/027_permit_packets_campaign.sql").read_text()
+    update = ("update campaigns\n"
+              "set name = 'Permit Packets',\n"
+              "    description = 'Permit paperwork automation for electricians: EV chargers, panel and "
+              "service upgrades, subpanels and 240 V circuits'\n"
+              "where key = 'ev_permits';")
+    assert update in sql
+    assert sql.lower().count("update ") == 1
+    assert "begin;" in sql and "commit;" in sql
+    assert not re.search(r"\b(insert|delete|drop|alter|truncate)\b", sql, re.I)
 
 
 def test_the_crawler_and_the_board_share_the_job_patterns():

@@ -359,12 +359,12 @@ class OutreachService:
         return recent
 
     def write_ev_draft(self, context: dict, angle: str | None = None) -> dict:
-        """The EV Permits email, refused unless its facts check out."""
+        """The Permit Packets email, refused unless its facts check out."""
         if context.get("vertical") != "electrician":
             raise OutreachBlocked("Permit Packets is only for electricians.")
         evidence = permit_offer.permit_evidence(context)
         if angle == BEST:
-            angle = ROTATE  # EV emails carry no audit or mockup.
+            angle = ROTATE  # Permit emails carry no audit or mockup.
         chosen = resolve_angle(EV_PERMITS, context["place_id"], angle, context.get("angle"))
         if not is_known(EV_PERMITS, chosen):
             raise OutreachBlocked(f"Unknown email angle: {chosen}")
