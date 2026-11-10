@@ -8,27 +8,38 @@ from typing import Any
 
 from psycopg_pool import ConnectionPool
 
-from app.campaigns import COOLDOWN_DAYS, EV_PERMITS, EV_SERVICE_SQL, simple_permit_cities
+from app.campaigns import COOLDOWN_DAYS, EV_PERMITS, PERMIT_JOBS_SQL
 
-# Who the EV offer can go to. A site that doesn't mention EV work still gets the
-# email, worded as a question, and ranks after the shops that do.
-_EV_AUDIENCE = """(
+# Who the Permit Packets offer can go to. A site that doesn't show permit work
+# still gets the email, worded as a question, and ranks after the shops that do.
+# Cities with a simple EV permit are included: the other job types still need
+# drawings there, and the email makes no city claim for them.
+_PERMIT_AUDIENCE = """(
           b.vertical = 'electrician'
           and (b.primary_type = 'electrician' or 'electrician' = any(b.types)
                or b.name ~* 'electric')
           and coalesce(w.qualification, '') <> 'franchise'
-          and (coalesce(b.city, '') || ', ' || coalesce(b.state, '')) <> all(%(simple_cities)s)
     )"""
-# Shops that clearly sell EV work get the EV pitch before the SEO one.
-_EV_ELIGIBLE = f"""(
-          {_EV_AUDIENCE}
+# The job types the site shows, as a json array. Rows read before the
+# permit_jobs signal existed have none until the backfill runs.
+_PERMIT_JOBS = """(case when jsonb_typeof(we.site_signals -> 'permit_jobs') = 'array'
+               then we.site_signals -> 'permit_jobs' else '[]'::jsonb end)"""
+# A service page for any job type, not just a blog post that mentions it.
+_SERVICE_PAGE = """(we.site_signals ->> 'ev_strength' = 'page'
+               or (jsonb_typeof(we.site_signals -> 'permit_job_pages') = 'object'
+                   and we.site_signals -> 'permit_job_pages' <> '{}'::jsonb))"""
+# Shops that clearly sell permit work get the Permit Packets pitch before the SEO one.
+# ev_service covers EV leads read before permit_jobs was recorded.
+_PERMIT_ELIGIBLE = f"""(
+          {_PERMIT_AUDIENCE}
           and (
-                coalesce((we.site_signals ->> 'ev_service')::boolean, false)
+                jsonb_array_length({_PERMIT_JOBS}) > 0
+                or coalesce((we.site_signals ->> 'ev_service')::boolean, false)
                 or concat_ws(' ', array_to_string(we.offering_titles, ' '), we.title, we.meta_description)
-                   ~* %(ev_pattern)s
+                   ~* %(permit_pattern)s
               )
     )"""
-_LEAD_RULES = {EV_PERMITS: f"and {_EV_AUDIENCE}"}
+_LEAD_RULES = {EV_PERMITS: f"and {_PERMIT_AUDIENCE}"}
 
 
 def cooldown_join(place: str, campaign: str) -> str:
@@ -89,7 +100,9 @@ _BOARD_CTE = """
             cd.cooldown_until,
             we.site_signals ->> 'ev_strength' as ev_strength,
             we.site_signals -> 'ev_brands' as ev_brands,
-            {ev_eligible} as ev_eligible,
+            {permit_jobs} as permit_jobs,
+            {service_page} as has_service_page,
+            {permit_eligible} as permit_eligible,
             coalesce(fu.drafted, 0) as follow_ups_drafted,
             coalesce(fu.open, false) as follow_up_open,
             coalesce(fu.last_sent, q.contacted_at) as last_touch_at,
@@ -148,7 +161,9 @@ _BOARD_CTE = """
             cd.cooldown_until,
             we.site_signals ->> 'ev_strength',
             we.site_signals -> 'ev_brands',
-            {ev_eligible},
+            {permit_jobs},
+            {service_page},
+            {permit_eligible},
             0,
             false,
             null::timestamptz,
@@ -204,7 +219,9 @@ def board_cte(campaign: str) -> str:
         .replace("{queue_cooldown}", cooldown_join("q.place_id", "%(campaign)s"))
         .replace("{candidate_cooldown}", cooldown_join("w.place_id", "%(campaign)s"))
         .replace("{lead_rule}", _LEAD_RULES.get(campaign, ""))
-        .replace("{ev_eligible}", _EV_ELIGIBLE)
+        .replace("{permit_jobs}", _PERMIT_JOBS)
+        .replace("{service_page}", _SERVICE_PAGE)
+        .replace("{permit_eligible}", _PERMIT_ELIGIBLE)
     )
 
 
@@ -221,13 +238,14 @@ _DEFAULT_ORDER = (
     "case when qualification = 'qualified' then 0 else 1 end, "
     "total_score desc nulls last, review_count desc nulls last, name"
 )
-# EV leads get pitched EV first, so they drop behind leads only SEO can reach.
-_SEO_ORDER = f"case when ev_eligible then 1 else 0 end, {_DEFAULT_ORDER}"
+# Permit leads get pitched Permit Packets first, so they drop behind leads only SEO can reach.
+_SEO_ORDER = f"case when permit_eligible then 1 else 0 end, {_DEFAULT_ORDER}"
 # The SEO score rewards a weak site, which says nothing about buying permit
-# automation. The best EV lead is a busy shop that clearly sells EV work.
+# automation. The best lead is a busy shop that clearly sells several permit jobs.
 _EV_ORDER = (
-    "case when ev_eligible then 0 else 1 end, "
-    "case when ev_strength = 'page' then 0 else 1 end, "
+    "case when permit_eligible then 0 else 1 end, "
+    "jsonb_array_length(coalesce(permit_jobs, '[]'::jsonb)) desc, "
+    "case when has_service_page then 0 else 1 end, "
     "case when jsonb_array_length(coalesce(ev_brands, '[]'::jsonb)) > 0 then 0 else 1 end, "
     "fit_score desc nulls last, review_count desc nulls last, name"
 )
@@ -241,8 +259,7 @@ def _scope(campaign: str) -> dict[str, Any]:
     return {
         "campaign": campaign,
         "cooldown_days": COOLDOWN_DAYS,
-        "simple_cities": simple_permit_cities(),
-        "ev_pattern": EV_SERVICE_SQL,
+        "permit_pattern": PERMIT_JOBS_SQL,
     }
 
 

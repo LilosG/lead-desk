@@ -19,7 +19,7 @@ from app.services.outreach_audit_copy import (
     contact_first_name,
     personal_greeting,
 )
-from app.services import ev_offer, seo_offer
+from app.services import permit_offer, seo_offer
 from app.services.email_angles import BEST, ROTATE, is_known, resolve_angle
 from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import is_too_similar
@@ -60,7 +60,7 @@ def looks_like_email(address: str | None) -> bool:
 
 def uses_old_copy(item: dict) -> bool:
     """A draft written before the current emails. Older rows have no angle behind them."""
-    current = {"ev_permit_offer": ev_offer.PROMPT_VERSION, "audit_report": seo_offer.PROMPT_VERSION}
+    current = {"ev_permit_offer": permit_offer.PROMPT_VERSION, "audit_report": seo_offer.PROMPT_VERSION}
     expected = current.get(item.get("claim_signal"))
     version = item.get("generation_prompt_version")
     return bool(expected and version and version != expected)
@@ -359,26 +359,25 @@ class OutreachService:
         return recent
 
     def write_ev_draft(self, context: dict, angle: str | None = None) -> dict:
-        """The EV Permits email, refused unless its facts check out."""
+        """The Permit Packets email, refused unless its facts check out."""
         if context.get("vertical") != "electrician":
-            raise OutreachBlocked("EV Permits is only for electricians.")
-        evidence = ev_offer.ev_evidence(context)
+            raise OutreachBlocked("Permit Packets is only for electricians.")
+        evidence = permit_offer.permit_evidence(context)
         if angle == BEST:
-            angle = ROTATE  # EV emails carry no audit or mockup.
+            angle = ROTATE  # Permit emails carry no audit or mockup.
         chosen = resolve_angle(EV_PERMITS, context["place_id"], angle, context.get("angle"))
         if not is_known(EV_PERMITS, chosen):
             raise OutreachBlocked(f"Unknown email angle: {chosen}")
-        written = ev_offer.write_email(context, chosen)
+        written = permit_offer.write_email(context, chosen)
         return {
             "subject": written["subject"],
             "body": f"{written['body']}\n\n{CAN_SPAM_FOOTER}",
             "claim_signal": get_campaign(context.get("campaign_key")).claim_signal,
             "verification_status": "verified",
-            "verification_note": (f"EV work found: {evidence}." if evidence else
-                                   "Site doesn't show EV work, so the email asks instead of assuming.")
+            "verification_note": (f"Permit work found: {evidence}." if evidence else "")
                                   + f" {written['note']}".rstrip(),
             "generation_model": FIXED_COPY,
-            "prompt_version": ev_offer.PROMPT_VERSION,
+            "prompt_version": permit_offer.PROMPT_VERSION,
             "angle": chosen,
         }
 
@@ -687,7 +686,7 @@ class OutreachService:
         if (now or datetime.now(timezone.utc)) < due:
             raise OutreachBlocked(f"This follow-up is due on {due:%b} {due.day}.")
 
-        offer = ev_offer if item["campaign_key"] == EV_PERMITS else seo_offer
+        offer = permit_offer if item["campaign_key"] == EV_PERMITS else seo_offer
         subject = item["subject"] or ""
         follow_up = self.repository.begin_follow_up(
             item_id, step,

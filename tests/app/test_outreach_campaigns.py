@@ -24,12 +24,14 @@ import site_signals  # noqa: E402
 from enrich import SiteFindings  # noqa: E402
 from store import PostgresStore  # noqa: E402
 
-from app.campaigns import EV_PERMITS, EV_SERVICE_SQL, SEO_WEBSITES  # noqa: E402
+from app.campaigns import (  # noqa: E402
+    EV_PERMITS, EV_SERVICE_PATTERN, EV_SERVICE_SQL, PERMIT_JOBS, PERMIT_JOBS_SQL, SEO_WEBSITES,
+)
 from app.integrations.gmail import GmailDraftResult  # noqa: E402
 from app.repositories.outreach import OutreachRepository  # noqa: E402
 from app.repositories.outreach_board import OutreachBoardRepository  # noqa: E402
 from app.repositories.outreach_gmail import OutreachGmailRepository  # noqa: E402
-from app.services.ev_offer import ev_evidence, write_email  # noqa: E402
+from app.services.permit_offer import ev_evidence, write_email  # noqa: E402
 from app.services.outreach import OutreachBlocked, OutreachService  # noqa: E402
 from app.services.outreach_board import OutreachBoardService, gmail_block_reason, next_step  # noqa: E402
 from app.services.outreach_bulk import fast_track  # noqa: E402
@@ -37,6 +39,8 @@ from app.services.outreach_draft_sync import OutreachDraftSyncService  # noqa: E
 
 PHOENIX = "Oro Valley, AZ, USA"
 EV_TITLES = ["Panel Upgrades", "EV Charger Installation"]
+# Simple-permit cities (Frisco) are in the campaign now.
+PERMIT_LEADS = {"camp-title", "camp-signal", "camp-panel", "camp-frisco", "camp-noev"}
 
 
 def _biz(pid: str, city: str = "Oro Valley", state: str = "AZ", **kw) -> dict:
@@ -53,7 +57,8 @@ def _biz(pid: str, city: str = "Oro Valley", state: str = "AZ", **kw) -> dict:
     return row
 
 
-def _site(pid: str, *, titles: list[str] | None = None, ev_signal: bool = False) -> SiteFindings:
+def _site(pid: str, *, titles: list[str] | None = None, ev_signal: bool = False,
+          jobs: list[str] | None = None) -> SiteFindings:
     f = SiteFindings(place_id=pid)
     f.is_reachable = True
     f.has_ssl = True
@@ -66,6 +71,8 @@ def _site(pid: str, *, titles: list[str] | None = None, ev_signal: bool = False)
     f.emails_found = [f"hello@{pid}.example.com"]
     f.offering_titles = titles or []
     f.site_signals = {"ev_service": ev_signal}
+    if jobs is not None:
+        f.site_signals["permit_jobs"] = jobs
     return f
 
 
@@ -78,9 +85,10 @@ def pool():
     if store.get_active_run():
         pytest.skip("another run is active in this database")
     leads = {
-        "camp-title": (_biz("camp-title"), _site("camp-title", titles=EV_TITLES)),
+        "camp-title": (_biz("camp-title"), _site("camp-title", titles=EV_TITLES, jobs=["ev_charger"])),
         "camp-signal": (_biz("camp-signal"), _site("camp-signal", ev_signal=True)),
-        "camp-noev": (_biz("camp-noev"), _site("camp-noev", titles=["Panel Upgrades"])),
+        "camp-noev": (_biz("camp-noev"), _site("camp-noev", titles=["Lighting Design"])),
+        "camp-panel": (_biz("camp-panel"), _site("camp-panel", titles=["Panel Upgrades"])),
         "camp-plumber": (_biz("camp-plumber", vertical="plumber", primary_type="plumber",
                               types=["plumber"], matched_verticals=["plumber"]),
                          _site("camp-plumber", titles=EV_TITLES)),
@@ -146,16 +154,16 @@ def _touch(pool, item_id, **columns):
                      [*columns.values(), item_id])
 
 
-def test_ev_campaign_lists_every_electrician_with_ev_shops_first(board):
+def test_permit_campaign_lists_every_electrician_with_permit_shops_first(board):
     names = list(_names(board, EV_PERMITS))
-    assert set(names) == {"camp-title", "camp-signal", "camp-noev"}
+    assert set(names) == PERMIT_LEADS
     assert names[-1] == "camp-noev"
 
 
 def test_qualified_filter_does_not_hide_ev_leads(board):
     data = board.board(campaign=EV_PERMITS, stage="to_prep", page=1, page_size=100,
                        q="camp-", vertical=None, market=None, qualified_only=True)
-    assert {row["place_id"] for row in data["items"]} == {"camp-title", "camp-signal", "camp-noev"}
+    assert {row["place_id"] for row in data["items"]} == PERMIT_LEADS
 
 
 def test_seo_campaign_is_unchanged_by_the_ev_rules(board):
@@ -181,8 +189,8 @@ def test_the_ev_email_says_only_what_is_verified(outreach):
     result = fast_track(outreach, None, "camp-title", gmail=False, campaign_key=EV_PERMITS)
     item = outreach.repository.get_item(result["item_id"])
 
-    assert "site plan" in item["body"] and "Want me to send a sample packet" in item["body"]
-    assert "http" not in item["body"].split("Mike Prickett")[0]
+    assert "site plan" in item["body"] and "Want me to run one of your past jobs through it?" in item["body"]
+    assert "https://ev-permit-packets.vercel.app/" in item["body"].split("Mike Prickett")[0]
     assert "no thanks" in item["body"]
     assert item["angle"] in {"drawings", "desk_work"}
     assert item["claim_signal"] == "ev_permit_offer"
@@ -304,7 +312,7 @@ def test_campaign_routes(client, pool):
     assert client.get("/api/outreach/campaigns/nope/results").status_code == 404
     response = client.get("/api/outreach/board", params={"campaign": EV_PERMITS, "q": "camp-"})
     assert response.status_code == 200
-    assert {row["place_id"] for row in response.json()["items"]} == {"camp-title", "camp-signal", "camp-noev"}
+    assert {row["place_id"] for row in response.json()["items"]} == PERMIT_LEADS
     assert client.post("/api/outreach/fast-track/camp-title", json={"campaign": "nope"}).status_code == 404
 
 
@@ -339,6 +347,82 @@ def test_site_signal_and_board_filter_agree(pool, text, expected):
     with pool.connection() as conn:
         row = conn.execute("select %s ~* %s as match", (text, EV_SERVICE_SQL)).fetchone()
     assert row["match"] is expected
+
+
+PERMIT_CASES = [
+    ("Electrical panel upgrade", "service_upgrade"),
+    ("Panel replacement", "service_upgrade"),
+    ("Breaker box upgrade", "service_upgrade"),
+    ("200 amp service", "service_upgrade"),
+    ("400-amp panel", "service_upgrade"),
+    ("Electrical service change", "service_upgrade"),
+    ("Electrical service upgrade", "service_upgrade"),
+    ("Electrical service replacement", "service_upgrade"),
+    ("We upgrade the electrical service to your home", "service_upgrade"),
+    ("Upgrade your electrical service", "service_upgrade"),
+    ("Change the electrical service", "service_upgrade"),
+    ("Sub-panel installation", "subpanel"),
+    ("Subpanel", "subpanel"),
+    ("Power to a detached garage", "subpanel"),
+    ("Wiring for your workshop addition and detached building", "subpanel"),
+    ("Electrical for an ADU", "subpanel"),
+    ("Hot tub wiring", "appliance_circuit"),
+    ("Spa circuit installation", "appliance_circuit"),
+    ("Install a jacuzzi", "appliance_circuit"),
+    ("Sauna", "appliance_circuit"),
+    ("Heat pump circuit", "appliance_circuit"),
+    ("Mini-split install", "appliance_circuit"),
+    ("240V outlet", "appliance_circuit"),
+    ("220 volt line", "appliance_circuit"),
+    # Things that must not count as any permit job.
+    ("Day spa and wellness", None),
+    ("Spa treatments", None),
+    ("Solar panel upgrade", None),
+    ("Customer review panel", None),
+    ("Control panel", None),
+    ("Service area", None),
+    ("Customer service", None),
+    ("Customer service change", None),
+    ("Service upgrade to our website", None),
+    ("Customer service upgrade", None),
+    ("Service upgrades", None),
+    ("We upgrade your lighting", None),
+    ("Subpanelist", None),
+    ("Garage door repair", None),
+    ("Radu electric", None),
+    ("Heat pump tax credits", None),
+    ("Splitting the cost", None),
+]
+
+
+@pytest.mark.parametrize("text,slug", PERMIT_CASES)
+def test_permit_job_patterns_agree_between_python_sql_and_the_crawler(pool, text, slug):
+    from_python = [job.slug for job in PERMIT_JOBS if re.search(job.regex, text, re.I)]
+    from_crawler = [s for s, rx in site_signals.PERMIT_JOB_REGEX.items() if rx.search(text)]
+    assert from_python == from_crawler == ([slug] if slug else [])
+    with pool.connection() as conn:
+        row = conn.execute("select %s ~* %s as match", (text, PERMIT_JOBS_SQL)).fetchone()
+    assert row["match"] is bool(slug)
+
+
+def test_the_permit_packets_migration_renames_only_the_campaign_row():
+    sql = Path("sql/migrations/027_permit_packets_campaign.sql").read_text()
+    update = ("update campaigns\n"
+              "set name = 'Permit Packets',\n"
+              "    description = 'Permit paperwork automation for electricians: EV chargers, panel and "
+              "service upgrades, subpanels and 240 V circuits'\n"
+              "where key = 'ev_permits';")
+    assert update in sql
+    assert sql.lower().count("update ") == 1
+    assert "begin;" in sql and "commit;" in sql
+    assert not re.search(r"\b(insert|delete|drop|alter|truncate)\b", sql, re.I)
+
+
+def test_the_crawler_and_the_board_share_the_job_patterns():
+    assert [(j.slug, j.regex) for j in PERMIT_JOBS] == list(site_signals.PERMIT_JOB_PATTERNS)
+    assert PERMIT_JOBS[0].slug == "ev_charger" and PERMIT_JOBS[0].regex == EV_SERVICE_PATTERN
+    assert site_signals.EV_SERVICE.pattern == EV_SERVICE_PATTERN
+    assert EV_SERVICE_SQL == EV_SERVICE_PATTERN.replace(r"\b", r"\y")
 
 
 def test_collect_reads_ev_work_from_the_homepage():
@@ -393,28 +477,34 @@ def test_block_reason_and_next_step_use_the_campaign():
     assert next_step({"stage": "to_prep", "campaign_key": EV_PERMITS}) == "Draft the email"
 
 
-def test_ev_leads_rank_by_ev_proof_not_the_seo_score(pool, board):
-    with pool.connection() as conn:
-        conn.execute("""update website_enrichment
-                        set site_signals = site_signals || '{"ev_service": true, "ev_strength": "page",
-                                                              "ev_brands": ["Tesla"]}'::jsonb
-                        where place_id = 'camp-signal'""")
+def test_permit_leads_rank_by_job_types_shown_not_the_seo_score(pool, board):
+    def set_signals(signals: str):
+        with pool.connection() as conn:
+            conn.execute("update website_enrichment set site_signals = %s::jsonb "
+                         "where place_id = 'camp-signal'", (signals,))
+
+    set_signals('{"ev_service": true, "ev_strength": "page", "ev_brands": ["Tesla"], '
+                '"permit_jobs": ["ev_charger", "service_upgrade"], '
+                '"permit_job_pages": {"ev_charger": "/ev"}}')
     try:
         data = board.board(campaign=EV_PERMITS, stage="to_prep", page=1, page_size=100,
-                           q=None, vertical=None, market=None, qualified_only=False)
+                           q="camp-", vertical=None, market=None, qualified_only=False)
         assert data["items"][0]["place_id"] == "camp-signal"
-        assert data["items"][0]["lead_note"].startswith("EV page · Tesla")
+        assert data["items"][0]["lead_note"] == "EV, Panel upgrades · 2 job types · Tesla · 60 reviews"
+        notes = {row["place_id"]: row["lead_note"] for row in data["items"]}
+        assert notes["camp-noev"] == "No permit work on site · 60 reviews"
+        # A legacy lead with only the EV signal still reads as one EV job.
+        assert notes["camp-title"] == "EV · 1 job type · 60 reviews"
     finally:
-        with pool.connection() as conn:
-            conn.execute("""update website_enrichment set site_signals = '{"ev_service": true}'::jsonb
-                            where place_id = 'camp-signal'""")
+        set_signals('{"ev_service": true}')
 
 
 def test_the_seo_board_flags_leads_that_should_get_ev_first(board):
     data = board.board(campaign=SEO_WEBSITES, stage="to_prep", page=1, page_size=100,
                        q=None, vertical=None, market=None, qualified_only=False)
     by_id = {row["place_id"]: row for row in data["items"]}
-    assert by_id["camp-title"]["lead_note"] == "Shows EV work: pitch EV Permits first"
+    assert by_id["camp-title"]["lead_note"] == "Shows permit work: pitch Permit Packets first"
+    assert by_id["camp-panel"]["lead_note"] == "Shows permit work: pitch Permit Packets first"
     assert by_id["camp-noev"]["lead_note"] is None
     ids = [row["place_id"] for row in data["items"]]
     assert ids.index("camp-noev") < ids.index("camp-title")

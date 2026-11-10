@@ -15,6 +15,7 @@ being mentioned, and llms.txt is deliberately not scored.
 """
 from __future__ import annotations
 
+import functools
 import json
 import re
 from collections import Counter
@@ -70,6 +71,31 @@ EV_SERVICE = re.compile(
     r"|\bevse\b",
     re.I,
 )
+# The four Permit Packets job types, in display order. Keep in step with
+# PERMIT_JOBS in app/campaigns.py (a test compares them). ev_charger is EV_SERVICE.
+PERMIT_JOB_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("ev_charger", EV_SERVICE.pattern),
+    ("service_upgrade",
+     r"(?<!solar\s)\b(breaker\s+box|(electrical\s+|breaker\s+)?panel)s?\s+(upgrad|replac|chang)\w*"
+     r"|\belectrical\s+service\s+(upgrad|chang|replac)\w*"
+     r"|\b(upgrad|chang)\w*\s+(your|the)\s+electrical\s+service\b"
+     r"|\b(100|125|150|200|400)[\s-]*amps?\s+(electrical\s+)?(service|panel)"),
+    ("subpanel",
+     r"\bsub[\s-]?panels?\b"
+     r"|\bdetached\s+(garage|building|workshop)s?\b.{0,40}(power|wiring|feeder|electric)"
+     r"|\b(power|wiring|feeder|electric)\w*\b.{0,40}\bdetached\s+(garage|building|workshop)"
+     r"|\badus?\b.{0,40}(electric|wiring|panel)"
+     r"|\b(electric|wiring|panel)\w*\b.{0,40}\badus?\b"),
+    ("appliance_circuit",
+     r"\b(hot\s*tub|spa|jacuzzi|swim\s+spa)s?\b.{0,40}(wiring|install|circuit|power)"
+     r"|\b(wiring|install|circuit|power)\w*\b.{0,40}\b(hot\s*tub|spa|jacuzzi|swim\s+spa)s?\b"
+     r"|\bsaunas?\b"
+     r"|\bheat\s+pumps?\b.{0,40}(wiring|circuit|install)"
+     r"|\b(wiring|circuit|install)\w*\b.{0,40}\bheat\s+pumps?\b"
+     r"|\bmini[\s-]*splits?\b"
+     r"|\b(240|220)[\s-]*(v|volts?)\b[\s-]*(circuit|outlet|line)"),
+)
+PERMIT_JOB_REGEX = {slug: re.compile(pattern, re.I) for slug, pattern in PERMIT_JOB_PATTERNS}
 _FAQ_HEADING = re.compile(r"\b(faqs?|frequently asked|common questions|questions)\b", re.I)
 # Parent folders that hold one page per town or neighborhood.
 _AREA_PARENTS = {"service-area", "service-areas", "areas", "areas-we-serve", "areas-served",
@@ -123,19 +149,25 @@ def _internal_path(href: str, host: str) -> str | None:
     return target.path.rstrip("/") if target.path.startswith("/") else None
 
 
-def _ev_paths(soup: BeautifulSoup, site_paths: list[str], host: str) -> tuple[list[str], dict[str, str]]:
-    """Paths that are about EV work, and the menu wording for any we saw."""
+def _job_paths(pattern: re.Pattern, soup: BeautifulSoup, site_paths: list[str],
+               host: str) -> tuple[list[str], dict[str, str]]:
+    """Paths that match one job's wording, and the menu wording for any we saw."""
     titles: dict[str, str] = {}
-    paths = {p.rstrip("/") for p in site_paths if p and EV_SERVICE.search(_path_words(p))}
+    paths = {p.rstrip("/") for p in site_paths if p and pattern.search(_path_words(p))}
     for link in soup.find_all("a", href=True):
         path = _internal_path(link["href"], host)
         anchor = link.get_text(" ", strip=True)
-        if not path or not (EV_SERVICE.search(anchor) or EV_SERVICE.search(_path_words(path))):
+        if not path or not (pattern.search(anchor) or pattern.search(_path_words(path))):
             continue
         paths.add(path)
         if anchor and len(anchor) <= 60:
             titles.setdefault(path, anchor)
     return sorted(paths, key=lambda p: (bool(_EDITORIAL_PATH.search(p)), len(p))), titles
+
+
+def _ev_paths(soup: BeautifulSoup, site_paths: list[str], host: str) -> tuple[list[str], dict[str, str]]:
+    """Paths that are about EV work, and the menu wording for any we saw."""
+    return _job_paths(EV_SERVICE, soup, site_paths, host)
 
 
 def ev_profile(
@@ -174,6 +206,41 @@ def ev_profile(
         "ev_brands": [name for name, pattern in EV_BRANDS.items()
                       if shown and re.search(pattern, combined, re.I)],
         "ev_commercial": bool(shown and _EV_COMMERCIAL.search(combined)),
+    }
+
+
+def permit_profile(
+    soup: BeautifulSoup,
+    text: str,
+    site_paths: list[str],
+    host: str,
+    fetch_page: Callable[[str], str | None] | None = None,
+) -> dict[str, Any]:
+    """Which of the four Permit Packets job types a site shows, and where.
+
+    Reads pages the way ev_profile does and stays inside the same fetch limit:
+    one service page per job type shown, or the service hubs when the homepage
+    shows none. permit_job_pages only holds service pages, never /blog posts.
+    """
+    found = {slug: _job_paths(rx, soup, site_paths, host)[0] for slug, rx in PERMIT_JOB_REGEX.items()}
+    pages = {slug: [p for p in paths if not _EDITORIAL_PATH.search(p)] for slug, paths in found.items()}
+    pages_read: list[str] = []
+    if fetch_page is not None:
+        wanted = [p[0] for p in pages.values() if p]
+        if not any(found.values()) and not any(rx.search(text) for rx in PERMIT_JOB_REGEX.values()):
+            links = {_internal_path(a["href"], host) for a in soup.find_all("a", href=True)}
+            wanted = sorted({p for p in [*links, *site_paths]
+                             if p and _SERVICE_HUB.search(p) and not _EDITORIAL_PATH.search(p)},
+                            key=_hub_rank)
+        for path in list(dict.fromkeys(wanted))[:MAX_EV_PAGE_FETCHES]:
+            page = fetch_page(path)
+            if page:
+                pages_read.append(_visible_text(BeautifulSoup(page, "html.parser")))
+    combined = " ".join([text, *pages_read])
+    shown = [slug for slug, rx in PERMIT_JOB_REGEX.items() if found[slug] or rx.search(combined)]
+    return {
+        "permit_jobs": shown,
+        "permit_job_pages": {slug: pages[slug][0] for slug in shown if pages[slug]},
     }
 
 
@@ -333,6 +400,9 @@ def collect(
     fetch_page: Callable[[str], str | None] | None = None,
     other_page_texts: list[str] | None = None,
 ) -> dict[str, Any]:
+    if fetch_page is not None:
+        # ev_profile and permit_profile read the same pages. Fetch each once.
+        fetch_page = functools.lru_cache(maxsize=None)(fetch_page)
     nodes = schema_nodes(soup)
     types = _types(nodes)
     text = _visible_text(soup)
@@ -385,6 +455,8 @@ def collect(
         "ai_bots": _bot_access(robots, final_url),
         **ev_profile(soup, f"{title} {text} {link_words}", site_paths or [],
                      urlparse(final_url).netloc.removeprefix("www."), fetch_page),
+        **permit_profile(soup, f"{title} {text} {link_words}", site_paths or [],
+                         urlparse(final_url).netloc.removeprefix("www."), fetch_page),
         "owner_name": owner_name([text, *(other_page_texts or [])], nodes),
         "offering_paths": len(offering_paths),
         "location_paths": len(location_paths),

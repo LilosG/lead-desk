@@ -13,7 +13,7 @@ from app.integrations.gmail import GmailDraftResult
 from app.repositories.outreach import OutreachRepository
 from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
-from app.services import ev_offer, seo_offer
+from app.services import permit_offer, seo_offer
 from app.services.email_angles import ANGLES, ROTATION, angle_label, resolve_angle
 from app.services.outreach import OutreachBlocked, OutreachService, looks_like_email, uses_old_copy
 from app.services.outreach_board import OutreachBoardService, gmail_block_reason
@@ -22,7 +22,8 @@ from app.services.outreach_bulk import fast_track
 LEAD = {"place_id": "p1", "city": "Oro Valley", "state": "AZ", "name": "Five Point Electric LLC", "vertical": "electrician",
         "to_address": "aaron@fivepoint.com",
         "site_signals": {"ev_service": True, "ev_strength": "page", "ev_page_path": "/ev",
-                         "ev_brands": ["Tesla", "ChargePoint"]}}
+                         "ev_brands": ["Tesla", "ChargePoint"],
+                         "permit_jobs": ["ev_charger", "service_upgrade"]}}
 SNAPSHOT = {
     "findings": [{"signal": "reviews_bottom_quartile", "phrase": "reviews",
                   "data": {"reviews": 38, "median": 112}}],
@@ -42,73 +43,161 @@ def _words(text: str) -> int:
     return len(text.split())
 
 
+def _lead(*jobs, **changes):
+    signals = {k: v for k, v in LEAD["site_signals"].items() if k not in {"ev_brands", "permit_jobs"}}
+    return {**LEAD, "site_signals": {**signals, "permit_jobs": list(jobs)}, **changes}
+
+
+@pytest.fixture(autouse=True)
+def _default_permit_env(monkeypatch):
+    for name in ("PERMIT_LINK_IN_FIRST_EMAIL", "PERMIT_OVERVIEW_URL", "EV_OVERVIEW_URL"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.mark.parametrize("angle", [a.key for a in ANGLES[EV_PERMITS]])
-def test_every_ev_first_touch_is_short_personal_and_link_free(angle):
-    written = ev_offer.write_email(LEAD, angle)
+def test_every_permit_first_touch_is_short_personal_and_links_the_sample(angle):
+    written = permit_offer.write_email(LEAD, angle)
     assert written["body"].startswith("Hi Aaron,")
     assert "Five Point" in written["subject"] + written["body"]
-    assert _words(written["body"]) <= 115
+    assert _words(written["body"]) <= 140
     assert len(written["subject"]) <= 40
-    assert "http" not in written["body"]
-    assert "Want me to send a sample packet" in written["body"]
-    assert "Four electrical shops" in written["body"]
+    assert "Here's what a finished packet looks like: https://ev-permit-packets.vercel.app/" in written["body"]
+    assert written["body"].endswith("Want me to run one of your past jobs through it?")
+    assert "Four electrical shops have used the EV charger version" in written["body"]
+    assert "now covers panel and service upgrades, subpanels and 240 V circuits too." in written["body"]
 
 
-def test_ev_copy_uses_what_the_site_and_city_actually_say():
-    body = ev_offer.write_email(LEAD, "drawings")["body"]
+@pytest.mark.parametrize("angle", [a.key for a in ANGLES[EV_PERMITS]])
+def test_with_the_link_switched_off_first_touch_only_asks(angle, monkeypatch):
+    monkeypatch.setenv("PERMIT_LINK_IN_FIRST_EMAIL", "0")
+    body = permit_offer.write_email(LEAD, angle)["body"]
+    assert "http" not in body
+    assert "finished packet looks like" not in body
+    assert body.endswith("Want me to send a sample packet so you can see the drawings?")
+    assert "run one of your past jobs" not in body
+    monkeypatch.setenv("PERMIT_LINK_IN_FIRST_EMAIL", "1")
+    assert "http" in permit_offer.write_email(LEAD, angle)["body"]
+
+
+def test_permit_copy_uses_what_the_site_and_city_actually_say():
+    body = permit_offer.write_email(LEAD, "drawings")["body"]
     assert ("Saw Five Point installs Tesla and ChargePoint chargers. Oro Valley wants a site plan, "
             "one-line diagram and load calculation on every residential charger permit.") in body
     assert "Who's stuck drawing those at Five Point, you or the office?" in body
-    desk = ev_offer.write_email(LEAD, "desk_work")["body"]
-    assert desk.startswith("Hi Aaron,\n\nSaw Five Point installs Tesla and ChargePoint chargers. On a residential")
+    desk = permit_offer.write_email(LEAD, "desk_work")["body"]
+    assert desk.startswith("Hi Aaron,\n\nSaw Five Point installs Tesla and ChargePoint chargers. On an EV charger,")
     assert "Oro Valley" not in desk  # the city's checklist is Angle A's line, not repeated here
 
 
+def test_without_ev_brands_the_proof_line_names_the_jobs_shown():
+    body = permit_offer.write_email(_lead("service_upgrade", "subpanel", "appliance_circuit"), "drawings")["body"]
+    assert "Saw Five Point does panel and service upgrades and subpanels. " in body  # max two
+    assert "installs" not in body
+    desk = permit_offer.write_email(_lead("subpanel"), "desk_work")["body"]
+    assert "Saw Five Point does subpanels. On a subpanel, the install is the easy part." in desk
+    circuit = permit_offer.write_email(_lead("appliance_circuit"), "desk_work")["body"]
+    assert "does hot tub, sauna and mini-split circuits. On a hot tub or mini-split circuit," in circuit
+    assert "On a panel upgrade, the install" in permit_offer.write_email(_lead("service_upgrade"), "desk_work")["body"]
+
+
+def test_the_city_checklist_is_quoted_for_ev_charger_work_only():
+    # Oro Valley has a checklist, but this shop shows no EV work, so no city claim.
+    panel_only = permit_offer.write_email(_lead("service_upgrade", "subpanel"), "drawings")
+    assert "Oro Valley" not in panel_only["body"]
+    assert ("A lot of cities want a site plan, single-line and load calc with the permit on "
+            "jobs like these.") in panel_only["body"]
+    assert "No city-specific permit claim" in panel_only["note"]
+    # With EV work shown the same city is quoted, even alongside other jobs.
+    both = permit_offer.write_email(_lead("ev_charger", "service_upgrade"), "drawings")
+    assert "Oro Valley wants a site plan, one-line diagram and load calculation" in both["body"]
+    assert "oro" in both["note"].lower()
+    # An EV shop in a city with no checklist gets the generic line too.
+    boise = permit_offer.write_email(_lead("ev_charger", city="Boise", state="ID"), "drawings")
+    assert "Boise" not in boise["body"]
+    assert "A lot of cities want" in boise["body"]
+
+
+def test_leads_read_before_permit_jobs_existed_still_count_as_ev_work():
+    legacy = {**LEAD, "site_signals": {"ev_service": True, "ev_strength": "page"}}
+    assert permit_offer.shown_jobs(legacy) == ["ev_charger"]
+    assert "Oro Valley wants" in permit_offer.write_email(legacy, "drawings")["body"]
+    # Once permit_jobs is stored, it is the answer, even when empty.
+    assert permit_offer.shown_jobs({**LEAD, "site_signals": {"ev_service": True, "permit_jobs": []}}) == []
+
+
 @pytest.mark.parametrize("angle", [a.key for a in ANGLES[EV_PERMITS]])
-def test_no_ev_proof_and_no_city_rules_means_no_claim_about_either(angle):
+def test_no_proof_and_no_city_rules_means_no_claim_about_either(angle):
     lead = {**LEAD, "city": "Fresno", "state": "CA", "site_signals": {},
             "name": "Allied Electric a Buckles-Smith Company"}
-    written = ev_offer.write_email(lead, angle)
+    written = permit_offer.write_email(lead, angle)
     assert "Saw " not in written["body"]
     assert "Fresno" not in written["body"]
     assert "If Allied" not in written["body"]
     assert "Buckles" not in written["subject"]
     assert "No city-specific permit claim" in written["note"]
+    assert "asks instead of assuming" in written["note"]
+    if angle == "desk_work":
+        assert "On a panel upgrade, EV charger or subpanel, the install is the easy part." in written["body"]
 
 
-def test_ev_subjects_fit_on_a_phone():
-    assert ev_offer.write_email(LEAD, "drawings")["subject"] == "Who draws Five Point's EV site plans?"
-    assert ev_offer.write_email(LEAD, "desk_work")["subject"] == "EV permit desk work at Five Point"
+def test_permit_subjects_fit_on_a_phone():
+    assert permit_offer.write_email(LEAD, "drawings")["subject"] == "Who draws Five Point's permit plans?"
+    assert permit_offer.write_email(LEAD, "desk_work")["subject"] == "Permit desk work at Five Point"
 
 
-def test_ev_sample_link_can_point_at_a_custom_domain(monkeypatch):
-    assert ev_offer.overview_url() == "https://ev-permit-packets.vercel.app/"
-    monkeypatch.setenv("EV_OVERVIEW_URL", "https://permits.example.com/")
-    assert "https://permits.example.com/" in ev_offer.write_follow_up(LEAD, 2)
+def test_the_sample_link_can_point_at_a_custom_domain(monkeypatch):
+    assert permit_offer.overview_url() == "https://ev-permit-packets.vercel.app/"
+    monkeypatch.setenv("EV_OVERVIEW_URL", "https://old.example.com/")
+    assert permit_offer.overview_url() == "https://old.example.com/"
+    monkeypatch.setenv("PERMIT_OVERVIEW_URL", "https://permits.example.com/")
+    assert permit_offer.overview_url() == "https://permits.example.com/"
+    assert "https://permits.example.com/" in permit_offer.write_follow_up(LEAD, 2)
+    assert "https://permits.example.com/" in permit_offer.write_email(LEAD, "drawings")["body"]
 
 
-def test_ev_follow_ups_send_the_sample_then_close():
-    second = ev_offer.write_follow_up(LEAD, 2)
+def test_follow_ups_resend_the_sample_then_close():
+    second = permit_offer.write_follow_up(LEAD, 2)
+    assert second.startswith("Hi Aaron,")
     assert "https://ev-permit-packets.vercel.app/" in second
-    assert "address and panel size from a past install" in second
-    third = ev_offer.write_follow_up(LEAD, 3)
+    assert ("reply with the address and panel size from a past job (an EV charger, a panel upgrade, "
+            "a subpanel or a hot tub) and I'll run that packet free.") in second
+    third = permit_offer.write_follow_up(LEAD, 3)
     assert third.startswith("Hi Aaron,\n\nLast note from me.")
     assert "http" not in third
 
 
+def test_follow_up_2_with_the_link_switched_off_is_the_first_sight_of_the_sample(monkeypatch):
+    monkeypatch.setenv("PERMIT_LINK_IN_FIRST_EMAIL", "0")
+    assert permit_offer.write_follow_up(LEAD, 2) == (
+        "Hi Aaron,\n\n"
+        "Figured it's easier to just show you. Here's a full sample packet with the site plan, "
+        "single-line and load calc, all from one tech form: https://ev-permit-packets.vercel.app/\n\n"
+        "To test it against what your office turns in now, reply with the address and panel size from "
+        "a past job (an EV charger, a panel upgrade, a subpanel or a hot tub) and I'll run that packet free."
+    )
+    assert "http" not in permit_offer.write_follow_up(LEAD, 3)
+
+
+def test_permit_evidence_uses_every_source_on_file():
+    assert permit_offer.permit_evidence(_lead("service_upgrade", "subpanel")) == "Panel upgrades, Subpanels on site"
+    assert permit_offer.permit_evidence({"offering_titles": ["Hot tub wiring"]}) == "service link"
+    assert permit_offer.permit_evidence({"site_description": "We do panel upgrades."}) == "page description"
+    assert permit_offer.permit_evidence({"site_title": "Sparks Electric"}) is None
+
+
 def test_short_name_drops_trailing_detail():
-    assert ev_offer.short_name("Fuse Service HVAC, Electrical & Appliance Repair Fresno") == "Fuse Service HVAC"
+    assert permit_offer.short_name("Fuse Service HVAC, Electrical & Appliance Repair Fresno") == "Fuse Service HVAC"
 
 
 def test_an_unknown_name_says_so_in_the_note():
-    written = ev_offer.write_email({**LEAD, "to_address": "info@fivepoint.com"}, "drawings")
+    written = permit_offer.write_email({**LEAD, "to_address": "info@fivepoint.com"}, "drawings")
     assert written["body"].startswith("Hi Five Point team,")
     assert "No contact name found." in written["note"]
 
 
 def test_the_site_owner_name_reaches_the_greeting():
     signals = {**LEAD["site_signals"], "owner_name": "Dave Ruiz"}
-    written = ev_offer.write_email({**LEAD, "to_address": "info@fivepoint.com", "site_signals": signals}, "drawings")
+    written = permit_offer.write_email({**LEAD, "to_address": "info@fivepoint.com", "site_signals": signals}, "drawings")
     assert written["body"].startswith("Hi Dave,")
 
 
@@ -293,7 +382,7 @@ def test_an_incomplete_address_is_caught():
 def _ready_item(**changes):
     return {"campaign_key": EV_PERMITS, "status": "draft_ready", "channel": "email", "stage": "review",
             "to_address": "a@sparks.com", "subject": "s", "body": "b", "verification_status": "verified",
-            "claim_signal": "ev_permit_offer", "generation_prompt_version": ev_offer.PROMPT_VERSION,
+            "claim_signal": "ev_permit_offer", "generation_prompt_version": permit_offer.PROMPT_VERSION,
             **changes}
 
 
@@ -341,7 +430,7 @@ def test_bulk_prep_rewrites_old_copy_but_leaves_current_drafts_alone():
     old = Service("ev-offer-v3")
     assert fast_track(old, None, "p", gmail=False, campaign_key=EV_PERMITS)["ok"]
     assert old.regenerated == 1
-    current = Service(ev_offer.PROMPT_VERSION)
+    current = Service(permit_offer.PROMPT_VERSION)
     assert fast_track(current, None, "p", gmail=False, campaign_key=EV_PERMITS)["ok"]
     assert current.regenerated == 0
 
