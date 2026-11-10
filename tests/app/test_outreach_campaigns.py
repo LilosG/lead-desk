@@ -189,7 +189,7 @@ def test_the_ev_email_says_only_what_is_verified(outreach):
     result = fast_track(outreach, None, "camp-title", gmail=False, campaign_key=EV_PERMITS)
     item = outreach.repository.get_item(result["item_id"])
 
-    assert "site plan" in item["body"] and "Want me to run one of your past jobs through it?" in item["body"]
+    assert "site plan" in item["body"] and "want me to build" in item["body"]
     assert "https://ev-permit-packets.vercel.app/" in item["body"].split("Mike Prickett")[0]
     assert "no thanks" in item["body"]
     assert item["angle"] in {"drawings", "desk_work"}

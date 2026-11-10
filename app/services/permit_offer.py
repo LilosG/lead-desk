@@ -38,7 +38,7 @@ from app.services.outreach_audit_copy import (
 )
 
 PROMPT_VERSION = "permit-offer-v1"
-DEFAULT_OVERVIEW_URL = "https://ev-permit-packets.vercel.app/"
+DEFAULT_OVERVIEW_URL = "https://electrical-permit-packets.vercel.app/"
 _EV_WORDS = re.compile(EV_SERVICE_PATTERN, re.I)
 _PERMIT_WORDS = re.compile(PERMIT_JOBS_PATTERN, re.I)
 
@@ -140,10 +140,33 @@ def _ask_line(ctx: dict[str, Any]) -> str:
     return _ASK_GENERIC
 
 
-def _close(ctx: dict[str, Any], *, with_link: str, without_link: str) -> list[str]:
+def _sample_offer(ctx: dict[str, Any]) -> str:
+    """The ask needs only a yes: Mike builds the sample, the lead sends nothing.
+
+    Only EV charger work gets a city claim, so other jobs get the generic line.
+    """
+    rules = ctx["rules"]
+    if "ev_charger" in ctx["jobs"] and rules and rules.get("asks_for"):
+        return (f"If your office still draws these by hand, want me to build one for a job in "
+                f"{ctx['city']} so you can see it with {ctx['city']}'s requirements?")
+    return ("If your office still draws these by hand, want me to build a sample for your city "
+            "so you can see it with your local requirements?")
+
+
+def _close(ctx: dict[str, Any]) -> list[str]:
     if link_in_first_email():
-        return [f"Here's what a finished packet looks like: {overview_url()}", with_link]
-    return [without_link]
+        return [f"Here's what a finished packet looks like: {overview_url()}", _sample_offer(ctx)]
+    return ["Want me to send a sample packet so you can see the drawings?"]
+
+
+def _who_pulls(ctx: dict[str, Any]) -> tuple[str, list[str]]:
+    return f"Who pulls permits at {ctx['short']}?", [
+        f"Quick question for whoever pulls permits at {ctx['short']}. {_proof_line(ctx)}{_ask_line(ctx)}",
+        "I built a setup that drafts the site plan, single-line and load calc from a short form your "
+        "tech fills out on site, ready to sign and submit. Four electrical shops have used the EV "
+        f"charger version. {_COVERS}",
+        *_close(ctx),
+    ]
 
 
 def _drawings(ctx: dict[str, Any]) -> tuple[str, list[str]]:
@@ -152,8 +175,7 @@ def _drawings(ctx: dict[str, Any]) -> tuple[str, list[str]]:
         "Four electrical shops have used the EV charger version. A tech fills out a quick job form "
         "on site, and the site plan on the actual property, the single-line and the load calc come "
         f"back ready to sign and submit. {_COVERS}",
-        *_close(ctx, with_link="Want me to run one of your past jobs through it?",
-                without_link="Want me to send a sample packet so you can see the drawings?"),
+        *_close(ctx),
     ]
 
 
@@ -166,12 +188,12 @@ def _desk_work(ctx: dict[str, Any]) -> tuple[str, list[str]]:
         "We built a setup that draws all three from one tech form on site, on the actual property, "
         f"ready for your sign-off. Four electrical shops have used the EV charger version, and it "
         f"now covers panel and service upgrades, subpanels and 240 V circuits too.",
-        *_close(ctx, with_link="Want me to run one of your past jobs through it?",
-                without_link="Want me to send a sample packet so you can see the drawings?"),
+        *_close(ctx),
     ]
 
 
 _WRITERS = {
+    "who_pulls": _who_pulls,
     "drawings": _drawings,
     "desk_work": _desk_work,
 }
@@ -214,9 +236,8 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str]:
 def write_follow_up(context: dict[str, Any], step: int) -> str:
     facts = _facts(context)
     if step == 2:
-        test = ("To test it against what your office turns in now, reply with the address and panel "
-                "size from a past job (an EV charger, a panel upgrade, a subpanel or a hot tub) and "
-                "I'll run that packet free.")
+        test = (f"Still happy to put together a sample for {facts['city'] or 'your city'}, "
+                "so you can see it against what your office turns in now. Just say the word.")
         if link_in_first_email():
             intro = ("Following up on the sample packet. In case it got buried, here it is again: "
                      f"{overview_url()}")
@@ -227,6 +248,6 @@ def write_follow_up(context: dict[str, Any], step: int) -> str:
     else:
         paragraphs = [
             "Last note from me. If your office still draws permit site plans and load calcs by hand, "
-            "reply with a past job and I'll draw it up free. If not, no worries.",
+            "say the word and I'll put together a sample for your city. If not, no worries.",
         ]
     return "\n\n".join([facts["greeting"], *paragraphs])

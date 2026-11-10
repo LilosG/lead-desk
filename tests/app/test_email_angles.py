@@ -61,8 +61,8 @@ def test_every_permit_first_touch_is_short_personal_and_links_the_sample(angle):
     assert "Five Point" in written["subject"] + written["body"]
     assert _words(written["body"]) <= 140
     assert len(written["subject"]) <= 40
-    assert "Here's what a finished packet looks like: https://ev-permit-packets.vercel.app/" in written["body"]
-    assert written["body"].endswith("Want me to run one of your past jobs through it?")
+    assert "Here's what a finished packet looks like: https://electrical-permit-packets.vercel.app/" in written["body"]
+    assert written["body"].endswith("so you can see it with Oro Valley's requirements?")
     assert "Four electrical shops have used the EV charger version" in written["body"]
     assert "now covers panel and service upgrades, subpanels and 240 V circuits too." in written["body"]
 
@@ -74,7 +74,7 @@ def test_with_the_link_switched_off_first_touch_only_asks(angle, monkeypatch):
     assert "http" not in body
     assert "finished packet looks like" not in body
     assert body.endswith("Want me to send a sample packet so you can see the drawings?")
-    assert "run one of your past jobs" not in body
+    assert "past job" not in body
     monkeypatch.setenv("PERMIT_LINK_IN_FIRST_EMAIL", "1")
     assert "http" in permit_offer.write_email(LEAD, angle)["body"]
 
@@ -86,7 +86,7 @@ def test_permit_copy_uses_what_the_site_and_city_actually_say():
     assert "Who's stuck drawing those at Five Point, you or the office?" in body
     desk = permit_offer.write_email(LEAD, "desk_work")["body"]
     assert desk.startswith("Hi Aaron,\n\nSaw Five Point installs Tesla and ChargePoint chargers. On an EV charger,")
-    assert "Oro Valley" not in desk  # the city's checklist is Angle A's line, not repeated here
+    assert "one-line diagram" not in desk  # the city's checklist claim is not repeated here
 
 
 def test_without_ev_brands_the_proof_line_names_the_jobs_shown():
@@ -147,7 +147,7 @@ def test_permit_subjects_fit_on_a_phone():
 
 
 def test_the_sample_link_can_point_at_a_custom_domain(monkeypatch):
-    assert permit_offer.overview_url() == "https://ev-permit-packets.vercel.app/"
+    assert permit_offer.overview_url() == "https://electrical-permit-packets.vercel.app/"
     monkeypatch.setenv("EV_OVERVIEW_URL", "https://old.example.com/")
     assert permit_offer.overview_url() == "https://old.example.com/"
     monkeypatch.setenv("PERMIT_OVERVIEW_URL", "https://permits.example.com/")
@@ -159,9 +159,9 @@ def test_the_sample_link_can_point_at_a_custom_domain(monkeypatch):
 def test_follow_ups_resend_the_sample_then_close():
     second = permit_offer.write_follow_up(LEAD, 2)
     assert second.startswith("Hi Aaron,")
-    assert "https://ev-permit-packets.vercel.app/" in second
-    assert ("reply with the address and panel size from a past job (an EV charger, a panel upgrade, "
-            "a subpanel or a hot tub) and I'll run that packet free.") in second
+    assert "https://electrical-permit-packets.vercel.app/" in second
+    assert "Still happy to put together a sample for Oro Valley" in second
+    assert "past job" not in second
     third = permit_offer.write_follow_up(LEAD, 3)
     assert third.startswith("Hi Aaron,\n\nLast note from me.")
     assert "http" not in third
@@ -172,9 +172,9 @@ def test_follow_up_2_with_the_link_switched_off_is_the_first_sight_of_the_sample
     assert permit_offer.write_follow_up(LEAD, 2) == (
         "Hi Aaron,\n\n"
         "Figured it's easier to just show you. Here's a full sample packet with the site plan, "
-        "single-line and load calc, all from one tech form: https://ev-permit-packets.vercel.app/\n\n"
-        "To test it against what your office turns in now, reply with the address and panel size from "
-        "a past job (an EV charger, a panel upgrade, a subpanel or a hot tub) and I'll run that packet free."
+        "single-line and load calc, all from one tech form: https://electrical-permit-packets.vercel.app/\n\n"
+        "Still happy to put together a sample for Oro Valley, so you can see it against what your office "
+        "turns in now. Just say the word."
     )
     assert "http" not in permit_offer.write_follow_up(LEAD, 3)
 
@@ -514,7 +514,7 @@ def test_a_follow_up_is_a_threaded_gmail_draft_with_the_opt_out(pool, item):
     assert draft["thread_id"] == "thread-1"
     assert draft["body"].startswith("Hi Aaron,")
     assert "no thanks" in draft["body"]
-    assert "https://ev-permit-packets.vercel.app/" in draft["body"]
+    assert "https://electrical-permit-packets.vercel.app/" in draft["body"]
 
 
 def test_a_sequence_stops_at_three_emails_and_waits_for_each_send(pool, item):
