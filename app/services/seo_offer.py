@@ -159,7 +159,7 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
             angle = "local_gap"
         else:
             finding = _competitor_line(snapshot, name)[0]
-            subject = f"{short_name(leader['name'])} vs {short}"
+            subject = f"{short_name(leader['name'])} vs {short}".lower()
     elif angle == "free_homepage" and not demo_url:
         angle = "local_gap"
 
@@ -172,19 +172,19 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
             "If you like it, tell me what you'd change. If not, no harm done.",
         ]
     elif angle == AUDIT_ATTACHED:
-        paragraphs = [finding, proof_paragraph(context),
+        paragraphs = [finding,
                       "I put together a short audit with the top 3 fixes to capture those calls. Want me to send it over?"]
     elif angle == "leader_vs_you":
-        paragraphs = [finding, proof_paragraph(context),
+        paragraphs = [finding,
                       f"Want the 3 things I'd fix first for {short}? I'll send them over."]
     elif angle == "competitor":
-        paragraphs = [finding, proof_paragraph(context), _ask(short, city)]
+        paragraphs = [finding, _ask(short, city)]
     else:
         subject = f"{city} service calls".lower() if city else f"quick question - {short}".lower()
-        paragraphs = [_local_gap_line(snapshot, short, city) or finding, proof_paragraph(context),
+        paragraphs = [_local_gap_line(snapshot, short, city) or finding,
                       _ask(short, city)]
     return {
-        "subject": subject[:70],
+        "subject": subject.lower()[:70],
         "body": "\n\n".join([greeting, *paragraphs]),
         "angle": angle,
         "note": "No contact name found." if not first_name else "",
