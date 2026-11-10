@@ -157,6 +157,11 @@ def _jobs(text):
 checks.append(("panel upgrade wording is a service upgrade", _jobs("Electrical panel upgrade") == ["service_upgrade"]))
 checks.append(("sub-panel wording is a subpanel", _jobs("Sub-panel for your detached garage") == ["subpanel"]))
 checks.append(("hot tub wiring is an appliance circuit", _jobs("Hot tub wiring") == ["appliance_circuit"]))
+checks.append(("mini-split installation is an appliance circuit", _jobs("Mini-split installation") == ["appliance_circuit"]))
+checks.append(("a 240 V circuit for a mini-split is an appliance circuit",
+               _jobs("Dedicated 240 V circuit for a mini-split") == ["appliance_circuit"]))
+checks.append(("mini-split repair and maintenance is not a permit job",
+               _jobs("Ductless mini-split repair and maintenance") == []))
 checks.append(("a day spa is not a permit job", _jobs("Day spa and spa treatments") == []))
 checks.append(("a solar panel upgrade is not a service upgrade", _jobs("Solar panel upgrade") == []))
 permit = collect(GOOD.replace("<h1>", "<h1>Panel upgrades and EV chargers. "))
