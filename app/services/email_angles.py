@@ -22,12 +22,14 @@ class Angle:
 
 ANGLES: dict[str, tuple[Angle, ...]] = {
     EV_PERMITS: (
+        Angle("who_pulls", "Who pulls permits", "Asks whoever pulls permits, then offers a sample built on their city. The ask needs only a yes."),
         Angle("drawings", "Who draws your plans", "Asks who's stuck drawing the site plans, single-lines and load calcs."),
         Angle("desk_work", "Desk work", "The install is easy; the permit drawings are unpaid desk work."),
     ),
     SEO_WEBSITES: (
         Angle("local_gap", "Local gap", "Their biggest gap, the Wheyland results and a calls ask. No attachment."),
         Angle("competitor", "Calls going to the leader", "The local leader's reviews next to theirs, then the Wheyland results."),
+        Angle("leader_vs_you", "Leader vs you", "Subject is the local review leader vs them. Wheyland proof, then asks to send the top 3 fixes."),
         Angle("free_homepage", "Free homepage", "Links the mockup. Needs a published demo site."),
         Angle("audit_attached", "Audit attached", "The comparison with the audit PDF attached."),
     ),
@@ -39,8 +41,8 @@ RETIRED_LABELS: dict[str, dict[str, str]] = {
 }
 # What Rotate splits between. Two arms reach a readable result fastest.
 ROTATION = {
-    EV_PERMITS: ("drawings", "desk_work"),
-    SEO_WEBSITES: ("local_gap", "competitor"),
+    EV_PERMITS: ("who_pulls", "drawings", "desk_work"),
+    SEO_WEBSITES: ("leader_vs_you", "local_gap", "competitor"),
 }
 
 

@@ -153,11 +153,18 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
             angle = "local_gap"
         else:
             finding, subject = rival
+    elif angle == "leader_vs_you":
+        leader = _leader(snapshot, name)
+        if leader is None or not _city(snapshot):
+            angle = "local_gap"
+        else:
+            finding = _competitor_line(snapshot, name)[0]
+            subject = f"{short_name(leader['name'])} vs {short}"
     elif angle == "free_homepage" and not demo_url:
         angle = "local_gap"
 
     if angle == "free_homepage":
-        subject = f"New homepage for {name}"
+        subject = f"Made this for {short}"
         paragraphs = [
             f"I built a new homepage for {name}. It's yours to look at, no strings: {demo_url}",
             finding,
@@ -165,7 +172,12 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
             "If you like it, tell me what you'd change. If not, no harm done.",
         ]
     elif angle == AUDIT_ATTACHED:
-        paragraphs = [finding, "The attached PDF has the full comparison and what I'd fix first, in order."]
+        paragraphs = [finding, proof_paragraph(context),
+                      "The attached PDF has the full comparison and what I'd fix first, in order. "
+                      f"Want me to walk you through the top 3 for {short}?"]
+    elif angle == "leader_vs_you":
+        paragraphs = [finding, proof_paragraph(context),
+                      f"Want the 3 things I'd fix first for {short}? I'll send them over."]
     elif angle == "competitor":
         paragraphs = [finding, proof_paragraph(context), _ask(short, city)]
     else:
