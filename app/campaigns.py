@@ -47,9 +47,55 @@ EV_SERVICE_PATTERN = (
 # Postgres spells a word boundary \y rather than \b.
 EV_SERVICE_SQL = EV_SERVICE_PATTERN.replace(r"\b", r"\y")
 
+@dataclass(frozen=True)
+class PermitJob:
+    slug: str
+    label: str
+    regex: str
+
+
+# The four job types the Permit Packets campaign covers, in the order they are
+# listed everywhere. A site "shows" a job when its text, menu or URLs match.
+# Keep in step with PERMIT_JOB_PATTERNS in pipeline/site_signals.py.
+# Wording is deliberately narrow: "day spa" or "spa treatments" are not a hot
+# tub install, and a bare "panel" is not a panel upgrade.
+PERMIT_JOBS: tuple[PermitJob, ...] = (
+    PermitJob("ev_charger", "EV", EV_SERVICE_PATTERN),
+    PermitJob(
+        "service_upgrade", "Panel upgrades",
+        r"(?<!solar\s)\b(breaker\s+box|(electrical\s+|breaker\s+)?panel)s?\s+(upgrad|replac|chang)\w*"
+        r"|\bservice\s+(upgrad|chang)\w*"
+        r"|\b(100|125|150|200|400)[\s-]*amps?\s+(electrical\s+)?(service|panel)"
+    ),
+    PermitJob(
+        "subpanel", "Subpanels",
+        r"\bsub[\s-]?panels?\b"
+        r"|\bdetached\s+(garage|building|workshop)s?\b.{0,40}(power|wiring|feeder|electric)"
+        r"|\b(power|wiring|feeder|electric)\w*\b.{0,40}\bdetached\s+(garage|building|workshop)"
+        r"|\badus?\b.{0,40}(electric|wiring|panel)"
+        r"|\b(electric|wiring|panel)\w*\b.{0,40}\badus?\b"
+    ),
+    PermitJob(
+        "appliance_circuit", "240 V circuits",
+        r"\b(hot\s*tub|spa|jacuzzi|swim\s+spa)s?\b.{0,40}(wiring|install|circuit|power)"
+        r"|\b(wiring|install|circuit|power)\w*\b.{0,40}\b(hot\s*tub|spa|jacuzzi|swim\s+spa)s?\b"
+        r"|\bsaunas?\b"
+        r"|\bheat\s+pumps?\b.{0,40}(wiring|circuit|install)"
+        r"|\b(wiring|circuit|install)\w*\b.{0,40}\bheat\s+pumps?\b"
+        r"|\bmini[\s-]*splits?\b"
+        r"|\b(240|220)[\s-]*(v|volts?)\b[\s-]*(circuit|outlet|line)"
+    ),
+)
+PERMIT_JOB_SLUGS = tuple(job.slug for job in PERMIT_JOBS)
+PERMIT_JOB_LABELS = {job.slug: job.label for job in PERMIT_JOBS}
+# Any one of the four. Postgres spells a word boundary \y.
+PERMIT_JOBS_PATTERN = "|".join(job.regex for job in PERMIT_JOBS)
+PERMIT_JOBS_SQL = PERMIT_JOBS_PATTERN.replace(r"\b", r"\y")
+
 # City permit requirements, from each city's published EV checklist. "full"
-# cities ask for a real packet. "simple" cities use a no-plan permit, so the
-# offer has little to save them and those leads stay out of the campaign.
+# cities ask for a real packet. "simple" cities use a no-plan permit for EV
+# chargers, so the EV line makes no city claim there. These are EV-only: no
+# other job type gets a city-specific claim.
 EV_PERMIT_CITIES: dict[tuple[str, str], dict[str, str]] = {
     ("Oro Valley", "AZ"): {
         "fit": "full",

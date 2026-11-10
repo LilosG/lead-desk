@@ -149,6 +149,21 @@ w = E.SiteFindings(place_id="p", is_reachable=True, has_ssl=True, title="t", tit
 checks.append(("depth findings count toward the website axis",
                S.score_website(BUSINESS, w, base)[0] > 0))
 
+# Permit Packets job types: positive and negative wording, stored next to the EV signals.
+def _jobs(text):
+    return [slug for slug, rx in SS.PERMIT_JOB_REGEX.items() if rx.search(text)]
+
+
+checks.append(("panel upgrade wording is a service upgrade", _jobs("Electrical panel upgrade") == ["service_upgrade"]))
+checks.append(("sub-panel wording is a subpanel", _jobs("Sub-panel for your detached garage") == ["subpanel"]))
+checks.append(("hot tub wiring is an appliance circuit", _jobs("Hot tub wiring") == ["appliance_circuit"]))
+checks.append(("a day spa is not a permit job", _jobs("Day spa and spa treatments") == []))
+checks.append(("a solar panel upgrade is not a service upgrade", _jobs("Solar panel upgrade") == []))
+permit = collect(GOOD.replace("<h1>", "<h1>Panel upgrades and EV chargers. "))
+checks.append(("collect stores permit_jobs in campaign order",
+               permit["permit_jobs"] == ["ev_charger", "service_upgrade"]))
+checks.append(("a site with no permit work stores an empty list", collect(BARE)["permit_jobs"] == []))
+
 ok = True
 for label, passed in checks:
     print(f"  {'PASS' if passed else 'FAIL'}  {label}")

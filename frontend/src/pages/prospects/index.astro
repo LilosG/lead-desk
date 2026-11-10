@@ -178,7 +178,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
           disabled
           class="rounded-md bg-[var(--dark)] px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Prep for EV Permits (0)
+          Prep for Permit Packets (0)
         </button>
         <select
           id="page-size"
@@ -487,7 +487,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
       batchButton.textContent = `Create audit reports (${selected.size})`;
       batchButton.disabled = selected.size === 0;
       const electricians = evSelection().length;
-      batchEvButton.textContent = `Prep for EV Permits (${electricians})`;
+      batchEvButton.textContent = `Prep for Permit Packets (${electricians})`;
       batchEvButton.disabled = electricians === 0;
     }
 
@@ -840,7 +840,7 @@ import AppLayout from '../../layouts/AppLayout.astro';
         }
       }
       batchStatus.textContent = [
-        `${drafted} EV draft${drafted === 1 ? '' : 's'} in Gmail`,
+        `${drafted} Permit Packets draft${drafted === 1 ? '' : 's'} in Gmail`,
         ...stopped,
       ].join(' · ');
       await loadProspects();

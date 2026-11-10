@@ -178,3 +178,128 @@ def test_the_cleanup_removes_chargers_but_keeps_electricians_and_contacted_leads
         left = {r[0] for r in conn.execute("select place_id from businesses where place_id like 'cs-%'")}
         conn.execute("delete from businesses where place_id like 'cs-%'")
     assert left == {"cs-3", "cs-4"}
+
+
+# ---- Permit Packets job types ----------------------------------------------
+
+def _permit(html: str, site_paths=(), pages=None, fetched=None):
+    soup = BeautifulSoup(html, "html.parser")
+
+    def fetch(path):
+        if fetched is not None:
+            fetched.append(path)
+        return (pages or {}).get(path)
+
+    return SS.permit_profile(soup, soup.get_text(" ", strip=True), list(site_paths), HOST, fetch)
+
+
+def test_permit_jobs_are_listed_in_campaign_order_with_their_service_pages():
+    found = _permit(
+        '<a href="/hot-tub-wiring">Hot tub wiring</a><a href="/panel-upgrades">Panel Upgrades</a>'
+        '<a href="/ev-charger-installation">EV Charger Installation</a><a href="/sub-panels">Subpanels</a>')
+    assert found["permit_jobs"] == ["ev_charger", "service_upgrade", "subpanel", "appliance_circuit"]
+    assert found["permit_job_pages"] == {
+        "ev_charger": "/ev-charger-installation", "service_upgrade": "/panel-upgrades",
+        "subpanel": "/sub-panels", "appliance_circuit": "/hot-tub-wiring",
+    }
+
+
+def test_a_blog_post_shows_interest_but_is_not_a_service_page():
+    found = _permit('<a href="/blog/200-amp-service-upgrade-cost">200 amp service upgrade cost</a>')
+    assert found["permit_jobs"] == ["service_upgrade"]
+    assert found["permit_job_pages"] == {}
+
+
+def test_homepage_wording_alone_shows_a_job_without_a_page():
+    found = _permit("<p>We do mini-split wiring and detached garage power.</p>")
+    assert found["permit_jobs"] == ["subpanel", "appliance_circuit"]
+    assert found["permit_job_pages"] == {}
+
+
+def test_a_day_spa_or_a_solar_panel_is_not_permit_work():
+    html = ('<a href="/services">Services</a><p>Day spa treatments, solar panel upgrade quotes, '
+            'customer service and a control panel.</p>')
+    found = _permit(html)
+    assert found["permit_jobs"] == []
+    assert found["permit_job_pages"] == {}
+
+
+def test_the_service_hub_is_read_when_the_homepage_shows_no_job():
+    found = _permit('<a href="/residential-services">Residential</a>',
+                    pages={"/residential-services": "<li>Panel Upgrades</li><li>Hot tub circuits</li>"})
+    assert found["permit_jobs"] == ["service_upgrade", "appliance_circuit"]
+
+
+def test_permit_profile_stays_inside_the_ev_fetch_limit():
+    fetched: list[str] = []
+    html = "".join(f'<a href="/{slug}">{label}</a>' for slug, label in [
+        ("ev-chargers", "EV Chargers"), ("panel-upgrades", "Panel Upgrades"),
+        ("subpanels", "Subpanels"), ("hot-tub-wiring", "Hot tub wiring"), ("sauna-wiring", "Sauna wiring")])
+    _permit(html, fetched=fetched)
+    assert len(fetched) <= SS.MAX_EV_PAGE_FETCHES
+
+
+def test_collect_stores_both_the_ev_and_the_permit_signals():
+    html = ("<html><title>Sparks</title><body><a href='/ev-chargers'>EV Chargers</a>"
+            "<p>We install Tesla Wall Connector units and do electrical panel upgrades.</p></body></html>")
+    soup = BeautifulSoup(html, "html.parser")
+    reads: list[str] = []
+
+    def fetch(path):
+        reads.append(path)
+        return "<p>EV charger installs</p>"
+
+    signals = SS.collect(
+        business={"place_id": "p", "name": "Sparks", "vertical": "electrician"}, soup=soup, html=html,
+        final_url=f"https://{HOST}/", headers={}, word_count=20, robots=None, has_sitemap=False,
+        offering_paths=[], location_paths=[], offering_words=[], fetch_page=fetch)
+    assert signals["ev_service"] is True and signals["ev_brands"] == ["Tesla"]
+    assert signals["ev_page_path"] == "/ev-chargers"
+    assert signals["permit_jobs"] == ["ev_charger", "service_upgrade"]
+    assert signals["permit_job_pages"] == {"ev_charger": "/ev-chargers"}
+    assert reads == ["/ev-chargers"]  # both profiles share one fetch
+
+
+def test_the_ev_signals_do_not_change_when_permit_signals_are_added():
+    html = '<a href="/ev-charger-installation">EV Charger Installation</a>'
+    found = _profile(html)
+    assert set(found) == {"ev_service", "ev_strength", "ev_page_path", "ev_page_title",
+                          "ev_brands", "ev_commercial"}
+
+
+# ---- backfill_permit_signals ------------------------------------------------
+
+def test_the_backfill_writes_only_the_permit_keys_and_never_touches_scores():
+    sys.path.insert(0, str(PIPELINE))
+    import backfill_permit_signals as BF
+
+    class Found:
+        is_reachable = True
+        site_signals = {"permit_jobs": ["subpanel"], "permit_job_pages": {"subpanel": "/sub-panels"},
+                        "ev_service": True, "owner_name": "Someone"}
+
+    assert BF.permit_facts(Found) == {"permit_jobs": ["subpanel"],
+                                      "permit_job_pages": {"subpanel": "/sub-panels"}}
+    assert BF.permit_facts(None) is None
+    unreachable = type("F", (), {"is_reachable": False, "site_signals": {"permit_jobs": []}})
+    assert BF.permit_facts(unreachable) is None
+
+    dsn = os.environ.get("DATABASE_URL")
+    with psycopg.connect(dsn) as conn:
+        conn.execute("insert into businesses (place_id, name, vertical) values ('bf-1', 'Backfill Electric', 'electrician')")
+        conn.execute("""insert into website_enrichment (place_id, site_signals, word_count)
+                        values ('bf-1', '{"ev_service": true, "ev_brands": ["Tesla"]}', 71)""")
+    try:
+        BF.store_facts(dsn, {"bf-1": BF.permit_facts(Found)})
+        with psycopg.connect(dsn) as conn:
+            signals, score = conn.execute(
+                "select site_signals, word_count from website_enrichment where place_id = 'bf-1'").fetchone()
+            queued = [r[0] for r in conn.execute(
+                "select place_id from businesses b where vertical = 'electrician' and place_id = 'bf-1'")]
+        assert signals == {"ev_service": True, "ev_brands": ["Tesla"], "permit_jobs": ["subpanel"],
+                           "permit_job_pages": {"subpanel": "/sub-panels"}}
+        assert score == 71 and queued == ["bf-1"]
+    finally:
+        with psycopg.connect(dsn) as conn:
+            conn.execute("delete from website_enrichment where place_id = 'bf-1'")
+            conn.execute("delete from businesses where place_id = 'bf-1'")

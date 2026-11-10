@@ -22,8 +22,8 @@ class Angle:
 
 ANGLES: dict[str, tuple[Angle, ...]] = {
     EV_PERMITS: (
-        Angle("drawings", "Who draws your plans", "Asks who's stuck drawing the site plans and single-lines."),
-        Angle("desk_work", "Desk work", "The install is easy; the drawings are unpaid desk work."),
+        Angle("drawings", "Who draws your plans", "Asks who's stuck drawing the site plans, single-lines and load calcs."),
+        Angle("desk_work", "Desk work", "The install is easy; the permit drawings are unpaid desk work."),
     ),
     SEO_WEBSITES: (
         Angle("local_gap", "Local gap", "Their biggest gap, the Wheyland results and a calls ask. No attachment."),

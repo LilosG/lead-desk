@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import Any, Literal
 
-from app.campaigns import CAMPAIGNS, EV_PERMITS, get_campaign
+from app.campaigns import CAMPAIGNS, EV_PERMITS, PERMIT_JOB_LABELS, get_campaign
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
@@ -67,13 +67,19 @@ def follow_up_step(row: dict[str, Any], now: datetime | None = None) -> str:
 def lead_note(row: dict[str, Any], campaign: str) -> str | None:
     """Why this lead sits where it does in this campaign's list."""
     if campaign == EV_PERMITS:
-        proof = ("EV page" if row.get("ev_strength") == "page"
-                 else "Mentions EV work" if row.get("ev_eligible") else "No EV on site")
-        brands = row.get("ev_brands") or []
-        parts = [proof, *brands[:2], f"{row['review_count']} reviews" if row.get("review_count") else None]
+        jobs = [slug for slug in row.get("permit_jobs") or [] if slug in PERMIT_JOB_LABELS]
+        if not jobs and row.get("ev_strength"):
+            jobs = ["ev_charger"]  # read before permit_jobs was recorded
+        if not jobs:
+            proof = ["Mentions permit work" if row.get("permit_eligible") else "No permit work on site"]
+        else:
+            proof = [", ".join(PERMIT_JOB_LABELS[slug] for slug in jobs),
+                     f"{len(jobs)} job type{'' if len(jobs) == 1 else 's'}"]
+        brands = ", ".join((row.get("ev_brands") or [])[:2])
+        parts = [*proof, brands, f"{row['review_count']} reviews" if row.get("review_count") else None]
         return " · ".join(p for p in parts if p)
-    if row.get("ev_eligible") and row.get("stage") == "to_prep":
-        return "Shows EV work: pitch EV Permits first"
+    if row.get("permit_eligible") and row.get("stage") == "to_prep":
+        return "Shows permit work: pitch Permit Packets first"
     return None
 
 
