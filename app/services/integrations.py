@@ -72,7 +72,7 @@ class GmailIntegrationService:
             "scope": f"openid email {GMAIL_SCOPE}",
             "access_type": "offline",
             "include_granted_scopes": "true",
-            "prompt": "consent",
+            "prompt": "select_account consent",
             "state": state,
         }
         return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
@@ -131,13 +131,8 @@ class GmailIntegrationService:
             )
 
         account_email = str(userinfo.json().get("email") or "").strip().lower()
-        expected_email = self.settings.gmail_sender_email.strip().lower()
         if not account_email:
             raise OAuthExchangeError("Google did not return an account email")
-        if account_email != expected_email:
-            raise OAuthExchangeError(
-                f"Authorize {expected_email}; Google returned {account_email}"
-            )
 
         # Google lets people untick individual permissions on the consent
         # screen. Without gmail.compose every draft fails with a 403 later,
@@ -169,7 +164,7 @@ class GmailIntegrationService:
                     client_id=self.settings.gmail_client_id or "",
                     client_secret=self.settings.gmail_client_secret or "",
                     refresh_token=self.settings.gmail_refresh_token or "",
-                    sender_email=self.settings.gmail_sender_email,
+                    sender_email=credential.get("account_email") or self.settings.gmail_sender_email,
                 )
             return None
         self._require_oauth_configuration()
@@ -181,7 +176,7 @@ class GmailIntegrationService:
             client_id=self.settings.gmail_client_id or "",
             client_secret=self.settings.gmail_client_secret or "",
             refresh_token=refresh_token,
-            sender_email=self.settings.gmail_sender_email,
+            sender_email=credential.get("account_email") or self.settings.gmail_sender_email,
         )
 
     def _cipher(self) -> CredentialCipher:
