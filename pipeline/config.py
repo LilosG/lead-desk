@@ -375,7 +375,7 @@ TIER_CUTOFFS = [("A", 45), ("B", 33), ("C", 22), ("D", 0)]
 # Fit: is this a real, working business that could buy? Max 100.
 FIT_MAX = {"activity": 40, "reviews": 30, "website": 15, "rating": 10, "profile": 5}
 QUALIFY_MIN_FIT = 45
-FIT_SOLID_REVIEWS = 10  # enough reviews to count as a real customer base anywhere
+FIT_SOLID_REVIEWS = 25  # enough reviews to count as a real customer base anywhere
 QUALIFY_MIN_REVIEWS = FIT_SOLID_REVIEWS  # fewer stays labelled, but isn't Qualified
 
 QUALIFICATION_LABELS = {

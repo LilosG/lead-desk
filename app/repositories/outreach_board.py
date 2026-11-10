@@ -287,6 +287,10 @@ class OutreachBoardRepository:
         if market:
             where.append("market = %(market)s")
             params["market"] = market
+        # Automate review thresholds: 50+ for Permit Packets, 25+ for SEO & Websites
+        min_reviews = 50 if campaign == 'ev_permits' else 25
+        where.append(f"(kind <> 'candidate' or coalesce(review_count, 0) >= {min_reviews})")
+
         if qualified_only:
             # Only narrows the list to work next; later stages are already committed to.
             where.append("(stage <> 'to_prep' or qualification = 'qualified')")
