@@ -30,7 +30,7 @@ PROMPT_VERSION = "seo-offer-v2"
 AUDIT_ATTACHED = "audit_attached"
 FREE_HOMEPAGE = "free_homepage"
 # Angles whose email says the audit PDF is attached.
-ATTACHES_AUDIT = {AUDIT_ATTACHED, FREE_HOMEPAGE}
+ATTACHES_AUDIT = set()  # Plain text first touch
 
 # Wheyland's own neighbors get the case study without the name.
 _WHEYLAND_NEIGHBORS = {"carlsbad", "vista", "oceanside", "encinitas", "san marcos"}
@@ -164,24 +164,23 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
         angle = "local_gap"
 
     if angle == "free_homepage":
-        subject = f"Made this for {short}"
+        subject = f"redesign for {short}".lower()
         paragraphs = [
             f"I built a new homepage for {name}. It's yours to look at, no strings: {demo_url}",
             finding,
-            "I also attached a short audit with what I'd fix first.",
+            "Want me to send over the 1-page breakdown of what I'd fix first?",
             "If you like it, tell me what you'd change. If not, no harm done.",
         ]
     elif angle == AUDIT_ATTACHED:
         paragraphs = [finding, proof_paragraph(context),
-                      "The attached PDF has the full comparison and what I'd fix first, in order. "
-                      f"Want me to walk you through the top 3 for {short}?"]
+                      "I put together a short audit with the top 3 fixes to capture those calls. Want me to send it over?"]
     elif angle == "leader_vs_you":
         paragraphs = [finding, proof_paragraph(context),
                       f"Want the 3 things I'd fix first for {short}? I'll send them over."]
     elif angle == "competitor":
         paragraphs = [finding, proof_paragraph(context), _ask(short, city)]
     else:
-        subject = f"{short} on Google Maps in {city}" if city else f"{short} on Google Maps"
+        subject = f"{city} service calls".lower() if city else f"quick question - {short}".lower()
         paragraphs = [_local_gap_line(snapshot, short, city) or finding, proof_paragraph(context),
                       _ask(short, city)]
     return {

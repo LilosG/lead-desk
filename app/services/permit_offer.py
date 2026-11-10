@@ -160,20 +160,23 @@ def _close(ctx: dict[str, Any]) -> list[str]:
 
 
 def _who_pulls(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    return f"Who pulls permits at {ctx['short']}?", [
-        f"Quick question for whoever pulls permits at {ctx['short']}. {_proof_line(ctx)}{_ask_line(ctx)}",
-        "I built a setup that drafts the site plan, single-line and load calc from a short form your "
-        "tech fills out on site, ready to sign and submit. Four electrical shops have used the EV "
-        f"charger version. {_COVERS}",
+    city = ctx.get("city")
+    subject = f"{city} permit checklist".lower() if city else "permit checklists"
+    return subject, [
+        f"Quick question for whoever handles permit submittals at {ctx['short']}. {_proof_line(ctx)}{_ask_line(ctx)}",
+        "We built an internal setup that automatically drafts the site plan, single-line and load calc from a short form your "
+        "tech fills out on site, ready to sign and submit. "
+        f"{_COVERS}",
         *_close(ctx),
     ]
 
 
 def _drawings(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    return f"Who draws {possessive(ctx['short'])} permit plans?", [
-        f"{_proof_line(ctx)}{_ask_line(ctx)} Who's stuck drawing those at {ctx['short']}, you or the office?",
-        "Four electrical shops have used the EV charger version. A tech fills out a quick job form "
-        "on site, and the site plan on the actual property, the single-line and the load calc come "
+    city = ctx.get("city")
+    subject = f"{city} ev & panel permits".lower() if city else "ev & panel permits"
+    return subject, [
+        f"{_proof_line(ctx)}{_ask_line(ctx)} How much time is your office spending drawing those at {ctx['short']}?",
+        "A tech fills out a quick job form on site, and the site plan on the actual property, the single-line and the load calc come "
         f"back ready to sign and submit. {_COVERS}",
         *_close(ctx),
     ]
@@ -182,12 +185,13 @@ def _drawings(ctx: dict[str, Any]) -> tuple[str, list[str]]:
 def _desk_work(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     job = _SINGULAR[ctx["jobs"][0]] if ctx["jobs"] else _ANY_JOB
     job = f"{'an' if job.startswith('EV') else 'a'} {job}"
-    return f"Permit desk work at {ctx['short']}", [
+    subject = f"permit desk work - {ctx['short']}".lower()
+    return subject, [
         f"{_proof_line(ctx)}On {job}, the install is the easy part. The site plan, single-line "
         "and load calc are the desk work nobody gets paid for.",
         "We built a setup that draws all three from one tech form on site, on the actual property, "
-        f"ready for your sign-off. Four electrical shops have used the EV charger version, and it "
-        f"now covers panel and service upgrades, subpanels and 240 V circuits too.",
+        "ready for your sign-off. "
+        f"{_COVERS}",
         *_close(ctx),
     ]
 
