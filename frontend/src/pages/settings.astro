@@ -43,7 +43,102 @@ import AppLayout from '../layouts/AppLayout.astro';
         </button>
       </div>
     </div>
+
+    <div class="rounded-xl border border-[var(--line)] bg-white p-6">
+      <p class="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Outreach safety</p>
+      <h2 class="mt-2 text-xl font-semibold text-[var(--ink)]">Do not contact list</h2>
+      <p class="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
+        Emails on this list are never drafted or sent to, in any campaign. Adding one also closes any open outreach already queued for that address.
+      </p>
+
+      <form id="dnc-form" class="mt-5 flex flex-col gap-3 sm:flex-row">
+        <input id="dnc-email" type="email" required placeholder="name@company.com" class="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm sm:max-w-xs" />
+        <input id="dnc-reason" type="text" placeholder="Reason (optional)" class="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm sm:max-w-xs" />
+        <button type="submit" class="rounded-lg bg-[var(--ink)] px-4 py-2 text-sm font-medium text-white">Add to list</button>
+      </form>
+
+      <div id="dnc-message" class="mt-4 hidden rounded-lg border border-[var(--line)] px-4 py-3 text-sm"></div>
+      <ul id="dnc-list" class="mt-4 divide-y divide-[var(--line)] text-sm"></ul>
+    </div>
   </section>
+
+  <script>
+    type Suppressed = { email: string; reason: string | null; added_at: string };
+
+    const dncForm = document.getElementById('dnc-form') as HTMLFormElement | null;
+    const dncEmail = document.getElementById('dnc-email') as HTMLInputElement | null;
+    const dncReason = document.getElementById('dnc-reason') as HTMLInputElement | null;
+    const dncList = document.getElementById('dnc-list');
+    const dncMessage = document.getElementById('dnc-message');
+
+    function dncShow(text: string, isError = false): void {
+      if (!dncMessage) return;
+      dncMessage.textContent = text;
+      dncMessage.classList.remove('hidden');
+      dncMessage.classList.toggle('text-red-700', isError);
+    }
+
+    async function dncLoad(): Promise<void> {
+      const response = await fetch('/api/suppression', { credentials: 'same-origin' });
+      if (!response.ok) throw new Error('Could not load the do not contact list.');
+      const rows = await response.json() as Suppressed[];
+      if (!dncList) return;
+      dncList.replaceChildren();
+      if (rows.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'py-3 text-[var(--muted)]';
+        empty.textContent = 'No one on the list yet.';
+        dncList.append(empty);
+        return;
+      }
+      for (const row of rows) {
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between gap-4 py-3';
+        const info = document.createElement('div');
+        const email = document.createElement('p');
+        email.className = 'font-medium text-[var(--ink)]';
+        email.textContent = row.email;
+        const meta = document.createElement('p');
+        meta.className = 'text-xs text-[var(--muted)]';
+        meta.textContent = `${row.reason || 'do not contact'} · ${new Date(row.added_at).toLocaleDateString()}`;
+        info.append(email, meta);
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'text-xs font-medium text-red-700';
+        remove.textContent = 'Remove';
+        remove.addEventListener('click', async () => {
+          if (!window.confirm(`Remove ${row.email}? They could be emailed again.`)) return;
+          const res = await fetch(`/api/suppression/${encodeURIComponent(row.email)}`, {
+            method: 'DELETE',
+            credentials: 'same-origin',
+          });
+          if (!res.ok) { dncShow('Could not remove that address.', true); return; }
+          dncLoad().catch(() => undefined);
+        });
+        li.append(info, remove);
+        dncList.append(li);
+      }
+    }
+
+    dncForm?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const response = await fetch('/api/suppression', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: dncEmail?.value ?? '', reason: dncReason?.value ?? '' }),
+      });
+      const data = await response.json().catch(() => ({})) as { email?: string; detail?: string };
+      if (!response.ok) { dncShow(data.detail || 'Could not add that address.', true); return; }
+      dncShow(`${data.email} will never be contacted.`);
+      dncForm.reset();
+      dncLoad().catch(() => undefined);
+    });
+
+    dncLoad().catch((error: unknown) => {
+      dncShow(error instanceof Error ? error.message : 'Could not load the do not contact list.', true);
+    });
+  </script>
 
   <script>
     type GmailStatus = {
