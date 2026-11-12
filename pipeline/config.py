@@ -164,9 +164,9 @@ NICHE_PROFILES = {
         ],
     },
     "real_estate": {
-        "offering_label": "buyer, seller and listing pages",
+        "offering_label": "property listing",
         "offering_singular": "page",
-        "location_label": "neighborhood or community pages",
+        "location_label": "neighborhood",
         "offering_words": [
             "listing", "homes-for-sale", "for-sale", "property", "properties",
             "buy", "buyer", "sell", "seller", "home-value", "home-valuation",
