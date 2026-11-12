@@ -1,15 +1,4 @@
-"""The SEO + Websites emails, written from the lead's audit report.
-
-Every number about the lead comes from the audit snapshot, the same way the
-PDF's do. The proof is Wheyland Electric, Mike's own results: about 60 calls and
-quote requests a month from the first month after the March relaunch, and 20
-Google AI Overview spots by summer. The ask is calls, not a fix list.
-
-The Audit attached and Free homepage angles carry the PDF. Best fit (the
-default) picks Free homepage when a mockup is published, otherwise Audit
-attached: Mike chose showing the work over the lighter spam risk of a plain
-first email (Nov 2026). Local gap and Competitor stay attachment-free.
-"""
+"""The SEO, AEO/AI Search & Website Mockup emails, grounded in the lead's audit."""
 from __future__ import annotations
 
 from typing import Any
@@ -25,44 +14,102 @@ from app.services.outreach_audit_copy import (
     short_name,
     team_greeting,
 )
+from pipeline.verticals import vertical_profile
 
-PROMPT_VERSION = "seo-offer-v2"
+PROMPT_VERSION = "seo-offer-v4"
 AUDIT_ATTACHED = "audit_attached"
 FREE_HOMEPAGE = "free_homepage"
 AI_SEARCH = "ai_search"
-# Angles whose email says the audit PDF is attached.
-ATTACHES_AUDIT = set()  # Plain text first touch
+ATTACHES_AUDIT: set[str] = set()
 
-# Wheyland's own neighbors get the case study without the name.
-_WHEYLAND_NEIGHBORS = {"carlsbad", "vista", "oceanside", "encinitas", "san marcos"}
+_VOICE_BY_PROFILE: dict[str, dict[str, str]] = {
+    "home_service": {
+        "subject_leads": "service calls",
+        "buyer": "homeowners",
+        "inquiries": "service calls",
+        "map_leads": "top-3 map calls",
+        "outcome": "booked jobs",
+        "search_intent": "that exact job",
+        "mobile_friction": "tap-to-call, costing you calls",
+    },
+    "legal": {
+        "subject_leads": "case inquiries",
+        "buyer": "potential clients",
+        "inquiries": "case inquiries",
+        "map_leads": "top-3 Google Maps case inquiries",
+        "outcome": "signed cases",
+        "search_intent": "that exact practice area",
+        "mobile_friction": "request a consultation or call, costing you potential cases",
+    },
+    "real_estate": {
+        "subject_leads": "client leads",
+        "buyer": "buyers and sellers",
+        "inquiries": "client inquiries",
+        "map_leads": "top-3 Google Maps client leads",
+        "outcome": "listings and closings",
+        "search_intent": "homes and agents in their area",
+        "mobile_friction": "reach out or browse listings, costing you buyer and seller leads",
+    },
+    "medical_aesthetic": {
+        "subject_leads": "patient bookings",
+        "buyer": "patients",
+        "inquiries": "patient inquiries",
+        "map_leads": "top-3 Google Maps patient bookings",
+        "outcome": "booked appointments",
+        "search_intent": "that exact treatment",
+        "mobile_friction": "book online or call, costing you patient appointments",
+    },
+    "dental": {
+        "subject_leads": "new patient calls",
+        "buyer": "patients",
+        "inquiries": "patient inquiries",
+        "map_leads": "top-3 Google Maps patient bookings",
+        "outcome": "booked appointments",
+        "search_intent": "that exact procedure",
+        "mobile_friction": "book online or call, costing you new patient appointments",
+    },
+    "wellness_health": {
+        "subject_leads": "patient bookings",
+        "buyer": "patients",
+        "inquiries": "patient inquiries",
+        "map_leads": "top-3 Google Maps patient bookings",
+        "outcome": "booked appointments",
+        "search_intent": "that exact service",
+        "mobile_friction": "book online or call, costing you patient appointments",
+    },
+    "auto": {
+        "subject_leads": "repair bookings",
+        "buyer": "drivers",
+        "inquiries": "service bookings",
+        "map_leads": "top-3 Google Maps repair calls",
+        "outcome": "booked repairs",
+        "search_intent": "that exact repair",
+        "mobile_friction": "book or tap-to-call, costing you service appointments",
+    },
+    "generic_local_business": {
+        "subject_leads": "client inquiries",
+        "buyer": "locals",
+        "inquiries": "client inquiries",
+        "map_leads": "top-3 Google Maps leads",
+        "outcome": "new clients",
+        "search_intent": "that exact service",
+        "mobile_friction": "reach out or tap-to-call, costing you client inquiries",
+    },
+}
 
 
-def _proof_subject(context: dict[str, Any]) -> str:
-    """Who the Wheyland results are credited to for this lead."""
-    if context.get("vertical") != "electrician":
-        return "a local electrical contractor"
-    city = (context.get("city") or "").strip().lower()
-    state = (context.get("state") or "").strip().upper()
-    if state == "CA" and city in _WHEYLAND_NEIGHBORS:
-        return "a North County electrical shop"
-    return "Wheyland Electric"
+def _voice(context: dict[str, Any], snapshot: dict[str, Any] | None = None) -> dict[str, str]:
+    raw_vertical = context.get("vertical") or ((snapshot or {}).get("market_comparison") or {}).get("niche") or ""
+    prof = vertical_profile(str(raw_vertical))
+    return _VOICE_BY_PROFILE.get(prof, _VOICE_BY_PROFILE["generic_local_business"])
 
 
-def proof_paragraph(context: dict[str, Any]) -> str:
-    who = _proof_subject(context)
-    return (f"We rebuilt {possessive(who)} site and local search setup in March. From the first month "
-            "they got about 60 calls and quote requests a month from Google. By summer they were "
-            "showing up in Google's AI answers for 20 searches. It's all month-to-month, so if the "
-            "phone doesn't ring, you walk.")
-
-
-def _ask(short: str, city: str | None) -> str:
+def _ask(short: str, city: str | None, voice: dict[str, str]) -> str:
     where = f" in {city}" if city else ""
-    return f"Want me to send the plan for how I'd get {short} those calls{where}?"
+    return f"Open to me sending over the 1-page breakdown of what I'd fix first to capture those {voice['inquiries']}{where}?"
 
 
 def _leader(snapshot: dict[str, Any], name: str) -> dict[str, Any] | None:
-    """The most-reviewed local peer, when it's a real gap and not this business."""
     comparison = snapshot.get("market_comparison") or {}
     mine = int((comparison.get("business") or {}).get("review_count") or 0)
     own = clean_business_name((comparison.get("business") or {}).get("name") or name).lower()
@@ -83,14 +130,27 @@ def _niche(snapshot: dict[str, Any]) -> str:
     return _plural_niche((snapshot.get("market_comparison") or {}).get("niche"))
 
 
+def _singular_niche(snapshot: dict[str, Any]) -> str:
+    raw = str(((snapshot.get("market_comparison") or {}).get("niche") or "")).strip()
+    if not raw or raw == "comparable":
+        return "local business"
+    niche = _niche(snapshot)
+    if niche == "businesses like yours":
+        return "local business"
+    if niche.endswith("ies"):
+        return niche[:-3] + "y"
+    if niche.endswith("s") and not niche.endswith("ss"):
+        return niche[:-1]
+    return niche
+
+
 def _top_gap(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     gaps = (snapshot.get("page_gaps") or {}).get("gaps") or []
     top = gaps[0] if gaps else None
     return top if top and top.get("count") and top.get("label") else None
 
 
-def _competitor_line(snapshot: dict[str, Any], name: str) -> tuple[str, str] | None:
-    """The leader's reviews next to theirs. The page gap counts city peers, not the leader."""
+def _competitor_line(snapshot: dict[str, Any], name: str, voice: dict[str, str]) -> tuple[str, str] | None:
     leader = _leader(snapshot, name)
     city = _city(snapshot)
     if not (leader and city):
@@ -99,36 +159,58 @@ def _competitor_line(snapshot: dict[str, Any], name: str) -> tuple[str, str] | N
     short = short_name(name)
     yours = (f"to your {leader['mine']:,}" if leader["mine"] else
              f"while {short} doesn't have any yet")
-    line = (f"Checked {niche} in {city}. {leader['name']} is out front on Google Maps with "
-            f"{leader['reviews']:,} reviews {yours}")
+    line = (f"Ran a search check on {niche} in {city}. {leader['name']} is capturing most of the "
+            f"{voice['map_leads']} with {leader['reviews']:,} reviews {yours}")
     gap = _top_gap(snapshot)
     if gap:
         line += (f", and {gap['count']} other {niche} there have a dedicated {gap['label']} page "
                  f"that {possessive(short)} site is missing.")
     else:
         line += "."
-    return line, f"Calls going to {short_name(leader['name'])}"
+    subj_prefix = "calls" if voice["subject_leads"] == "service calls" else "inquiries"
+    return line, f"{subj_prefix} going to {short_name(leader['name'])}".lower()
 
 
-# Findings that beat a missing service page as the opener: the lead is losing calls today.
 _HARD_GAPS = {"noindex_homepage", "website_not_on_gbp", "broken_profile_link", "no_website", "no_ssl",
               "no_reviews", "reviews_bottom_quartile"}
 
 
-def _local_gap_line(snapshot: dict[str, Any], short: str, city: str | None) -> str | None:
-    """The missing service page, unless the audit found something that costs calls sooner."""
+def _local_gap_line(snapshot: dict[str, Any], short: str, city: str | None, voice: dict[str, str]) -> str | None:
     gap = _top_gap(snapshot)
     found = {f.get("signal") for f in snapshot.get("findings") or [] if isinstance(f, dict)}
     if not (gap and city) or found & _HARD_GAPS:
         return None
     niche = _niche(snapshot)
     return (f"Checked {niche} in {city}. {gap['count']} other {niche} there have a dedicated "
-            f"{gap['label']} page that {possessive(short)} site is missing, and that page is how they "
-            "show up when someone searches for that service.")
+            f"{gap['label']} page that {possessive(short)} site is missing, which is how they "
+            f"capture searches for {voice['search_intent']}.")
+
+
+def _ai_search_paragraphs(snapshot: dict[str, Any], short: str, city: str | None, voice: dict[str, str]) -> tuple[str, list[str]]:
+    where = f" in {city}" if city else ""
+    subject = f"chatgpt in {city}".lower() if city else f"ai search - {short}".lower()
+    trade = _singular_niche(snapshot)
+    plural_trade = _niche(snapshot)
+    leader = _leader(snapshot, short)
+    rival_note = (f"{leader['name']} is consistently getting recommended first"
+                  if leader else "a couple local competitors are consistently getting recommended first")
+    found = {f.get("signal") for f in snapshot.get("findings") or [] if isinstance(f, dict)}
+    if "ai_crawlers_blocked" in found:
+        reason = "your site is currently blocking AI search crawlers in robots.txt"
+    elif "no_localbusiness_schema" in found:
+        reason = "your site is missing the structured entity data AI models read to verify local businesses"
+    else:
+        reason = "your site isn't properly indexed for local AI entity answers yet"
+    article = "an" if trade[:1].lower() in "aeiou" else "a"
+    return subject, [
+        f"Ran a scan on how ChatGPT and Apple Intelligence recommend {plural_trade}{where}. "
+        f"When {voice['buyer']} ask for {article} {trade}, {rival_note}, while {short} isn't showing up because {reason}.",
+        f"I put together a quick 1-page breakdown showing what AI search outputs{where} and the 2 fixes needed to get {short} recommended.",
+        "Mind if I send it over?",
+    ]
 
 
 def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
-    """(subject, body, angle) for this lead, or None if the audit has nothing to say."""
     snapshot = context.get("audit_snapshot")
     if not isinstance(snapshot, dict):
         return None
@@ -137,73 +219,56 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
     rendered = audit_email_paragraph(snapshot, name, with_demo=False)
     if rendered is None:
         return None
-    finding, subject = rendered
+    finding, _ = rendered
+    voice = _voice(context, snapshot)
     signals = context.get("site_signals") or {}
     first_name = contact_first_name(context.get("to_address"), context.get("name"),
                                     signals.get("owner_name"))
     greeting = team_greeting(first_name, name)
     city = _city(snapshot) or context.get("city")
-    subject = subject.replace(name, short)
-    # The live published mockup wins, so it doesn't matter whether the audit or
-    # the mockup was built first.
     demo_url = context.get("demo_url") or (snapshot.get("next_step") or {}).get("demo_url")
 
+    if angle == "leader_vs_you":
+        angle = "competitor"
+    elif angle == AUDIT_ATTACHED:
+        angle = "local_gap"
+
     if angle == "competitor":
-        rival = _competitor_line(snapshot, name)
+        rival = _competitor_line(snapshot, name, voice)
         if rival is None:
             angle = "local_gap"
         else:
             finding, subject = rival
-    elif angle == "leader_vs_you":
-        leader = _leader(snapshot, name)
-        if leader is None or not _city(snapshot):
-            angle = "local_gap"
-        else:
-            finding = _competitor_line(snapshot, name)[0]
-            subject = f"{short_name(leader['name'])} vs {short}".lower()
-    elif angle == "free_homepage" and not demo_url:
+    elif angle == FREE_HOMEPAGE and not demo_url:
         angle = "local_gap"
 
-    if angle == "free_homepage":
+    if angle == FREE_HOMEPAGE:
         subject = f"redesign for {short}".lower()
         where = f" in {city}" if city else ""
         paragraphs = [
-            f"Looked through {possessive(short)} site on my phone today. You guys have solid reviews, but the current layout makes it tough for mobile visitors to tap-to-call, costing you calls{where}.",
-            f"Rather than sending a boring SEO audit, I used our internal tool to build an interactive, mobile-optimized mockup of what {possessive(short)} homepage should look like.",
+            f"Looked through {possessive(short)} site on my phone today. You guys have solid reviews, "
+            f"but the current layout makes it tough for mobile visitors to {voice['mobile_friction']}{where}.",
+            f"Rather than sending a boring SEO audit, I used our internal tool to build an interactive, "
+            f"mobile-optimized mockup of what {possessive(short)} homepage should look like.",
             "Mind if I shoot over the preview link? No strings attached, just wanted to share the build.",
         ]
     elif angle == AI_SEARCH:
-        where = f" in {city}" if city else ""
-        subject = f"chatgpt in {city}".lower() if city else f"ai search - {short}".lower()
-        trade = _niche(snapshot).rstrip("s")
-        leader = _leader(snapshot, name)
-        rival = f"{leader['name']} is consistently getting recommended first" if leader else "local competitors are getting recommended first"
-        paragraphs = [
-            f"Ran a scan on how ChatGPT and Apple Intelligence recommend {trade}s{where}. When homeowners ask for a reliable {trade}, {rival}, while {short} isn't showing up in the AI answers.",
-            f"I put together a quick 1-page breakdown showing what AI search outputs{where} and the 2 fixes needed to get {short} recommended.",
-            "Mind if I send it over?",
-        ]
-    elif angle == AUDIT_ATTACHED:
-        paragraphs = [finding,
-                      "I put together a short audit with the top 3 fixes to capture those calls. Want me to send it over?"]
-    elif angle == "leader_vs_you":
-        paragraphs = [finding,
-                      f"Want the 3 things I'd fix first for {short}? I'll send them over."]
+        subject, paragraphs = _ai_search_paragraphs(snapshot, short, city, voice)
     elif angle == "competitor":
-        paragraphs = [finding, _ask(short, city)]
+        paragraphs = [finding, _ask(short, city, voice)]
     else:
-        subject = f"{city} service calls".lower() if city else f"quick question - {short}".lower()
-        paragraphs = [_local_gap_line(snapshot, short, city) or finding,
-                      _ask(short, city)]
+        angle = "local_gap"
+        subject = f"{city} {voice['subject_leads']}".lower() if city else f"quick question - {short}".lower()
+        paragraphs = [_local_gap_line(snapshot, short, city, voice) or finding, _ask(short, city, voice)]
+
     return {
-        "subject": subject.lower()[:70],
+        "subject": subject[:70].lower(),
         "body": "\n\n".join([greeting, *paragraphs]),
         "angle": angle,
         "note": "No contact name found." if not first_name else "",
     }
 
 
-# Touch 2 gives the fastest fix away. Each line is true whenever its finding is.
 _FIX_LINES = {
     "website_not_on_gbp": ("your Google Maps listing doesn't link to your website, so anyone who taps "
                            "it hits a dead end. Add it under Edit profile → Contact → Website. It takes "
@@ -232,10 +297,6 @@ _FIX_ORDER = ("website_not_on_gbp", "broken_profile_link", "noindex_homepage", "
 
 
 def fix_one(snapshot: dict[str, Any] | None, short: str, *, gap_already_named: bool = False) -> str | None:
-    """The single fastest fix for this lead, from its own audit.
-
-    When Touch 1 already named the missing page, Touch 2 gives something new first.
-    """
     if not isinstance(snapshot, dict):
         return None
     findings = [f for f in snapshot.get("findings") or [] if isinstance(f, dict) and f.get("signal")]
@@ -245,7 +306,7 @@ def fix_one(snapshot: dict[str, Any] | None, short: str, *, gap_already_named: b
     where = f" in {city}" if city else ""
     gap_line = (f"{gap['count']} other {_niche(snapshot)}{where} have a dedicated {gap['label']} page "
                 f"and {possessive(short)} site doesn't. That page is how you show up when someone "
-                "searches for that exact service.") if gap else None
+                "searches for that exact offering.") if gap else None
     for key in _FIX_ORDER:
         if key == "page_gap":
             if gap_line and not gap_already_named:
@@ -260,7 +321,7 @@ def fix_one(snapshot: dict[str, Any] | None, short: str, *, gap_already_named: b
             continue
         phrase = _email_phrase(item)
         if phrase:
-            return f"I'd start with {phrase}. It's a quick fix and it's costing you calls right now."
+            return f"I'd start with {phrase}. It's a quick fix and it's costing you inquiries right now."
     return gap_line
 
 
@@ -272,25 +333,32 @@ def write_follow_up(context: dict[str, Any], step: int) -> str:
                                     signals.get("owner_name"))
     greeting = team_greeting(first_name, name)
     snapshot = context.get("audit_snapshot")
+    voice = _voice(context, snapshot if isinstance(snapshot, dict) else None)
     city = (_city(snapshot) if isinstance(snapshot, dict) else None) or context.get("city")
-    plan = f"the rest of the {city} plan" if city else "the rest of the plan"
+    demo_url = context.get("demo_url") or ((snapshot.get("next_step") or {}).get("demo_url") if isinstance(snapshot, dict) else None)
+    where = f" in {city}" if city else ""
+
     if step == 2:
-        fix = fix_one(snapshot, short, gap_already_named=context.get("angle") in {"competitor", "local_gap"})
-        if fix:
+        if context.get("angle") == FREE_HOMEPAGE and demo_url:
             paragraphs = [
-                f"Quick one regardless: {fix}",
-                f"That's the fastest leak. If filling the schedule without Google Ads is on your radar "
-                f"this month, I'll send {plan}.",
+                f"Figured I'd just drop the preview link so you can see it on your phone: {demo_url}",
+                f"If you want to tweak anything or talk about getting it live to capture more {voice['inquiries']}{where}, just reply here.",
             ]
         else:
-            paragraphs = [
-                f"Quick follow-up. If filling the schedule without Google Ads is on your radar this "
-                f"month, I'll send the plan I mapped out for {short}.",
-            ]
+            fix = fix_one(snapshot, short, gap_already_named=context.get("angle") in {"competitor", "local_gap"})
+            if fix:
+                paragraphs = [
+                    f"Quick one regardless: {fix}",
+                    f"That's the fastest leak. Want me to send the rest of the {city or 'local'} breakdown?",
+                ]
+            else:
+                paragraphs = [
+                    f"Quick bump on this—did you want me to send over the 1-page breakdown for {short}, or is your schedule already completely full?",
+                ]
     else:
         paragraphs = [
-            "Last note from me. If more local calls without paying for Google Ads isn't on the radar "
-            f"right now, I'll get out of your hair. If it is, reply \"plan\" and I'll send what I "
-            f"mapped out for {short}.",
+            f"Last note from me—I know you probably get pitched every week by marketing companies promising rankings that never turn into {voice['outcome']}.",
+            f"We work strictly month-to-month with zero upfront risk: if we don't bring in qualified local {voice['inquiries']}{where}, you walk. "
+            f"If you ever want to see the breakdown for {short}, just reply here. Otherwise, best of luck this quarter.",
         ]
     return "\n\n".join([greeting, *paragraphs])
