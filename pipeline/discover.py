@@ -141,7 +141,7 @@ class PlacesClient:
         the paging payload back to pageToken-only.
         """
         max_pages = max_pages or C.MAX_PAGES_PER_QUERY
-        base_payload: dict = {"textQuery": query, "pageSize": C.RESULTS_PER_PAGE}
+        base_payload: dict = {"textQuery": query, "pageSize": C.RESULTS_PER_PAGE, "minRating": 3.5}
         if rectangle:
             # Hard restriction, used when a dense market is split into cells.
             base_payload["locationRestriction"] = {
@@ -578,6 +578,9 @@ def sweep(
                         rec = normalize(place, vertical)
                         if rec["business_status"] in C.EXCLUDE_BUSINESS_STATUS:
                             ledger.drop("closed")
+                            continue
+                        if (rec.get("review_count") or 0) < 10:
+                            ledger.drop("too_few_reviews")
                             continue
                         records.append(rec)
 

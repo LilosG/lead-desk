@@ -244,7 +244,7 @@ LOCATION_PAGE_WORDS = [
 # ---------------------------------------------------------------------------
 VERTICALS = {
     "electrician": {
-        "queries": ["electrician", "electrical contractor", "residential electrician"],
+        "queries": ["electrician", "electrical contractor", "residential electrician", "ev charger installation", "electrical panel upgrade"],
         "priority": 1,
         "profile": "home_service",
         "case_study": "Wheyland Electric — 20 to 306 keywords and 1 to 29 top-3 rankings in 5 months",
