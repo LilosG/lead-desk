@@ -17,7 +17,7 @@ from app.campaigns import COOLDOWN_DAYS, EV_PERMITS, PERMIT_JOBS_SQL
 _PERMIT_AUDIENCE = """(
           b.vertical = 'electrician'
           and (b.primary_type = 'electrician' or 'electrician' = any(b.types)
-               or b.name ~* 'electric')
+               or b.name ~* 'electric' or jsonb_array_length(coalesce(we.site_signals -> 'permit_jobs', '[]'::jsonb)) > 0)
           and coalesce(w.qualification, '') <> 'franchise'
     )"""
 # The job types the site shows, as a json array. Rows read before the
@@ -288,7 +288,7 @@ class OutreachBoardRepository:
             where.append("market = %(market)s")
             params["market"] = market
         # Automate review thresholds: 50+ for Permit Packets, 25+ for SEO & Websites
-        min_reviews = 50 if campaign == 'ev_permits' else 25
+        min_reviews = 25
         where.append(f"(kind <> 'candidate' or coalesce(review_count, 0) >= {min_reviews})")
 
         if qualified_only:
