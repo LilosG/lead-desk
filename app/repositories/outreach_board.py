@@ -289,7 +289,7 @@ class OutreachBoardRepository:
             params["market"] = market
         # Automate review thresholds: 50+ for Permit Packets, 25+ for SEO & Websites
         min_reviews = 25
-        where.append(f"(kind <> 'candidate' or coalesce(review_count, 0) >= {min_reviews} or ({campaign == 'ev_permits'} and coalesce(review_count, 0) >= 10 and jsonb_array_length(coalesce(we.site_signals -> 'permit_jobs', '[]'::jsonb)) > 0))")
+        where.append(f"(kind <> 'candidate' or coalesce(review_count, 0) >= {min_reviews} or ({campaign == 'ev_permits'} and coalesce(review_count, 0) >= 10 and jsonb_array_length(coalesce(permit_jobs, '[]'::jsonb)) > 0))")
 
         if qualified_only:
             # Only narrows the list to work next; later stages are already committed to.
