@@ -8,6 +8,8 @@ from typing import Any
 from app.campaigns import EV_PERMITS, SEO_WEBSITES
 
 ROTATE = "rotate"
+# Uses what's been built for the lead: the mockup link when one is published,
+# and the audit PDF attached. Resolved by the campaign's writer.
 BEST = "best"
 
 
@@ -20,26 +22,23 @@ class Angle:
 
 ANGLES: dict[str, tuple[Angle, ...]] = {
     EV_PERMITS: (
-        Angle("who_pulls", "Submittal checklist", "Asks whoever handles submittals, cites local checklist, offers a sample packet."),
-        Angle("drawings", "EV & panel permits", "Asks how much time is spent drawing site plans, single-lines and load calcs."),
+        Angle("who_pulls", "Submittal checklist", "Asks whoever pulls permits, then offers a sample built on their city. The ask needs only a yes."),
+        Angle("drawings", "EV & panel permits", "Asks who's stuck drawing the site plans, single-lines and load calcs."),
         Angle("desk_work", "Permit desk work", "The install is easy; the permit drawings are unpaid desk work."),
     ),
     SEO_WEBSITES: (
-        Angle("local_gap", "Local gap", "Calls out their top missing service page or site leak and offers a 1-page breakdown."),
-        Angle("competitor", "Competitor gap", "Shows the local market leader's review/search edge and offers 3 fixes to capture those calls."),
-        Angle("free_homepage", "Website mockup", "Permission-based pitch for the mobile-optimized homepage mockup (zero links in Touch 1)."),
-        Angle("ai_search", "AI / ChatGPT search", "Flags their invisibility in ChatGPT & AI search recommendations vs local competitors."),
+        Angle("local_gap", "Local gap", "Their biggest gap, the Wheyland results and a calls ask. No attachment."),
+        Angle("competitor", "Competitor gap", "The local leader's reviews next to theirs, then the Wheyland results."),
+        Angle("free_homepage", "Website mockup", "Links the mockup. Needs a published demo site."),
+        Angle("ai_search", "AI / ChatGPT search", "Flags their invisibility in ChatGPT & AI search vs local competitors."),
     ),
 }
-
+# Angles that were retired from the menu. Old sends still report under their real name.
 RETIRED_LABELS: dict[str, dict[str, str]] = {
     EV_PERMITS: {"free_packet": "Free packet", "time_back": "Hours back", "guarantee": "30-day guarantee"},
-    SEO_WEBSITES: {
-        "audit_attached": "Audit attached (retired)",
-        "leader_vs_you": "Leader vs you (retired)",
-    },
+    SEO_WEBSITES: {"audit_attached": "Audit attached", "leader_vs_you": "Leader vs you"},
 }
-
+# What Rotate splits between. Two arms reach a readable result fastest.
 ROTATION = {
     EV_PERMITS: ("who_pulls", "drawings", "desk_work"),
     SEO_WEBSITES: ("ai_search", "competitor", "local_gap"),
