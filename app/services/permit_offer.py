@@ -164,7 +164,7 @@ def _who_pulls(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     subject = f"{city} permit checklist".lower() if city else "permit checklists"
     return subject, [
         f"Quick question for whoever handles permit submittals at {ctx['short']}. {_proof_line(ctx)}{_ask_line(ctx)}",
-        "We built an internal setup that automatically drafts the site plan, single-line and load calc from a short form your "
+        "We built a software tool that automatically drafts the site plan, single-line and load calc from a short form your "
         "tech fills out on site, ready to sign and submit. "
         f"{_COVERS}",
         *_close(ctx),
@@ -189,7 +189,7 @@ def _desk_work(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     return subject, [
         f"{_proof_line(ctx)}On {job}, the install is the easy part. The site plan, single-line "
         "and load calc are the desk work nobody gets paid for.",
-        "We built a setup that draws all three from one tech form on site, on the actual property, "
+        "We built a software tool that draws all three from one tech form on site, on the actual property, "
         "ready for your sign-off. "
         f"{_COVERS}",
         *_close(ctx),
