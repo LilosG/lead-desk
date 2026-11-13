@@ -385,7 +385,7 @@ class OutreachService:
         """The audit-led email. None when the audit gives it nothing to say."""
         campaign = get_campaign(context.get("campaign_key")).key
         if angle == BEST:
-            angle = seo_offer.FREE_HOMEPAGE if context.get("demo_url") else "local_gap"
+            angle = seo_offer.WEBSITE_DRAFT
         chosen = resolve_angle(campaign, context["place_id"], angle, context.get("angle"))
         if not is_known(campaign, chosen):
             raise OutreachBlocked(f"Unknown email angle: {chosen}")

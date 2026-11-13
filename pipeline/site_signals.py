@@ -387,6 +387,65 @@ def _sample_page(html: str, path: str, business: dict) -> dict[str, Any]:
     }
 
 
+# One true detail from the homepage for an email opener, or None. Only clear,
+# self-stated facts count; anything ambiguous is left out.
+_HOOK_SINCE = re.compile(
+    r"\b(?:since|established(?:\s+in)?|est\.?|founded(?:\s+in)?|serving[^.]{0,40}?since)\s+(19[4-9]\d|20[0-2]\d)\b",
+    re.I)
+_HOOK_YEARS = re.compile(
+    r"\b(?:over\s+|more\s+than\s+)?(\d{1,2})\+?\s*(?:years|yrs)\.?\s+(?:of\s+)?(experience|in\s+business|serving)",
+    re.I)
+_HOOK_LICENSE = re.compile(
+    r"licen[cs]ed[^.]{0,30}?\b((?:C|CR|L|K|ROC)-?\d{1,3})\b|\b((?:C|CR|L|K)-?\d{1,3})\s+licen[cs]ed",
+    re.I)
+_HOOK_RESPONSE = re.compile(r"\b(\d{1,2})[- ]hour\s+(?:emergency\s+)?response\b", re.I)
+_HOOK_FAMILY = re.compile(r"\bfamily[- ]owned\b", re.I)
+
+
+def site_hook(text: str, now_year: int | None = None) -> dict[str, str] | None:
+    """{"kind", "value"} for the clearest self-stated detail, or None."""
+    if not text:
+        return None
+    year_now = now_year or datetime.now(timezone.utc).year
+    m = _HOOK_SINCE.search(text)
+    if m and 3 <= year_now - int(m.group(1)) <= 80:
+        return {"kind": "since", "value": m.group(1)}
+    m = _HOOK_YEARS.search(text)
+    if m and 5 <= int(m.group(1)) <= 80:
+        kind = "experience" if m.group(2).lower() == "experience" else "years"
+        return {"kind": kind, "value": m.group(1)}
+    m = _HOOK_LICENSE.search(text)
+    if m:
+        code = (m.group(1) or m.group(2)).upper()
+        if "-" not in code:
+            code = re.sub(r"^([A-Z]+)(\d)", r"\1-\2", code)
+        return {"kind": "license", "value": code}
+    m = _HOOK_RESPONSE.search(text)
+    if m and 1 <= int(m.group(1)) <= 24:
+        return {"kind": "response", "value": m.group(1)}
+    if _HOOK_FAMILY.search(text):
+        return {"kind": "family", "value": "family-owned"}
+    return None
+
+
+# Hosted site builders, by the host they serve from or the generator they declare.
+_BUILDER_HOSTS = {"toast": ("toasttab.com", "toast.site"), "square": ("square.site", "squareup.com")}
+
+
+def site_builder(final_url: str, soup: BeautifulSoup) -> str | None:
+    host = urlparse(final_url).netloc.lower().removeprefix("www.")
+    for name, hosts in _BUILDER_HOSTS.items():
+        if any(host == h or host.endswith("." + h) for h in hosts):
+            return name
+    generator = soup.find("meta", attrs={"name": "generator"})
+    content = (generator.get("content") or "").lower() if generator else ""
+    if "toast" in content:
+        return "toast"
+    if "square online" in content or "weebly" in content:
+        return "square"
+    return None
+
+
 def collect(
     *,
     business: dict,
@@ -463,6 +522,8 @@ def collect(
         **permit_profile(soup, f"{title} {text} {link_words}", site_paths or [],
                          urlparse(final_url).netloc.removeprefix("www."), fetch_page),
         "owner_name": owner_name([text, *(other_page_texts or [])], nodes),
+        "site_hook": site_hook(text),
+        "site_builder": site_builder(final_url, soup),
         "offering_paths": len(offering_paths),
         "location_paths": len(location_paths),
         "service_city_paths": len(pairs),

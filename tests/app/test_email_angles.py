@@ -146,145 +146,117 @@ def test_the_site_owner_name_reaches_the_greeting():
     assert written["body"].startswith("Hi Dave,")
 
 
-def _seo(angle, **changes):
-    return seo_offer.write_email({**LEAD, "audit_snapshot": {**SNAPSHOT, **changes}}, angle)
+WEB = {**LEAD, "to_address": "dave@crazyelectricaz.com", "name": "Crazy Electric LLC", "city": "Phoenix",
+       "state": "AZ", "website_url": "https://www.crazyelectricaz.com/",
+       "site_signals": {"has_viewport": False, "has_click_to_call": True,
+                        "site_hook": {"kind": "license", "value": "CR-11"}}}
+SLOW = {"signal": "psi_mobile_critical", "data": {"psi_performance": 22, "lcp_ms": 9200}}
 
 
-def test_seo_competitor_names_the_real_local_leader_not_the_lead_itself():
-    written = _seo("competitor")
-    assert written["angle"] == "competitor"
-    assert written["subject"] == "Calls going to Sparks"
-    assert ("Checked electricians in Henderson. Sparks Electric is out front on Google Maps with 640 "
-            "reviews to your 38.") in written["body"]
-    assert "Want me to send the plan for how I'd get Five Point those calls in Henderson?" in written["body"]
+def _web(angle="website_draft", findings=(SLOW,), **changes):
+    return seo_offer.write_email({**WEB, "audit_snapshot": {**SNAPSHOT, "findings": list(findings)}, **changes}, angle)
 
 
-def test_seo_page_gap_is_credited_to_city_peers_not_the_leader():
-    gaps = {"gaps": [{"label": "EV charger installation", "count": 6}]}
-    body = _seo("competitor", page_gaps=gaps)["body"]
-    assert ("640 reviews to your 38, and 6 other electricians there have a dedicated EV charger "
-            "installation page that Five Point's site is missing.") in body
-    assert "Sparks Electric has" not in body
+def test_the_website_draft_email():
+    written = _web()
+    assert written["subject"] == "crazy electric website"
+    assert written["angle"] == "website_draft"
+    assert written["body"] == (
+        "Hi Dave,\n\n"
+        "Was on crazyelectricaz.com and saw you're a licensed CR-11 contractor. That's worth leading with.\n\n"
+        "A couple of things are probably costing you calls, though. On a weaker phone signal it takes about "
+        "9 seconds before anything shows up, and most people are gone by then. On a phone the page shows up "
+        "desktop-sized, so people have to pinch and zoom to read it.\n\n"
+        "I put together a draft of a faster, mobile-friendly version. Want me to send it over?"
+    )
 
 
-def test_seo_proof_credits_wheyland_only_where_it_should():
-    body = _seo("competitor")["body"]
-    assert "We rebuilt Wheyland Electric's site and local search setup in March." in body
-    assert "about 60 calls and quote requests a month" in body
-    assert "Google's AI answers for 20 searches" in body
-    assert "month-to-month" in body
-    neighbor = seo_offer.write_email({**LEAD, "city": "Carlsbad", "state": "CA", "vertical": "electrician",
-                                      "audit_snapshot": SNAPSHOT}, "competitor")["body"]
-    assert "a North County electrical shop's site" in neighbor and "Wheyland" not in neighbor
-    spa = seo_offer.write_email({**LEAD, "vertical": "med_spa", "audit_snapshot": SNAPSHOT}, "competitor")["body"]
-    assert "a local electrical contractor's site" in spa and "Wheyland" not in spa
+def test_website_email_has_no_link_attachment_or_review_comparison():
+    body = _web()["body"]
+    assert "http" not in body and "attached" not in body.lower()
+    assert "reviews" not in body and "Wheyland" not in body
+    assert _words(body) <= 100
 
 
-def test_seo_local_gap_gets_the_proof_and_the_calls_ask_without_the_scanner_line():
-    written = _seo("local_gap")
-    assert "I compared" not in written["body"]
-    assert "Checked Five Point Electric against the other electricians in Henderson." in written["body"]
-    assert "Wheyland Electric" in written["body"]
-    assert "those calls in Henderson?" in written["body"]
-    assert written["subject"] == "Five Point on Google Maps in Henderson"
+@pytest.mark.parametrize("kind,value,line", [
+    ("since", "1996", "saw you've been around since 1996."),
+    ("years", "20", "saw 20+ years in business."),
+    ("experience", "15", "saw 15+ years of experience."),
+    ("response", "2", "saw you offer 2-hour response."),
+    ("family", "family-owned", "saw you're family-owned."),
+])
+def test_each_homepage_detail_reads_as_a_sentence(kind, value, line):
+    signals = {**WEB["site_signals"], "site_hook": {"kind": kind, "value": value}}
+    assert f"Was on crazyelectricaz.com and {line} That's worth leading with." in _web(site_signals=signals)["body"]
 
 
-def test_seo_local_gap_opens_on_the_missing_page_unless_calls_are_leaking_now():
-    gaps = {"gaps": [{"label": "panel upgrade", "count": 7}]}
-    slow = _seo("local_gap", page_gaps=gaps, findings=[{"signal": "psi_mobile_poor"}], benchmarks={})["body"]
-    assert "Checked electricians in Henderson. 7 other electricians there have a dedicated panel upgrade page" in slow
-    assert "mobile speed" not in slow
-    leak = _seo("local_gap", page_gaps=gaps, findings=[{"signal": "website_not_on_gbp"}], benchmarks={})["body"]
-    assert "doesn't link to your website" in leak
+def test_no_homepage_detail_opens_on_the_site():
+    signals = {**WEB["site_signals"], "site_hook": None}
+    written = _web(site_signals=signals)
+    assert "Looked through crazyelectricaz.com on my phone today." in written["body"]
+    assert "No homepage detail found" in written["note"]
 
 
-def test_seo_touch_two_gives_away_the_fastest_fix():
-    snapshot = {**SNAPSHOT, "findings": [{"signal": "psi_mobile_poor"}, {"signal": "website_not_on_gbp"}]}
-    body = seo_offer.write_follow_up({**LEAD, "audit_snapshot": snapshot}, 2)
-    assert "Quick one regardless: your Google Maps listing doesn't link to your website" in body
-    assert "I'll send the rest of the Henderson plan." in body
-    gap = {**SNAPSHOT, "page_gaps": {"gaps": [{"label": "panel upgrade", "count": 5}]}}
-    assert "5 other electricians in Henderson have a dedicated panel upgrade page" in \
-        seo_offer.write_follow_up({**LEAD, "audit_snapshot": gap}, 2)
-    both = {**gap, "findings": [{"signal": "no_hours"}]}
-    told = seo_offer.write_follow_up({**LEAD, "angle": "competitor", "audit_snapshot": both}, 2)
-    assert "business hours" in told and "panel upgrade" not in told
-    # Findings outside the fix list still beat repeating Touch 1's missing page.
-    other = {**gap, "findings": [{"signal": "no_photos"}, {"signal": "no_service_pages"}]}
-    fell = seo_offer.write_follow_up({**LEAD, "angle": "local_gap", "audit_snapshot": other}, 2)
-    assert "Quick one regardless: I'd start with photos on your Google listing." in fell
-    assert "panel upgrade" not in fell and "first thing I'd fix" not in fell
-    only_gap = {**gap, "findings": [{"signal": "no_service_pages"}]}
-    assert "panel upgrade" in seo_offer.write_follow_up(
-        {**LEAD, "angle": "competitor", "audit_snapshot": only_gap}, 2)
-    bare = seo_offer.write_follow_up(LEAD, 2)
-    assert "Quick follow-up." in bare and "Quick one regardless" not in bare
-    last = seo_offer.write_follow_up(LEAD, 3)
-    assert 'reply "plan"' in last and "30" not in last
+def test_problems_are_verified_and_capped_at_two_most_serious_first():
+    findings = [SLOW, {"signal": "no_ssl"}, {"signal": "broken_profile_link"}, {"signal": "no_click_to_call"}]
+    body = _web(findings=findings)["body"]
+    assert "opens an error page" in body and "Not secure" in body
+    assert "9 seconds" not in body and "tappable" not in body
+    one = _web(findings=[{"signal": "no_click_to_call"}],
+               site_signals={**WEB["site_signals"], "has_viewport": True, "has_click_to_call": None})["body"]
+    assert "One thing is probably costing you calls, though. Your phone number isn't tappable" in one
 
 
-def test_seo_competitor_falls_back_without_a_clear_leader():
-    written = _seo("competitor", market_comparison={**SNAPSHOT["market_comparison"], "leaders": []})
-    assert written["angle"] == "local_gap"
+def test_slow_without_a_load_time_says_slow_without_a_number():
+    body = _web(findings=[{"signal": "psi_mobile_poor", "data": {"psi_performance": 41}}],
+                site_signals={**WEB["site_signals"], "has_viewport": True})["body"]
+    assert "It's slow to load on a phone" in body and "seconds" not in body
 
 
-def test_seo_free_homepage_needs_a_published_demo():
-    assert "https://demo.example.com/five-point" in _seo("free_homepage")["body"]
-    written = _seo("free_homepage", next_step={})
-    assert written["angle"] == "local_gap"
-    assert "http" not in written["body"]
+def test_nothing_verified_means_no_email():
+    assert _web(findings=[], site_signals={"has_viewport": True, "has_click_to_call": True}) is None
 
 
-def test_seo_first_touch_is_link_free_and_does_not_promise_an_attachment():
-    for angle in ("local_gap", "competitor"):
-        body = _seo(angle)["body"]
-        assert "http" not in body
-        assert "attached" not in body.lower()
-        assert "audit" not in body.lower()
+def test_a_generic_inbox_gets_no_greeting():
+    written = _web(to_address="info@crazyelectricaz.com")
+    assert written["body"].startswith("Was on crazyelectricaz.com")
+    assert "No contact name found" in written["note"]
 
 
-def test_only_the_angles_that_attach_the_pdf_say_attached():
-    assert "attached PDF" in _seo("audit_attached")["body"]
-    assert "attached a short audit" in _seo("free_homepage")["body"]
+def test_social_only_listings_get_no_website_email():
+    for url in ("https://www.facebook.com/crazyelectric", "https://linktr.ee/crazy", "https://m.yelp.com/biz/x"):
+        assert _web(website_url=url) is None
 
 
-def _seo_service():
-    class Repo:
-        @staticmethod
-        def latest_audit_report(place_id):
-            return {"name": "Five Point Electric", "snapshot": {"findings": []}}
-
-    return OutreachService(Repo())
+def test_toast_built_sites_get_the_toast_line_and_other_builders_do_not():
+    toast = _web(site_signals={**WEB["site_signals"], "site_builder": "toast"})["body"]
+    assert "I moved a restaurant group's sites off Toast's builder onto their own fast site and kept ordering on Toast." in toast
+    square = _web(site_signals={**WEB["site_signals"], "site_builder": "square"})["body"]
+    assert "Toast" not in square
 
 
-def test_best_fit_uses_the_published_mockup_and_attaches_the_audit(monkeypatch):
-    from app.services import outreach as outreach_module
-    monkeypatch.setattr("app.services.audit_report_pdf.render_audit_report_pdf", lambda report: b"%PDF-1.4")
-    service = _seo_service()
-    context = {**LEAD, "campaign_key": SEO_WEBSITES, "audit_snapshot": {**SNAPSHOT, "next_step": {}},
-               "demo_url": "https://demo.example.com/live-mockup"}
-    written = service.write_seo_draft(context, "best")
-    assert written["angle"] == "free_homepage"
-    assert "https://demo.example.com/live-mockup" in written["body"]
-    assert "attached a short audit" in written["body"]
-    item = {"claim_signal": "audit_report", "place_id": "p1", "angle": written["angle"]}
-    assert service.audit_attachments(item)[0][1] == b"%PDF-1.4"
-    assert outreach_module.BEST == "best"
+def test_the_website_follow_up():
+    assert seo_offer.write_follow_up(WEB, 2) == (
+        "Hi Dave,\n\nQuick bump on this. Want me to send over that mobile-friendly homepage draft for "
+        "Crazy Electric so you can take a look?"
+    )
+    generic = seo_offer.write_follow_up({**WEB, "to_address": "info@crazyelectricaz.com"}, 2)
+    assert generic.startswith("Quick bump on this.") and "http" not in generic
 
 
-def test_best_fit_without_a_mockup_sends_the_audit_attached_email():
-    written = _seo_service().write_seo_draft(
-        {**LEAD, "campaign_key": SEO_WEBSITES, "audit_snapshot": {**SNAPSHOT, "next_step": {}}}, "best")
-    assert written["angle"] == "audit_attached"
-    assert "demo.example.com" not in written["body"]
-    assert "attached PDF" in written["body"]
+def test_free_homepage_still_needs_a_published_demo():
+    assert _web("free_homepage", demo_url=None, audit_snapshot={**SNAPSHOT, "next_step": {}, "findings": [SLOW]})["angle"] == "website_draft"
+    assert _web("free_homepage", demo_url="https://demo.example.com/x")["angle"] == "free_homepage"
 
 
-def test_a_mockup_published_after_the_audit_still_gets_linked():
-    # The audit snapshot has no demo_url; the live published mockup is used.
-    written = seo_offer.write_email({**LEAD, "audit_snapshot": {**SNAPSHOT, "next_step": {}},
-                                     "demo_url": "https://demo.example.com/after"}, "free_homepage")
-    assert written["angle"] == "free_homepage" and "https://demo.example.com/after" in written["body"]
+def test_best_fit_and_rotation_use_the_website_draft():
+    service = OutreachService(object())
+    written = service.write_seo_draft({**WEB, "campaign_key": SEO_WEBSITES,
+                                       "audit_snapshot": {**SNAPSHOT, "findings": [SLOW]}}, "best")
+    assert written["angle"] == "website_draft"
+    assert written["claim_signal"] == "audit_report"
+    assert ROTATION[SEO_WEBSITES] == ("website_draft",)
+    assert service.audit_attachments({"claim_signal": "audit_report", "place_id": "p", "angle": "website_draft"}) is None
 
 
 def test_best_fit_on_ev_falls_back_to_the_rotation():
