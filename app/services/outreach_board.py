@@ -78,9 +78,10 @@ def lead_note(row: dict[str, Any], campaign: str) -> str | None:
         brands = ", ".join((row.get("ev_brands") or [])[:2])
         parts = [*proof, brands, f"{row['review_count']} reviews" if row.get("review_count") else None]
         return " · ".join(p for p in parts if p)
+    notes = [f"{int(row['review_count']):,} reviews"] if row.get("review_count") is not None else []
     if row.get("permit_eligible") and row.get("stage") == "to_prep":
-        return "Shows permit work: pitch Permit Packets first"
-    return None
+        notes.append("Shows permit work: pitch Permit Packets first")
+    return " · ".join(notes) if notes else None
 
 
 def next_step(row: dict[str, Any], now: datetime | None = None) -> str:

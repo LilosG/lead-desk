@@ -206,7 +206,7 @@ const stages = [
       total_score: number | null;
       fit_score: number | null;
       qualification: string | null;
-      headline_gap: string | null;
+      headline_gap: string | null; review_count: number | null;
       gmail_draft_created_at: string | null;
       gmail_message_id: string | null;
       gmail_draft_left_at: string | null;
@@ -442,7 +442,7 @@ const stages = [
             <div class="mt-0.5 text-xs text-[var(--muted)]">${esc([row.city, row.vertical?.replaceAll('_', ' ')].filter(Boolean).join(' · '))}</div>${assetBadges(row)}
           </td>
           <td class="px-3 py-3 text-xs">${esc(row.email || row.phone || '—')}</td>
-          <td class="whitespace-nowrap px-3 py-3 text-xs">${currentCampaign()?.uses_audit ? `<span class="font-semibold">${esc(row.tier ?? '—')}</span> · ${esc(row.total_score ?? '—')}` : esc(row.lead_note ?? '—')}</td>
+          <td class="whitespace-nowrap px-3 py-3 text-xs">${currentCampaign()?.uses_audit ? `<span class="font-semibold">${esc(row.tier ?? '—')}</span> · ${esc(row.total_score ?? '—')}${row.review_count != null ? ` · ${esc(row.review_count)} reviews` : ''}` : esc(row.lead_note ?? '—')}</td>
           <td class="max-w-sm px-3 py-3 text-xs leading-5">${esc(row.next_step)}${currentCampaign()?.uses_audit && row.lead_note ? `<div class="mt-0.5 text-[var(--muted)]">${esc(row.lead_note)}</div>` : ''}</td>
           <td class="whitespace-nowrap px-3 py-3 text-xs text-[var(--muted)]">${esc(whenFor(row))}</td>
           <td class="whitespace-nowrap px-4 py-3 text-right">${actionFor(row)}</td>
