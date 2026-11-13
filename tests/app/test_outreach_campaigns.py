@@ -189,13 +189,13 @@ def test_the_ev_email_says_only_what_is_verified(outreach):
     result = fast_track(outreach, None, "camp-title", gmail=False, campaign_key=EV_PERMITS)
     item = outreach.repository.get_item(result["item_id"])
 
-    assert "site plan" in item["body"] and "want me to build" in item["body"]
-    assert "https://electrical-permit-packets.vercel.app/" in item["body"].split("Mike Prickett")[0]
+    assert "site plan" in item["body"] and "sample packet" in item["body"]
+    assert "http" not in item["body"] and "lilosgrowth.com" not in item["body"]
     assert "no thanks" in item["body"]
-    assert item["angle"] in {"who_pulls", "drawings", "desk_work"}
+    assert item["angle"] in {"sample", "project"}
     assert item["claim_signal"] == "ev_permit_offer"
     assert item["verification_status"] == "verified"
-    assert "orovalleyaz.gov" in item["verification_note"]
+    assert "No links or attachments" in item["verification_note"]
 
 
 def test_a_lead_without_ev_evidence_gets_an_email_that_asks(outreach):
@@ -204,7 +204,7 @@ def test_a_lead_without_ev_evidence_gets_an_email_that_asks(outreach):
     item = outreach.repository.get_item(result["item_id"])
     assert "If camp-noev" not in item["body"]
     assert "Saw " not in item["body"]
-    assert "asks instead of assuming" in item["verification_note"]
+    assert "Site doesn't show permit work" in item["verification_note"]
 
 
 def test_only_electricians_can_get_the_ev_email(outreach):
@@ -464,13 +464,13 @@ def test_ev_evidence_uses_every_source_on_file():
 
 
 def test_unknown_cities_get_no_permit_claim():
-    for angle in ("drawings", "desk_work"):
+    for angle in ("sample", "project"):
         written = write_email({"place_id": "p", "city": "Boise", "state": "ID", "name": "Sparks"}, angle)
-        assert "Boise" not in written["body"]
+        assert "Boise wants" not in written["body"] and "None" not in written["body"]
 
 
 def test_ev_copy_has_no_price_or_approval_promise():
-    for angle in ("drawings", "desk_work"):
+    for angle in ("sample", "project"):
         written = write_email({"place_id": "p", "city": "Brea", "state": "CA", "name": "Sparks"}, angle)
         assert not re.search(r"\$|approv|\bAI\b", written["body"], re.I)
 

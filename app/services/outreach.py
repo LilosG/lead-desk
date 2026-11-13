@@ -29,7 +29,7 @@ from app.services.outreach_verification import OutreachClaimVerifier
 PROMPT_VERSION = "outreach-v12"
 FIXED_COPY = "fixed copy"
 # Days to wait after the previous email before each follow-up.
-FOLLOW_UP_GAPS = {2: 3, 3: 4}
+FOLLOW_UP_GAPS = {2: 3}
 # Reports older than this version lack the checks the email and PDF now rely on.
 CURRENT_AUDIT_VERSION = REPORT_VERSION
 MAX_DRAFT_ATTEMPTS = 3
@@ -37,7 +37,7 @@ MAX_DRAFT_ATTEMPTS = 3
 # OUTREACH_POSTAL_ADDRESS (e.g. a PO box or virtual mailbox); CAN-SPAM expects
 # a valid postal address on commercial email, so set one before sending at volume.
 def _footer(postal_address: str | None = None) -> str:
-    lines = ["Mike Prickett", "Lilos Growth", "lilosgrowth.com"]
+    lines = ["Mike Prickett", "Lilos Growth"]
     if postal_address and postal_address.strip():
         lines.append(" ".join(postal_address.split()))
     return "\n".join(lines) + (
@@ -385,7 +385,7 @@ class OutreachService:
         """The audit-led email. None when the audit gives it nothing to say."""
         campaign = get_campaign(context.get("campaign_key")).key
         if angle == BEST:
-            angle = seo_offer.FREE_HOMEPAGE if context.get("demo_url") else seo_offer.AI_SEARCH
+            angle = seo_offer.FREE_HOMEPAGE if context.get("demo_url") else "local_gap"
         chosen = resolve_angle(campaign, context["place_id"], angle, context.get("angle"))
         if not is_known(campaign, chosen):
             raise OutreachBlocked(f"Unknown email angle: {chosen}")

@@ -1,24 +1,20 @@
-"""The Permit Packets emails: short offers written from verified facts.
+"""The Permit Packets emails: short, link-free offers.
 
-They're written from fixed copy instead of AI. Every sentence is either true of
-the offer as Mike sells it or comes from the lead's own site and, for EV
-chargers only, its city's published checklist. No other job type gets a city
-claim.
+They're written from fixed copy instead of AI. Two first-touch angles run as an
+A/B test: "sample" offers a sample packet for the lead's city, and "project"
+asks about upcoming jobs and who handles permitting. No first email or
+follow-up carries a link or attachment; the sample goes out only after the lead
+replies.
 
-The campaign started as EV Permits and now covers four job types: EV chargers,
-panel and service upgrades, subpanels and 240 V circuits. Its key, claim signal
-and angle keys keep their old names so existing drafts and history still work.
+There's one follow-up, three days later in the same thread. Leads with a known
+first name get asked which job type they permit most; generic inboxes get asked
+who handles permits.
 
-Touch 1 links the sample packet page unless PERMIT_LINK_IN_FIRST_EMAIL=0, in
-which case it only asks whether they want the sample and touch 2 sends it.
-
-Never promise permit approval or a set number of hours. The city decides
-approvals, and hours depend on the shop. "Four electrical shops" is Mike's
-figure for shops that have used the automation (EV charger version).
+The campaign key and claim signal keep their old EV names so existing drafts
+and history still work.
 """
 from __future__ import annotations
 
-import os
 import re
 from typing import Any
 
@@ -27,53 +23,16 @@ from app.campaigns import (
     PERMIT_JOB_LABELS,
     PERMIT_JOB_SLUGS,
     PERMIT_JOBS_PATTERN,
-    permit_city,
 )
 from app.services.outreach_audit_copy import (
     clean_business_name,
     contact_first_name,
-    possessive,
     short_name,
-    team_greeting,
 )
 
-PROMPT_VERSION = "permit-offer-v1"
-DEFAULT_OVERVIEW_URL = "https://electrical-permit-packets.vercel.app/"
+PROMPT_VERSION = "permit-offer-v2"
 _EV_WORDS = re.compile(EV_SERVICE_PATTERN, re.I)
 _PERMIT_WORDS = re.compile(PERMIT_JOBS_PATTERN, re.I)
-
-# How a job reads in "Saw {short} does ..." and in "On a ..., the install is the easy part".
-_PLURAL = {
-    "ev_charger": "EV charger installs",
-    "service_upgrade": "panel and service upgrades",
-    "subpanel": "subpanels",
-    "appliance_circuit": "240 V circuits",
-}
-_SINGULAR = {
-    "ev_charger": "EV charger",
-    "service_upgrade": "panel upgrade",
-    "subpanel": "subpanel",
-    "appliance_circuit": "240 V circuit",
-}
-_ANY_JOB = "panel upgrade, EV charger or subpanel"
-_ASK_GENERIC = ("A lot of cities want a site plan, single-line and load calc with the permit on "
-                "jobs like these.")
-_COVERS = ("It now covers panel and service upgrades, subpanels and 240 V circuits too.")
-
-
-def overview_url() -> str:
-    """The sample packet page. PERMIT_OVERVIEW_URL (or the older EV_OVERVIEW_URL) points it elsewhere."""
-    for name in ("PERMIT_OVERVIEW_URL", "EV_OVERVIEW_URL"):
-        value = (os.environ.get(name) or "").strip()
-        if value:
-            return value
-    return DEFAULT_OVERVIEW_URL
-
-
-def link_in_first_email() -> bool:
-    """PERMIT_LINK_IN_FIRST_EMAIL=0 holds the sample link back until touch 2."""
-    return (os.environ.get("PERMIT_LINK_IN_FIRST_EMAIL") or "1").strip() != "0"
-
 
 def shown_jobs(context: dict[str, Any]) -> list[str]:
     """The job types the lead's site shows, in campaign order.
@@ -119,139 +78,78 @@ def permit_evidence(context: dict[str, Any]) -> str | None:
     return None
 
 
-def _join(names: list[str]) -> str:
-    return " and ".join(names[:2])
-
-
-def _proof_line(ctx: dict[str, Any]) -> str:
-    """Proof we looked at their site: the chargers they install, else the work they do."""
-    if ctx["brands"]:
-        return f"Saw {ctx['short']} installs {_join(ctx['brands'])} chargers. "
-    if ctx["jobs"]:
-        return f"Saw {ctx['short']} does {_join([_PLURAL[slug] for slug in ctx['jobs']])}. "
-    return ""
-
-
-def _ask_line(ctx: dict[str, Any]) -> str:
-    """The city's own checklist is EV-only, so it is only quoted for EV charger work."""
-    rules = ctx["rules"]
-    if "ev_charger" in ctx["jobs"] and rules and rules.get("asks_for"):
-        return f"{ctx['city']} wants {rules['asks_for']} on every residential charger permit."
-    return _ASK_GENERIC
-
-
-def _sample_offer(ctx: dict[str, Any]) -> str:
-    """The ask needs only a yes: Mike builds the sample, the lead sends nothing.
-
-    Only EV charger work gets a city claim, so other jobs get the generic line.
-    """
-    rules = ctx["rules"]
-    if "ev_charger" in ctx["jobs"] and rules and rules.get("asks_for"):
-        return (f"If your office still draws these by hand, want me to build one for a job in "
-                f"{ctx['city']} so you can see it with {ctx['city']}'s requirements?")
-    return ("If your office still draws these by hand, want me to build a sample for your city "
-            "so you can see it with your local requirements?")
-
-
-def _close(ctx: dict[str, Any]) -> list[str]:
-    if link_in_first_email():
-        return [f"Here's what a finished packet looks like: {overview_url()}", _sample_offer(ctx)]
-    return ["Want me to send a sample packet so you can see the drawings?"]
-
-
-def _who_pulls(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    city = ctx.get("city")
-    subject = f"{city} permit checklist".lower() if city else "permit checklists"
-    return subject, [
-        f"Quick question for whoever handles permit submittals at {ctx['short']}. {_proof_line(ctx)}{_ask_line(ctx)}",
-        "We built a software tool that automatically drafts the site plan, single-line and load calc from a short form your "
-        "tech fills out on site, ready to sign and submit. "
-        f"{_COVERS}",
-        *_close(ctx),
+def _sample(ctx: dict[str, Any]) -> tuple[str, list[str]]:
+    city = ctx["city"]
+    subject = f"{city} permit packets" if city else "electrical permit packets"
+    packets = f"{city}-specific electrical permit packets" if city else "local electrical permit packets"
+    sample = f"Mocked up a sample packet for {city}" if city else "Mocked up a sample packet"
+    return subject.lower(), [
+        f"We put together {packets} (scaled aerial site plan, one-line diagram, NEC 220.82 load calc, "
+        "and local inspector flags) for EV chargers, panel/service upgrades, subpanels and 240 V circuits.",
+        f"{sample} so you can see the drawings. Want me to send it over?",
     ]
 
 
-def _drawings(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    city = ctx.get("city")
-    subject = f"{city} ev & panel permits".lower() if city else "ev & panel permits"
-    return subject, [
-        f"{_proof_line(ctx)}{_ask_line(ctx)} How much time is your office spending drawing those at {ctx['short']}?",
-        "A tech fills out a quick job form on site, and the site plan on the actual property, the single-line and the load calc come "
-        f"back ready to sign and submit. {_COVERS}",
-        *_close(ctx),
-    ]
-
-
-def _desk_work(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    job = _SINGULAR[ctx["jobs"][0]] if ctx["jobs"] else _ANY_JOB
-    job = f"{'an' if job.startswith('EV') else 'a'} {job}"
-    subject = f"permit desk work - {ctx['short']}".lower()
-    return subject, [
-        f"{_proof_line(ctx)}On {job}, the install is the easy part. The site plan, single-line "
-        "and load calc are the desk work nobody gets paid for.",
-        "We built a software tool that draws all three from one tech form on site, on the actual property, "
-        "ready for your sign-off. "
-        f"{_COVERS}",
-        *_close(ctx),
+def _project(ctx: dict[str, Any]) -> tuple[str, list[str]]:
+    city, short = ctx["city"], ctx["short"]
+    where = f" in {city}" if city else ""
+    packets = f"{city} permit packets" if city else "permit packets"
+    return f"permits at {short}".lower(), [
+        f"Have any panel upgrades, EV chargers or subpanels coming up{where} at {short}?",
+        f"We build ready-to-submit {packets} (load calcs, scaled site plans, one-lines and local code "
+        "flags) so your electricians stay in the field instead of doing desk work.",
+        "Are you the best person to send a sample packet to, or who handles permitting on your end?",
     ]
 
 
 _WRITERS = {
-    "who_pulls": _who_pulls,
-    "drawings": _drawings,
-    "desk_work": _desk_work,
+    "sample": _sample,
+    "project": _project,
 }
 
 
 def _facts(context: dict[str, Any]) -> dict[str, Any]:
-    city = context.get("city")
     signals = context.get("site_signals") or {}
     name = clean_business_name(context.get("name"))
     first_name = contact_first_name(context.get("to_address"), context.get("name"),
                                     signals.get("owner_name"))
+    city = (context.get("city") or "").strip() or None
     return {
         "name": name,
         "short": short_name(name),
         "city": city,
         "first_name": first_name,
         "jobs": shown_jobs(context),
-        "brands": [b for b in signals.get("ev_brands") or [] if b],
-        "greeting": team_greeting(first_name, name),
-        "rules": permit_city(city, context.get("state")),
     }
+
+
+def _with_greeting(facts: dict[str, Any], paragraphs: list[str]) -> str:
+    """"Hi Dave," when there's a name; generic inboxes open straight on the first line."""
+    greeting = [f"Hi {facts['first_name']},"] if facts["first_name"] else []
+    return "\n\n".join([*greeting, *paragraphs])
 
 
 def write_email(context: dict[str, Any], angle: str) -> dict[str, str]:
     facts = _facts(context)
     subject, paragraphs = _WRITERS[angle](facts)
-    rules = facts["rules"]
-    if "ev_charger" in facts["jobs"] and rules and rules.get("asks_for"):
-        note = f"City line from {context.get('city')}'s published checklist: {rules['source']}"
-    else:
-        note = "No city-specific permit claim was made."
+    note = "No links or attachments; the sample goes out after they reply."
     if not facts["jobs"]:
-        note += " Site doesn't show permit work, so the email asks instead of assuming."
+        note += " Site doesn't show permit work."
     if not facts["first_name"]:
-        note += " No contact name found."
-    body = "\n\n".join([facts["greeting"], *paragraphs])
-    return {"subject": subject, "body": body, "note": note}
+        note += " No contact name found, so there's no greeting."
+    return {"subject": subject, "body": _with_greeting(facts, paragraphs), "note": note}
 
 
 def write_follow_up(context: dict[str, Any], step: int) -> str:
+    """The one follow-up. Named contacts get a job-type question, generic inboxes a routing one."""
     facts = _facts(context)
-    if step == 2:
-        test = (f"Still happy to put together a sample for {facts['city'] or 'your city'}, "
-                "so you can see it against what your office turns in now. Just say the word.")
-        if link_in_first_email():
-            intro = ("Following up on the sample packet. In case it got buried, here it is again: "
-                     f"{overview_url()}")
-        else:
-            intro = ("Figured it's easier to just show you. Here's a full sample packet with the site "
-                     f"plan, single-line and load calc, all from one tech form: {overview_url()}")
-        paragraphs = [intro, test]
+    short, city = facts["short"], facts["city"]
+    if facts["first_name"]:
+        matching = f"a matching {city} sample packet" if city else "a matching sample packet"
+        paragraph = (f"Which do you pull the most permits for at {short}: EV chargers, panel upgrades "
+                     f"or subpanels? Happy to send over {matching}.")
     else:
-        paragraphs = [
-            "Last note from me. If your office still draws permit site plans and load calcs by hand, "
-            "say the word and I'll put together a sample for your city. If not, no worries.",
-        ]
-    return "\n\n".join([facts["greeting"], *paragraphs])
+        packet = f"a sample {city} packet" if city else "a sample packet"
+        paragraph = (f"Quick bump on this. Who handles pulling electrical permits at {short}? "
+                     f"Happy to send {packet} their way.")
+    return _with_greeting(facts, [paragraph])

@@ -22,26 +22,26 @@ class Angle:
 
 ANGLES: dict[str, tuple[Angle, ...]] = {
     EV_PERMITS: (
-        Angle("who_pulls", "Submittal checklist", "Asks whoever pulls permits, then offers a sample built on their city. The ask needs only a yes."),
-        Angle("drawings", "EV & panel permits", "Asks who's stuck drawing the site plans, single-lines and load calcs."),
-        Angle("desk_work", "Permit desk work", "The install is easy; the permit drawings are unpaid desk work."),
+        Angle("sample", "Sample packet", "What the packets include for their city, then offers the sample. No link."),
+        Angle("project", "Project + routing", "Asks about upcoming jobs and who handles permitting. No link."),
     ),
     SEO_WEBSITES: (
         Angle("local_gap", "Local gap", "Their biggest gap, the Wheyland results and a calls ask. No attachment."),
         Angle("competitor", "Competitor gap", "The local leader's reviews next to theirs, then the Wheyland results."),
         Angle("free_homepage", "Website mockup", "Links the mockup. Needs a published demo site."),
-        Angle("ai_search", "AI / ChatGPT search", "Flags their invisibility in ChatGPT & AI search vs local competitors."),
     ),
 }
 # Angles that were retired from the menu. Old sends still report under their real name.
 RETIRED_LABELS: dict[str, dict[str, str]] = {
-    EV_PERMITS: {"free_packet": "Free packet", "time_back": "Hours back", "guarantee": "30-day guarantee"},
-    SEO_WEBSITES: {"audit_attached": "Audit attached", "leader_vs_you": "Leader vs you"},
+    EV_PERMITS: {"free_packet": "Free packet", "time_back": "Hours back", "guarantee": "30-day guarantee",
+                 "who_pulls": "Submittal checklist", "drawings": "EV & panel permits", "desk_work": "Permit desk work"},
+    SEO_WEBSITES: {"audit_attached": "Audit attached", "leader_vs_you": "Leader vs you",
+                   "ai_search": "AI / ChatGPT search"},
 }
 # What Rotate splits between. Two arms reach a readable result fastest.
 ROTATION = {
-    EV_PERMITS: ("who_pulls", "drawings", "desk_work"),
-    SEO_WEBSITES: ("ai_search", "competitor", "local_gap"),
+    EV_PERMITS: ("sample", "project"),
+    SEO_WEBSITES: ("competitor", "local_gap"),
 }
 
 
