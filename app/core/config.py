@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     # "Who does ChatGPT recommend?" lookup (OpenAI Responses API with web search).
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_search_model: str = Field(default="gpt-5.4-mini", alias="OPENAI_SEARCH_MODEL")
+    # Used for the same lookup when there is no OpenAI key (OpenAI model + web search via OpenRouter).
+    openrouter_search_model: str = Field(default="openai/gpt-5.2", alias="OPENROUTER_SEARCH_MODEL")
     # The ChatGPT business profile email is built but stays off until this is true.
     enable_chatgpt_profile_offer: bool = Field(default=False, alias="ENABLE_CHATGPT_PROFILE_OFFER")
 

@@ -412,3 +412,15 @@ def test_the_evidence_is_stored_on_the_queue_item(pool):
             conn.execute("delete from outreach_queue_events where place_id = 'cg-1'")
             conn.execute("delete from outreach_queue where place_id = 'cg-1'")
             conn.execute("delete from businesses where place_id = 'cg-1'")
+
+
+def test_openrouter_search_reply_is_parsed():
+    from app.integrations.openai_search import OpenRouterSearchClient
+    answer = OpenRouterSearchClient.parse({
+        "model": "openai/gpt-5.2",
+        "choices": [{"message": {"content": '{"recommendations": []}', "annotations": [
+            {"type": "url_citation", "url_citation": {"url": "https://a.com/x", "title": "A"}},
+            {"type": "url_citation", "url_citation": {"url": "https://a.com/x", "title": "A"}}]}}],
+    }, "openai/gpt-5.2")
+    assert answer.text == '{"recommendations": []}'
+    assert answer.sources == [{"url": "https://a.com/x", "title": "A"}]

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from app.campaigns import CAMPAIGNS, DEFAULT_CAMPAIGN
 from app.core.config import get_settings
 from app.core.database import pool
-from app.integrations.openai_search import OpenAISearchClient
+from app.integrations.openai_search import OpenAISearchClient, OpenRouterSearchClient
 from app.integrations.openrouter import OpenRouterClient
 from app.integrations.openrouter_constrained import ConstrainedOutreachClient
 from app.integrations.openrouter_structured import StructuredOpenRouterClient
@@ -80,10 +80,14 @@ def get_service() -> OutreachService:
 
     chatgpt_check = None
     if settings.openai_api_key:
-        chatgpt_check = ChatGPTCheckService(
-            OutreachRepository(pool),
-            OpenAISearchClient(api_key=settings.openai_api_key, model=settings.openai_search_model),
-        )
+        search_client = OpenAISearchClient(api_key=settings.openai_api_key, model=settings.openai_search_model)
+    elif settings.openrouter_api_key:
+        search_client = OpenRouterSearchClient(api_key=settings.openrouter_api_key,
+                                               model=settings.openrouter_search_model)
+    else:
+        search_client = None
+    if search_client:
+        chatgpt_check = ChatGPTCheckService(OutreachRepository(pool), search_client)
 
     return OutreachService(
         OutreachRepository(pool),
