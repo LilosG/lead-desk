@@ -28,6 +28,8 @@ ANGLES: dict[str, tuple[Angle, ...]] = {
     SEO_WEBSITES: (
         Angle("website_draft", "Website draft", "A real detail from their site, 1-2 phone-checkable problems, offers a free draft. No link."),
         Angle("free_homepage", "Website mockup", "Offers the published mockup. Needs a published demo site."),
+        Angle("chatgpt_pick", "ChatGPT pick", "Names the competitors ChatGPT recommends in their city and notes they didn't come up. Offers a breakdown."),
+        Angle("chatgpt_profile", "ChatGPT profile", "Offers to walk them through claiming a ChatGPT business profile. Off until ENABLE_CHATGPT_PROFILE_OFFER is set."),
     ),
 }
 # Angles that were retired from the menu. Old sends still report under their real name.
@@ -40,12 +42,23 @@ RETIRED_LABELS: dict[str, dict[str, str]] = {
 # What Rotate splits between.
 ROTATION = {
     EV_PERMITS: ("sample", "project"),
-    SEO_WEBSITES: ("website_draft",),
+    SEO_WEBSITES: ("website_draft", "chatgpt_pick"),
 }
+# Angles that stay out of the menu and the automatic routing until switched on.
+PROFILE_ANGLE = "chatgpt_profile"
+
+
+def profile_offer_enabled() -> bool:
+    try:
+        from app.core.config import get_settings
+        return bool(get_settings().enable_chatgpt_profile_offer)
+    except Exception:  # settings unavailable (e.g. a bare unit test): the offer stays off
+        return False
 
 
 def angle_options(campaign: str) -> list[dict[str, Any]]:
-    return [asdict(angle) for angle in ANGLES[campaign]]
+    return [asdict(angle) for angle in ANGLES[campaign]
+            if angle.key != PROFILE_ANGLE or profile_offer_enabled()]
 
 
 def angle_label(campaign: str, key: str | None) -> str:

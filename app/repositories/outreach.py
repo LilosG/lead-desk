@@ -262,6 +262,40 @@ class OutreachRepository:
                 cur.execute(query, (place_id,))
                 return cur.fetchone()
 
+    def latest_chatgpt_check(self, vertical: str, city: str, state: str,
+                             max_age_days: int) -> dict[str, Any] | None:
+        """A saved ChatGPT lookup for this market that is still fresh."""
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select id::text as id, prompt, response, sources, businesses, model,
+                           checked_at::text as checked_at
+                    from chatgpt_checks
+                    where vertical = %s and lower(city) = lower(%s) and state = %s
+                      and checked_at > now() - make_interval(days => %s)
+                    order by checked_at desc
+                    limit 1
+                    """,
+                    (vertical, city, state, max_age_days),
+                )
+                return cur.fetchone()
+
+    def save_chatgpt_check(self, *, vertical: str, city: str, state: str, prompt: str, response: str,
+                           sources: list, businesses: list, model: str) -> dict[str, Any]:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into chatgpt_checks (vertical, city, state, prompt, response, sources, businesses, model)
+                    values (%s, %s, %s, %s, %s, %s, %s, %s)
+                    returning id::text as id, prompt, response, sources, businesses, model,
+                              checked_at::text as checked_at
+                    """,
+                    (vertical, city, state, prompt, response, Jsonb(sources), Jsonb(businesses), model),
+                )
+                return cur.fetchone()
+
     def draft_context(self, item_id: str) -> dict[str, Any] | None:
         query = """
             select
@@ -273,6 +307,7 @@ class OutreachRepository:
                 q.to_address,
                 q.version,
                 q.angle,
+                q.chatgpt_evidence,
                 b.name,
                 b.city,
                 b.state,
@@ -626,6 +661,7 @@ class OutreachRepository:
         generation_model: str,
         prompt_version: str,
         angle: str | None = None,
+        chatgpt_evidence: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any] | None, bool]:
         with self.pool.connection() as conn:
             with conn.transaction():
@@ -658,6 +694,7 @@ class OutreachRepository:
                             generation_model = %s,
                             generation_prompt_version = %s,
                             angle = %s,
+                            chatgpt_evidence = %s,
                             draft_generated_at = now(),
                             gmail_draft_id = null,
                             gmail_message_id = null,
@@ -682,6 +719,7 @@ class OutreachRepository:
                             generation_model,
                             prompt_version,
                             angle,
+                            Jsonb(chatgpt_evidence) if chatgpt_evidence else None,
                             item_id,
                         ),
                     )
@@ -710,7 +748,7 @@ class OutreachRepository:
         query = """
             select
                 q.id::text as id, q.place_id, q.channel, q.campaign_key, q.status, q.to_address,
-                q.subject, q.angle, q.contacted_at, q.gmail_thread_id,
+                q.subject, q.angle, q.chatgpt_evidence, q.contacted_at, q.gmail_thread_id,
                 b.name, b.city, b.state, b.vertical, we.site_signals,
                 (select par.snapshot from prospect_audit_reports par
                  where par.place_id = q.place_id and par.status = 'generated'

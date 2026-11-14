@@ -61,6 +61,12 @@ class Settings(BaseSettings):
         alias="DEMO_COPY_MODEL",
     )
 
+    # "Who does ChatGPT recommend?" lookup (OpenAI Responses API with web search).
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_search_model: str = Field(default="gpt-5.4-mini", alias="OPENAI_SEARCH_MODEL")
+    # The ChatGPT business profile email is built but stays off until this is true.
+    enable_chatgpt_profile_offer: bool = Field(default=False, alias="ENABLE_CHATGPT_PROFILE_OFFER")
+
     gmail_client_id: str | None = Field(default=None, alias="GMAIL_CLIENT_ID")
     gmail_client_secret: str | None = Field(default=None, alias="GMAIL_CLIENT_SECRET")
     gmail_refresh_token: str | None = Field(default=None, alias="GMAIL_REFRESH_TOKEN")

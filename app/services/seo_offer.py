@@ -18,12 +18,15 @@ from app.services.outreach_audit_copy import (
     possessive,
     short_name,
 )
+from app.services.chatgpt_check import trade_phrase
 from pipeline.verticals import vertical_profile
 
 PROMPT_VERSION = "seo-offer-v5"
 AUDIT_ATTACHED = "audit_attached"
 FREE_HOMEPAGE = "free_homepage"
 WEBSITE_DRAFT = "website_draft"
+CHATGPT_PICK = "chatgpt_pick"
+CHATGPT_PROFILE = "chatgpt_profile"
 ATTACHES_AUDIT: set[str] = set()
 
 _VOICE_BY_PROFILE: dict[str, dict[str, str]] = {
@@ -182,7 +185,49 @@ def _problems(context: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _joined(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _chatgpt_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
+    """The two ChatGPT emails. Neither needs the website audit, links, or attachments."""
+    name = clean_business_name(context.get("name"))
+    short = display_name(name)
+    signals = context.get("site_signals") or {}
+    first_name = contact_first_name(context.get("to_address"), context.get("name"),
+                                    signals.get("owner_name"))
+    note = "" if first_name else "No contact name found, so there's no greeting."
+
+    if angle == CHATGPT_PICK:
+        evidence = context.get("chatgpt_evidence") or {}
+        rivals = (evidence.get("competitors") or [])[:3]
+        city = context.get("city")
+        if len(rivals) < 2 or evidence.get("prospect_named") is not False or not city:
+            return None
+        paragraphs = [
+            f"I asked ChatGPT for the best {trade_phrase(context.get('vertical'))} in {city}. "
+            f"It named {_joined(rivals)}. {short} didn't come up.",
+            "People are starting to ask it who to call.",
+            f"Want me to send over a breakdown of what those businesses are doing that {short} isn't?",
+        ]
+        return {"subject": f"{short} on ChatGPT".lower(), "body": _greeting(first_name, paragraphs),
+                "angle": CHATGPT_PICK, "note": note}
+
+    domain = _host(context)
+    if not domain or is_social_only(context):
+        return None
+    paragraphs = [
+        "OpenAI is rolling out business profiles in ChatGPT. A business claims its profile, "
+        "verifies it, and can see how often ChatGPT mentions it.",
+        f"Want me to check whether {short} has one yet and walk you through claiming it?",
+    ]
+    return {"subject": f"{short} chatgpt profile".lower(), "body": _greeting(first_name, paragraphs),
+            "angle": CHATGPT_PROFILE, "note": note}
+
+
 def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
+    if angle in (CHATGPT_PICK, CHATGPT_PROFILE):
+        return _chatgpt_email(context, angle)
     snapshot = context.get("audit_snapshot")
     if not isinstance(snapshot, dict) or is_social_only(context):
         return None
@@ -232,7 +277,10 @@ def write_follow_up(context: dict[str, Any], step: int) -> str:
     signals = context.get("site_signals") or {}
     first_name = contact_first_name(context.get("to_address"), context.get("name"),
                                     signals.get("owner_name"))
-    return _greeting(first_name, [
-        f"Quick bump on this. Want me to send over that mobile-friendly homepage draft for {display_name(name)} "
-        "so you can take a look?",
-    ])
+    short = display_name(name)
+    ask = {
+        CHATGPT_PICK: f"Want me to send over the breakdown of what those businesses are doing on ChatGPT that {short} isn't?",
+        CHATGPT_PROFILE: f"Want me to walk you through claiming {possessive(short)} ChatGPT profile?",
+    }.get(context.get("angle"),
+          f"Want me to send over that mobile-friendly homepage draft for {short} so you can take a look?")
+    return _greeting(first_name, [f"Quick bump on this. {ask}"])

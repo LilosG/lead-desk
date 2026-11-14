@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.campaigns import CAMPAIGNS, DEFAULT_CAMPAIGN
 from app.core.config import get_settings
 from app.core.database import pool
+from app.integrations.openai_search import OpenAISearchClient
 from app.integrations.openrouter import OpenRouterClient
 from app.integrations.openrouter_constrained import ConstrainedOutreachClient
 from app.integrations.openrouter_structured import StructuredOpenRouterClient
@@ -21,6 +22,7 @@ from app.schemas.outreach import (
     OutreachUpdate,
     OutreachVersionAction,
 )
+from app.services.chatgpt_check import ChatGPTCheckService
 from app.services.integrations import GmailIntegrationService, IntegrationConfigurationError
 from app.services.outreach import (
     OutreachBlocked,
@@ -76,8 +78,16 @@ def get_service() -> OutreachService:
     except IntegrationConfigurationError:
         gmail = None
 
+    chatgpt_check = None
+    if settings.openai_api_key:
+        chatgpt_check = ChatGPTCheckService(
+            OutreachRepository(pool),
+            OpenAISearchClient(api_key=settings.openai_api_key, model=settings.openai_search_model),
+        )
+
     return OutreachService(
         OutreachRepository(pool),
+        chatgpt_check=chatgpt_check,
         evidence_repository=OutreachEvidenceRepository(pool),
         generator=generator,
         gmail=gmail,

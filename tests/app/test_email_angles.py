@@ -255,7 +255,7 @@ def test_best_fit_and_rotation_use_the_website_draft():
                                        "audit_snapshot": {**SNAPSHOT, "findings": [SLOW]}}, "best")
     assert written["angle"] == "website_draft"
     assert written["claim_signal"] == "audit_report"
-    assert ROTATION[SEO_WEBSITES] == ("website_draft",)
+    assert ROTATION[SEO_WEBSITES] == ("website_draft", "chatgpt_pick")
     assert service.audit_attachments({"claim_signal": "audit_report", "place_id": "p", "angle": "website_draft"}) is None
 
 

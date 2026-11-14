@@ -20,7 +20,10 @@ from app.services.outreach_audit_copy import (
     personal_greeting,
 )
 from app.services import permit_offer, seo_offer
-from app.services.email_angles import BEST, ROTATE, is_known, resolve_angle
+from app.services.chatgpt_check import ChatGPTCheckService, has_gap
+from app.services.email_angles import (
+    BEST, ROTATE, is_known, profile_offer_enabled, resolve_angle, stable_pick,
+)
 from app.services.outreach_evidence import RecipientEvidence, recipient_finding_block
 from app.services.outreach_similarity import is_too_similar
 from app.services.outreach_verification import OutreachClaimVerifier
@@ -90,6 +93,7 @@ class OutreachService:
         generation_model: str | None = None,
         gmail_sender_email: str | None = None,
         audit_builder: Callable[[str], Any] | None = None,
+        chatgpt_check: ChatGPTCheckService | None = None,
     ) -> None:
         self.repository = repository
         self.evidence_repository = evidence_repository
@@ -100,6 +104,7 @@ class OutreachService:
         self.gmail_sender_email = gmail_sender_email
         # Callable(place_id) that builds a default audit report.
         self.audit_builder = audit_builder
+        self.chatgpt_check = chatgpt_check
 
     def integration_status(self) -> dict:
         return {
@@ -381,29 +386,80 @@ class OutreachService:
             "angle": chosen,
         }
 
-    def write_seo_draft(self, context: dict, angle: str | None = None) -> dict | None:
-        """The audit-led email. None when the audit gives it nothing to say."""
+    def _chatgpt_gap(self, context: dict) -> dict | None:
+        """The evidence when ChatGPT named real competitors and not this lead; otherwise None."""
+        if self.chatgpt_check is None:
+            return None
+        evidence = self.chatgpt_check.evaluate(context)
+        return evidence if has_gap(evidence) else None
+
+    def _seo_route(self, context: dict, requested: str | None) -> tuple[str | None, dict | None]:
+        """Which Website-campaign email this lead gets, and the ChatGPT evidence behind it.
+
+        A chosen angle is honored or refused. Otherwise the lead gets the email it
+        qualifies for: the website draft (verified phone problems), the ChatGPT pick
+        (ChatGPT named competitors and not them), split evenly when it's both, and the
+        profile offer only when that is switched on and nothing else applies.
+        """
         campaign = get_campaign(context.get("campaign_key")).key
-        if angle == BEST:
-            angle = seo_offer.WEBSITE_DRAFT
-        chosen = resolve_angle(campaign, context["place_id"], angle, context.get("angle"))
-        if not is_known(campaign, chosen):
-            raise OutreachBlocked(f"Unknown email angle: {chosen}")
-        written = seo_offer.write_email(context, chosen)
+        if requested:
+            if not is_known(campaign, requested):
+                raise OutreachBlocked(f"Unknown email angle: {requested}")
+            if requested == seo_offer.CHATGPT_PICK:
+                evidence = self._chatgpt_gap(context)
+                if evidence is None:
+                    raise OutreachBlocked(
+                        "ChatGPT didn't show a gap for this lead (or the check couldn't run), "
+                        "so there's no ChatGPT pick email to write.")
+                return requested, evidence
+            if requested == seo_offer.CHATGPT_PROFILE and not profile_offer_enabled():
+                raise OutreachBlocked("The ChatGPT profile email is switched off.")
+            return requested, None
+
+        current = context.get("angle")
+        if current in (seo_offer.WEBSITE_DRAFT, seo_offer.FREE_HOMEPAGE) and seo_offer.write_email(context, current):
+            return current, None
+        qualified: list[str] = []
+        if seo_offer.write_email(context, seo_offer.WEBSITE_DRAFT) is not None:
+            qualified.append(seo_offer.WEBSITE_DRAFT)
+        evidence = self._chatgpt_gap(context)
+        if evidence is not None:
+            qualified.append(seo_offer.CHATGPT_PICK)
+        if qualified:
+            chosen = qualified[0] if len(qualified) == 1 else stable_pick(context["place_id"], tuple(qualified))
+            return chosen, evidence if chosen == seo_offer.CHATGPT_PICK else None
+        if profile_offer_enabled() and seo_offer.write_email(context, seo_offer.CHATGPT_PROFILE) is not None:
+            return seo_offer.CHATGPT_PROFILE, None
+        return None, None
+
+    def write_seo_draft(self, context: dict, angle: str | None = None) -> dict | None:
+        """The Website campaign email. None when nothing verified gives it something to say."""
+        requested = seo_offer.WEBSITE_DRAFT if angle == BEST else (None if angle in (None, ROTATE) else angle)
+        chosen, evidence = self._seo_route(context, requested)
+        if chosen is None:
+            return None
+        written = seo_offer.write_email({**context, "chatgpt_evidence": evidence}, chosen)
         if written is None:
             return None
-        note = "Grounded in the latest generated Local Visibility Audit"
-        if context.get("audit_source_checked_at"):
-            note += f" using evidence dated {context['audit_source_checked_at']}"
+        if chosen == seo_offer.CHATGPT_PICK:
+            note = (f"ChatGPT check dated {evidence['checked_at'][:10]}: named "
+                    f"{', '.join(evidence['competitors'][:3])}, not this business. "
+                    "Exact question and answer are saved with this email.")
+        else:
+            note = "Grounded in the latest generated Local Visibility Audit"
+            if context.get("audit_source_checked_at"):
+                note += f" using evidence dated {context['audit_source_checked_at']}"
+            note += "."
         return {
             "subject": written["subject"],
             "body": f"{written['body']}\n\n{CAN_SPAM_FOOTER}",
             "claim_signal": "audit_report",
             "verification_status": "not_required",
-            "verification_note": f"{note}. {written['note']}".strip(),
+            "verification_note": f"{note} {written['note']}".strip(),
             "generation_model": FIXED_COPY,
             "prompt_version": seo_offer.PROMPT_VERSION,
             "angle": written["angle"],
+            "chatgpt_evidence": evidence,
         }
 
     def write_fixed_copy(self, context: dict, angle: str | None = None) -> dict | None:
