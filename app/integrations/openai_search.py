@@ -75,12 +75,13 @@ class OpenRouterSearchClient:
         self.timeout_seconds = timeout_seconds
 
     def ask(self, prompt: str) -> SearchAnswer:
-        slug = self.model if self.model.endswith(":online") else f"{self.model}:online"
+        slug = self.model.removesuffix(":online")
         try:
             response = requests.post(
                 OPENROUTER_CHAT_URL,
                 headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={"model": slug, "messages": [{"role": "user", "content": prompt}]},
+                json={"model": slug, "messages": [{"role": "user", "content": prompt}],
+                      "plugins": [{"id": "web", "engine": "exa", "max_results": 10}]},
                 timeout=self.timeout_seconds,
             )
         except requests.RequestException as exc:

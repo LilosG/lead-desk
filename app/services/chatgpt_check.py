@@ -187,6 +187,10 @@ class ChatGPTCheckService:
         except OpenAISearchError as exc:
             log.warning("ChatGPT check failed for %s / %s, %s: %s", vertical, city, state, exc)
             return None
+        if not answer.sources:
+            # No links back means we can't show it came from a real search. Don't cache it or use it.
+            log.warning("ChatGPT check for %s / %s, %s came back with no sources; ignored", vertical, city, state)
+            return None
         return self.repository.save_chatgpt_check(
             vertical=vertical, city=city, state=state, prompt=prompt, response=answer.text,
             sources=answer.sources, businesses=parse_businesses(answer.text), model=answer.model or self.client.model,

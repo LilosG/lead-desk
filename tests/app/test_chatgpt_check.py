@@ -23,7 +23,7 @@ REPLY = ('{"recommendations": [{"name": "Sparks Electric", "website": "sparksele
          '{"name": "Thumbtack Top Pros", "website": "thumbtack.com/az/phoenix"}]}')
 
 
-def _answer(text=REPLY, sources=()):
+def _answer(text=REPLY, sources=({"url": "https://sparkselectric.com", "title": "Sparks"},)):
     return SearchAnswer(text=text, sources=list(sources), model="gpt-test")
 
 
@@ -424,3 +424,11 @@ def test_openrouter_search_reply_is_parsed():
     }, "openai/gpt-5.2")
     assert answer.text == '{"recommendations": []}'
     assert answer.sources == [{"url": "https://a.com/x", "title": "A"}]
+
+
+def test_an_answer_with_no_sources_is_not_used_or_cached():
+    client = FakeClient()
+    client.answer = _answer(sources=())
+    service = _service(client)
+    assert service.evaluate(LEAD) is None
+    assert service.repository.rows == {}
