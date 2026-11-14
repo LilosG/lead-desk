@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, ".")
 
 from app.core.config import get_settings  # noqa: E402
-from app.core.database import pool  # noqa: E402
+from app.core.database import open_pool, pool  # noqa: E402
 from app.integrations.openai_search import OpenAISearchClient  # noqa: E402
 from app.repositories.outreach import OutreachRepository  # noqa: E402
 from app.services.chatgpt_check import ChatGPTCheckService  # noqa: E402
@@ -21,6 +21,7 @@ def main() -> int:
         print(__doc__)
         return 2
     vertical, city, state = sys.argv[1:4]
+    open_pool()
     settings = get_settings()
     if not settings.openai_api_key:
         print("OPENAI_API_KEY is not set in .env")
