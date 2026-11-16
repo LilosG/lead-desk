@@ -332,3 +332,9 @@ def test_the_backfill_writes_only_the_permit_keys_and_never_touches_scores():
         with psycopg.connect(dsn) as conn:
             conn.execute("delete from website_enrichment where place_id = 'bf-1'")
             conn.execute("delete from businesses where place_id = 'bf-1'")
+
+
+def test_claims_and_dispatch_inboxes_rank_below_sales_contacts():
+    ranked = E.rank_emails(["claimstatus@sparks.com", "claims@sparks.com", "dispatch@sparks.com",
+                            "info@sparks.com"])
+    assert ranked[0] == "info@sparks.com"

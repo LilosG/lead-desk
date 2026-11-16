@@ -185,6 +185,12 @@ def _problems(context: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _rival_name(raw: Any) -> str:
+    """'Mauzy Cooling, Heating, Plumbing, and Electrical, Inc.' -> 'Mauzy Cooling'."""
+    name = clean_business_name(str(raw or "").split(",")[0])
+    return "" if name == "your business" else name
+
+
 def _joined(names: list[str]) -> str:
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
@@ -200,7 +206,12 @@ def _chatgpt_email(context: dict[str, Any], angle: str) -> dict[str, str] | None
 
     if angle == CHATGPT_PICK:
         evidence = context.get("chatgpt_evidence") or {}
-        rivals = (evidence.get("competitors") or [])[:3]
+        rivals = []
+        for raw in evidence.get("competitors") or []:
+            rival = _rival_name(raw)
+            if rival and rival not in rivals:
+                rivals.append(rival)
+        rivals = rivals[:3]
         city = context.get("city")
         if len(rivals) < 2 or evidence.get("prospect_named") is not False or not city:
             return None
@@ -264,7 +275,10 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
     if signals.get("site_builder") == "toast":
         paragraphs.append("I moved a restaurant group's sites off Toast's builder onto their own fast "
                           "site and kept ordering on Toast.")
-    paragraphs.append("I put together a draft of a faster, mobile-friendly version. Want me to send it over?")
+    findings = {f.get("signal") for f in snapshot.get("findings") or [] if isinstance(f, dict)}
+    slow = bool(findings & {"psi_mobile_critical", "psi_mobile_poor"})
+    quality = "faster" if slow else "cleaner"
+    paragraphs.append(f"I put together a draft of a {quality}, mobile-friendly version. Want me to send it over?")
     if not signals.get("site_hook"):
         note = (note + " No homepage detail found, so it opens on the site itself.").strip()
     return {"subject": f"{display_name(name)} website".lower(), "body": _greeting(first_name, paragraphs),

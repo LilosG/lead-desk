@@ -475,11 +475,12 @@ def _clean_emails(raw: set, site_host: str = "", business_name: str | None = Non
 
 # Shared inboxes a business watches, in the order worth using them.
 SHARED_MAILBOXES = ("office", "info", "contact", "hello", "sales", "service", "admin", "support",
-                    "team", "mail", "estimates", "quotes", "dispatch", "customerservice")
+                    "team", "mail", "estimates", "quotes", "customerservice")
 # Real inboxes, but a sales email to them goes to the wrong desk.
 WRONG_DESK_MAILBOXES = {"careers", "career", "jobs", "job", "hiring", "hr", "recruiting", "billing",
                         "accounting", "accounts", "invoices", "invoice", "ap", "ar", "payroll",
-                        "marketing", "press", "media", "webmaster", "web", "privacy", "legal"}
+                        "marketing", "press", "media", "webmaster", "web", "privacy", "legal",
+                        "claims", "claimstatus", "dispatch"}
 
 
 def _email_rank(email: str) -> tuple[int, int, str]:

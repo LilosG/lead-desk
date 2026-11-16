@@ -171,6 +171,13 @@ def test_the_website_draft_email():
     )
 
 
+def test_the_offer_wording_matches_the_issue_that_triggered_the_email():
+    assert "a faster, mobile-friendly version" in _web(findings=[SLOW])["body"]
+    for finding in ({"signal": "no_click_to_call"}, {"signal": "no_ssl"}):
+        body = _web(findings=[finding])["body"]
+        assert "a cleaner, mobile-friendly version" in body and "faster" not in body
+
+
 def test_website_email_has_no_link_attachment_or_review_comparison():
     body = _web()["body"]
     assert "http" not in body and "attached" not in body.lower()

@@ -154,7 +154,7 @@ def test_a_gap_needs_two_real_competitors_and_an_absent_lead():
 
 # --- the emails ---
 
-PICK_EVIDENCE = {"competitors": ["Sparks Electric", "Volt Pros LLC", "Amp Brothers Electrical Services", "Fourth Co"],
+PICK_EVIDENCE = {"competitors": ["Sparks Electric", "Volt Pros LLC", "Amp Brothers Electrical, Heating, and Plumbing", "Fourth Co"],
                  "prospect_named": False, "checked_at": "2026-11-13 10:00:00+00"}
 
 
@@ -164,8 +164,8 @@ def test_the_chatgpt_pick_email():
     assert written["angle"] == "chatgpt_pick"
     assert written["body"] == (
         "Hi Dave,\n\n"
-        "I asked ChatGPT for the best electricians in Phoenix. It named Sparks Electric, Volt Pros LLC and "
-        "Amp Brothers Electrical Services. Five Point didn't come up.\n\n"
+        "I asked ChatGPT for the best electricians in Phoenix. It named Sparks Electric, Volt Pros and "
+        "Amp Brothers Electrical. Five Point didn't come up.\n\n"
         "People are starting to ask it who to call.\n\n"
         "Want me to send over a breakdown of what those businesses are doing that Five Point isn't?"
     )
@@ -298,7 +298,7 @@ def test_the_written_pick_draft_carries_its_evidence(monkeypatch):
     assert written["angle"] == "chatgpt_pick"
     assert written["chatgpt_evidence"] == GAP
     assert written["prompt_version"] == seo_offer.PROMPT_VERSION
-    assert "named Sparks Electric, Volt Pros LLC, Amp Brothers Electrical Services" in written["verification_note"]
+    assert "named Sparks Electric, Volt Pros LLC, Amp Brothers Electrical, Heating, and Plumbing" in written["verification_note"]
     assert "I asked ChatGPT" in written["body"] and written["body"].rstrip().endswith("reach out again.")
 
 
