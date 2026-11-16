@@ -509,6 +509,11 @@ class OutreachService:
                 raise OutreachConflict("outreach item changed while the draft was being generated")
             return updated
 
+        if uses_audit:
+            raise OutreachBlocked(
+                "No verified website issue found for Website draft; "
+                "switch angle to Rotate or ChatGPT pick."
+            )
         if self.generator is None:
             raise OutreachIntegrationUnavailable(
                 "OpenRouter draft generation is not configured"

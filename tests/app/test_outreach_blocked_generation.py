@@ -1,5 +1,7 @@
 from app.integrations.openrouter import CLAIM_TOKEN, GeneratedCopy
-from app.services.outreach import PROMPT_VERSION, OutreachService
+import pytest
+
+from app.services.outreach import PROMPT_VERSION, OutreachBlocked, OutreachService
 from app.services.outreach_verification import VerifiedClaim
 
 
@@ -146,61 +148,6 @@ class Repo:
         return updated, False
 
 
-def test_internal_only_finding_is_filtered_and_claim_free_draft_is_generated():
-    repo = Repo(findings=[{"signal": "template_builder"}])
-    verifier = CapturingNoClaimVerifier()
-    generator = ClaimFreeGenerator()
-    service = OutreachService(
-        repo,
-        generator=generator,
-        verifier=verifier,
-        generation_model="qwen/qwen3-30b-a3b-instruct-2507",
-    )
-
-    result = service.generate_draft(repo.item["id"], expected_version=7)
-
-    assert verifier.context is not None
-    assert verifier.context["findings"] == []
-    assert generator.calls == 1
-    assert result["subject"] == "Example Electric"
-    assert "LILOs Growth" in result["body"]
-    assert CLAIM_TOKEN not in result["body"]
-    assert result["status"] == "review_required"
-    assert result["verification_status"] == "not_required"
-    assert result["claim_signal"] is None
-    assert result["verification_note"] == "No safely re-verifiable outreach claim was available."
-    assert result["generation_model"] == "qwen/qwen3-30b-a3b-instruct-2507"
-    assert result["prompt_version"] == PROMPT_VERSION
-
-
-def test_internal_finding_cannot_shadow_later_approved_finding():
-    repo = Repo(
-        findings=[
-            {"signal": "template_builder"},
-            {"signal": "no_localbusiness_schema"},
-        ]
-    )
-    verifier = ApprovedClaimVerifier()
-    generator = ClaimGenerator()
-    service = OutreachService(
-        repo,
-        generator=generator,
-        verifier=verifier,
-        generation_model="qwen/qwen3-30b-a3b-instruct-2507",
-    )
-
-    result = service.generate_draft(repo.item["id"], expected_version=7)
-
-    assert [finding["signal"] for finding in verifier.context["findings"]] == [
-        "no_localbusiness_schema"
-    ]
-    assert generator.calls == 1
-    assert result["status"] == "review_required"
-    assert result["claim_signal"] == "no_localbusiness_schema"
-    assert "structured business markup" in result["body"]
-    assert "template" not in result["body"].lower()
-
-
 def test_generated_audit_supplies_useful_grounding_without_live_claim():
     repo = Repo(findings=[{"signal": "template_builder"}])
     verifier = CapturingNoClaimVerifier()
@@ -241,7 +188,6 @@ def test_generated_audit_supplies_useful_grounding_without_live_claim():
     assert "Local Visibility Audit" in verification_note
 
 
-
 def test_audit_grounding_covers_profile_and_speed_findings_for_volume():
     repo = Repo(findings=[{"signal": "template_builder"}])
     verifier = CapturingNoClaimVerifier()
@@ -277,3 +223,14 @@ def test_audit_grounding_covers_profile_and_speed_findings_for_volume():
     assert "your number of Google reviews" in visible_claim
     assert "how slowly your site loads on phones" in visible_claim
     assert "online presence" not in visible_claim
+
+
+def test_website_draft_with_no_verified_issue_is_blocked_not_sent_to_the_old_generator():
+    repo = Repo(findings=[{"signal": "template_builder"}])
+    service = OutreachService(repo, generator=ClaimGenerator(), verifier=CapturingNoClaimVerifier(),
+                              generation_model="qwen/qwen3-30b-a3b-instruct-2507")
+    service.write_fixed_copy = lambda context, angle=None: None
+    with pytest.raises(OutreachBlocked, match="No verified website issue found for Website draft; "
+                                              "switch angle to Rotate or ChatGPT pick."):
+        service.generate_draft(repo.item["id"], expected_version=repo.item["version"])
+    assert repo.generated is None
