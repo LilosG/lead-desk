@@ -151,7 +151,8 @@ def test_a_handful_of_reviews_is_not_qualified_even_in_a_small_town():
     verdict, reasons = S.qualify({"review_count": 5}, site, 90, gap, 80)
     assert verdict == "low_fit"
     assert reasons == ["Only 5 Google reviews so far"]
-    assert S.qualify({"review_count": 10}, site, 90, gap, 80)[0] == "qualified"
+    assert S.qualify({"review_count": 24}, site, 90, gap, 80)[0] == "low_fit"
+    assert S.qualify({"review_count": 25}, site, 90, gap, 80)[0] == "qualified"
 
 
 def test_beating_a_tiny_local_median_does_not_earn_review_points():

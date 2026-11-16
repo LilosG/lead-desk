@@ -8,22 +8,18 @@ if (!auditPath) {
 const audit = JSON.parse(fs.readFileSync(auditPath, 'utf8'));
 const lock = JSON.parse(fs.readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 
-// @astrojs/vercel 11.0.18 is the newest adapter release, and every remaining
+// @astrojs/vercel 11.0.22 is the newest adapter release, and every remaining
 // finding sits beneath it. It depends on @vercel/routing-utils 6.6.1, where
 // Vercel intentionally ships path-to-regexp 6.1.0 alongside the patched 6.3.0
-// while comparing migration behavior upstream, and on @vercel/nft 1.11.0, which
-// brings glob 13.0.6 and minimatch 10.2.6. npm's only offered fix is a downgrade
+// while comparing migration behavior upstream. npm's only offered fix is a downgrade
 // to adapter 8.1.0, and we do not override Vercel's dependency graph because
 // that would put Lead Desk on an unsupported routing stack.
 //
 // This exception is deliberately exact and self-expiring: any package/version
 // change or any additional vulnerability fails CI and requires review.
 const expectedPackages = new Map([
-  ['node_modules/@astrojs/vercel', '11.0.18'],
+  ['node_modules/@astrojs/vercel', '11.0.22'],
   ['node_modules/@vercel/routing-utils', '6.6.1'],
-  ['node_modules/@vercel/nft', '1.11.0'],
-  ['node_modules/glob', '13.0.6'],
-  ['node_modules/minimatch', '10.2.6'],
   ['node_modules/path-to-regexp', '6.1.0'],
   ['node_modules/path-to-regexp-updated', '6.3.0'],
 ]);
@@ -43,9 +39,6 @@ const expectedSeverity = new Map([
   ['@astrojs/vercel', 'high'],
   ['@vercel/routing-utils', 'high'],
   ['path-to-regexp', 'high'],
-  ['@vercel/nft', 'moderate'],
-  ['glob', 'moderate'],
-  ['minimatch', 'moderate'],
 ]);
 
 const unexpected = names.filter((name) => !expectedSeverity.has(name));

@@ -510,8 +510,8 @@ def test_the_seo_board_flags_leads_that_should_get_ev_first(board):
     data = board.board(campaign=SEO_WEBSITES, stage="to_prep", page=1, page_size=100,
                        q=None, vertical=None, market=None, qualified_only=False)
     by_id = {row["place_id"]: row for row in data["items"]}
-    assert by_id["camp-title"]["lead_note"] == "Shows permit work: pitch Permit Packets first"
-    assert by_id["camp-panel"]["lead_note"] == "Shows permit work: pitch Permit Packets first"
-    assert by_id["camp-noev"]["lead_note"] is None
+    assert by_id["camp-title"]["lead_note"] == "60 reviews · Shows permit work: pitch Permit Packets first"
+    assert by_id["camp-panel"]["lead_note"] == "60 reviews · Shows permit work: pitch Permit Packets first"
+    assert by_id["camp-noev"]["lead_note"] == "60 reviews"
     ids = [row["place_id"] for row in data["items"]]
     assert ids.index("camp-noev") < ids.index("camp-title")
