@@ -753,7 +753,7 @@ class OutreachService:
         subject = item["subject"] or ""
         follow_up = self.repository.begin_follow_up(
             item_id, step,
-            subject=subject if subject.lower().startswith("re:") else f"Re: {subject}",
+            subject=f"following up — {clean_business_name(item.get('name')).lower()}",
             body=f"{offer.write_follow_up(item, step)}\n\n{CAN_SPAM_FOOTER}",
             message_id_header=f"<{uuid4()}@lead-desk.lilosgrowth.com>",
         )
