@@ -1,4 +1,4 @@
-"""The Permit Packets emails: short, link-free offers for the electrical permit packet system."""
+"""The Permit Packets emails: two distinct, high-converting cold email angles."""
 from __future__ import annotations
 
 import re
@@ -17,7 +17,7 @@ from app.services.outreach_audit_copy import (
     short_name,
 )
 
-PROMPT_VERSION = "permit-offer-v4"
+PROMPT_VERSION = "permit-offer-v6"
 _EV_WORDS = re.compile(EV_SERVICE_PATTERN, re.I)
 _PERMIT_WORDS = re.compile(PERMIT_JOBS_PATTERN, re.I)
 
@@ -95,52 +95,42 @@ def _site_job_focus(ctx: dict[str, Any]) -> str | None:
     return _joined(parts[:2]) if parts else None
 
 
-def _default_job_list(ctx: dict[str, Any]) -> str:
-    if _is_simple_ev_city(ctx):
-        return "panel upgrades, subpanels and 240 V circuits"
-    return "panel upgrades, subpanels, EV chargers and 240 V circuits"
-
-
 def _sample(ctx: dict[str, Any]) -> tuple[str, list[str]]:
+    """Angle A: Observation opener + Minutes-vs-Hours speed + AutoCAD DXF included."""
     city, short = ctx["city"], ctx["short"]
     focus = _site_job_focus(ctx)
-    simple_ev = _is_simple_ev_city(ctx)
-    city_info = permit_city(city, ctx["state"])
     where = f" in {city}" if city else ""
-    opener = f"Saw {short} handles {focus}{where}. " if focus else ""
-    sample = f"Put together a sample {city} packet" if city else "Put together a sample packet"
     subject = f"{city} permit packets" if city else "electrical permit packets"
 
-    if city and not simple_ev and city_info and city_info.get("fit") == "full" and city_info.get("asks_for"):
-        body_1 = (
-            f"{opener}We built a permit packet system set up around {city}'s checklist ({city_info['asks_for']}, "
-            "plus AutoCAD DXF drawings) for residential and commercial panel upgrades, subpanels, EV chargers "
-            "and 240 V circuits."
-        )
+    if focus:
+        opener = f"Saw {short} handles {focus}{where}."
     else:
-        area = f"{city} and surrounding service areas" if city else "your service cities"
-        body_1 = (
-            f"{opener}We built an electrical permit system configured around {area} that turns job specs into "
-            f"submittable packets (scaled parcel site plan, one-line/riser diagrams, NEC 220.82 load calc, "
-            f"and AutoCAD DXF export) for {_default_job_list(ctx)}."
-        )
+        opener = f"Saw {short} runs residential and commercial electrical work{where}."
+
+    checklist_ref = f"{city}'s checklist" if city else "your city's checklist"
+    sample_ref = f"sample {city} packet" if city else "sample packet"
+
     return subject.lower(), [
-        body_1,
-        f"{sample} so you can see the PDF and CAD sheets—want me to send it over?",
+        opener,
+        f"We built a simple tool set up around {checklist_ref} that turns basic job details into a "
+        "submission-ready packet in minutes instead of hours. It builds the scaled site plan, one-line, "
+        "NEC 220.82 load calc, and editable AutoCAD DXF files automatically.",
+        f"Put together a {sample_ref} so you can see the output—want me to send it over?",
     ]
 
 
 def _project(ctx: dict[str, Any]) -> tuple[str, list[str]]:
+    """Angle B: Workflow/AutoCAD question opener + Outside-drafter vs In-house contrast."""
     city, short = ctx["city"], ctx["short"]
     where = f" in {city}" if city else ""
-    area = f"{city} checklists" if city else "local city checklists"
-    job_ask = _site_job_focus(ctx) or _default_job_list(ctx)
+    checklist_ref = f"{city}'s checklist" if city else "local city checklists"
+
     return f"permits at {short}".lower(), [
-        f"Pulling many permits for {job_ask}{where} at {short}?",
-        f"We built an electrical permit platform configured for {area} that generates submittable packets "
-        "(NEC 220.82 load calcs, scaled parcel site plans, one-lines, and AutoCAD DXF files) for residential "
-        "and commercial jobs without the back-office bottleneck.",
-        "Are you the right person to send a sample packet to, or who handles permitting on your end?",
+        f"Quick question—who handles the site plans, load calcs, and AutoCAD drawings when {short} pulls permits{where}?",
+        "Most shops we talk to either wait days on outside drafters or burn hours doing them in-house. "
+        f"We built a simple tool configured for {checklist_ref} that generates a submission-ready PDF packet "
+        "and editable DXF files in a few minutes.",
+        "Happy to send over a sample packet so you can see how clean the drawings are—want me to shoot it over?",
     ]
 
 
