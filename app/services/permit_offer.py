@@ -1,4 +1,4 @@
-"""The Permit Packets emails: short, link-free offers grounded in city checklists and site services."""
+"""The Permit Packets emails: short, link-free offers for the electrical permit packet system."""
 from __future__ import annotations
 
 import re
@@ -17,7 +17,7 @@ from app.services.outreach_audit_copy import (
     short_name,
 )
 
-PROMPT_VERSION = "permit-offer-v3"
+PROMPT_VERSION = "permit-offer-v4"
 _EV_WORDS = re.compile(EV_SERVICE_PATTERN, re.I)
 _PERMIT_WORDS = re.compile(PERMIT_JOBS_PATTERN, re.I)
 
@@ -74,9 +74,15 @@ def _joined(items: list[str]) -> str:
     return f"{', '.join(items[:-1])} and {items[-1]}"
 
 
+def _is_simple_ev_city(ctx: dict[str, Any]) -> bool:
+    info = permit_city(ctx.get("city"), ctx.get("state"))
+    return bool(info and info.get("fit") == "simple")
+
+
 def _site_job_focus(ctx: dict[str, Any]) -> str | None:
-    brands = [b for b in (ctx.get("ev_brands") or []) if b][:2]
-    jobs = ctx.get("jobs") or []
+    simple_ev = _is_simple_ev_city(ctx)
+    brands = [] if simple_ev else [b for b in (ctx.get("ev_brands") or []) if b][:2]
+    jobs = [j for j in (ctx.get("jobs") or []) if not (simple_ev and j == "ev_charger")]
     parts: list[str] = []
     if brands:
         parts.append(f"{'/'.join(brands)} chargers")
@@ -89,43 +95,52 @@ def _site_job_focus(ctx: dict[str, Any]) -> str | None:
     return _joined(parts[:2]) if parts else None
 
 
+def _default_job_list(ctx: dict[str, Any]) -> str:
+    if _is_simple_ev_city(ctx):
+        return "panel upgrades, subpanels and 240 V circuits"
+    return "panel upgrades, subpanels, EV chargers and 240 V circuits"
+
+
 def _sample(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     city, short = ctx["city"], ctx["short"]
     focus = _site_job_focus(ctx)
+    simple_ev = _is_simple_ev_city(ctx)
     city_info = permit_city(city, ctx["state"])
     where = f" in {city}" if city else ""
     opener = f"Saw {short} handles {focus}{where}. " if focus else ""
-    sample = f"Mocked up a sample {city} packet" if city else "Mocked up a sample packet"
+    sample = f"Put together a sample {city} packet" if city else "Put together a sample packet"
     subject = f"{city} permit packets" if city else "electrical permit packets"
-    if city and city_info and city_info.get("fit") == "full" and city_info.get("asks_for"):
+
+    if city and not simple_ev and city_info and city_info.get("fit") == "full" and city_info.get("asks_for"):
         body_1 = (
-            f"{opener}{city}'s EV checklist asks for {city_info['asks_for']}—we put together "
-            "the full permit-ready packet (including NEC 220.82 load calcs and local inspector flags) "
-            "so your guys stay in the field instead of doing desk work."
+            f"{opener}We built a permit packet system set up around {city}'s checklist ({city_info['asks_for']}, "
+            "plus AutoCAD DXF drawings) for residential and commercial panel upgrades, subpanels, EV chargers "
+            "and 240 V circuits."
         )
     else:
-        packets = f"{city}-ready electrical permit packets" if city else "city-ready electrical permit packets"
+        area = f"{city} and surrounding service areas" if city else "your service cities"
         body_1 = (
-            f"{opener}We put together {packets} (scaled aerial site plan, single-line diagram, "
-            "NEC 220.82 load calc, and local inspector flags) for EV chargers, panel upgrades, "
-            "subpanels and 240 V circuits."
+            f"{opener}We built an electrical permit system configured around {area} that turns job specs into "
+            f"submittable packets (scaled parcel site plan, one-line/riser diagrams, NEC 220.82 load calc, "
+            f"and AutoCAD DXF export) for {_default_job_list(ctx)}."
         )
     return subject.lower(), [
         body_1,
-        f"{sample} so you can see the drawings—want me to send it over?",
+        f"{sample} so you can see the PDF and CAD sheets—want me to send it over?",
     ]
 
 
 def _project(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     city, short = ctx["city"], ctx["short"]
     where = f" in {city}" if city else ""
-    packets = f"{city} permit packets" if city else "permit packets"
-    job_ask = _site_job_focus(ctx) or "panel upgrades, EV chargers or subpanels"
+    area = f"{city} checklists" if city else "local city checklists"
+    job_ask = _site_job_focus(ctx) or _default_job_list(ctx)
     return f"permits at {short}".lower(), [
-        f"Have any {job_ask} coming up{where} at {short}?",
-        f"We draft ready-to-submit {packets} (load calcs, scaled site plans, one-lines and "
-        "local code flags) so your electricians stay in the field instead of doing desk work at night.",
-        "Are you the best person to send a sample packet to, or who handles permitting on your end?",
+        f"Pulling many permits for {job_ask}{where} at {short}?",
+        f"We built an electrical permit platform configured for {area} that generates submittable packets "
+        "(NEC 220.82 load calcs, scaled parcel site plans, one-lines, and AutoCAD DXF files) for residential "
+        "and commercial jobs without the back-office bottleneck.",
+        "Are you the right person to send a sample packet to, or who handles permitting on your end?",
     ]
 
 
@@ -172,10 +187,15 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str]:
 def write_follow_up(context: dict[str, Any], step: int) -> str:
     facts = _facts(context)
     short, city = facts["short"], facts["city"]
+    job_choices = (
+        "panel upgrades or subpanels"
+        if _is_simple_ev_city(facts)
+        else "panel upgrades, subpanels, or EV chargers"
+    )
     if facts["first_name"]:
         matching = f"a matching {city} sample packet" if city else "a matching sample packet"
         paragraph = (f"Quick bump—which do you pull more permits for at {short} right now, "
-                     f"EV chargers or 200A panel upgrades? Happy to send over {matching}.")
+                     f"{job_choices}? Happy to send over {matching}.")
     else:
         packet = f"a sample {city} packet" if city else "a sample packet"
         paragraph = (f"Quick bump on this—who handles pulling electrical permits at {short}? "
