@@ -185,9 +185,9 @@ def write_follow_up(context: dict[str, Any], step: int) -> str:
     if facts["first_name"]:
         matching = f"a matching {city} sample packet" if city else "a matching sample packet"
         paragraph = (f"Quick bump—which do you pull more permits for at {short} right now, "
-                     f"{job_choices}? Happy to send over {matching}.")
+                     f"{job_choices}? Happy to send over {matching} (PDF + AutoCAD DXF).")
     else:
         packet = f"a sample {city} packet" if city else "a sample packet"
         paragraph = (f"Quick bump on this—who handles pulling electrical permits at {short}? "
-                     f"Happy to send {packet} their way.")
+                     f"Happy to send {packet} (PDF + AutoCAD DXF) their way.")
     return _with_greeting(facts, [paragraph])
