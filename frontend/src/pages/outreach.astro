@@ -364,12 +364,12 @@ const stages = [
       el('#bulk-prep').textContent = current.prep_label;
       const options = current.angles.map((a) => `<option value="${esc(a.key)}" title="${esc(a.summary)}">${esc(a.label)}</option>`).join('');
       const angleSelect = el<HTMLSelectElement>('#angle-select');
-      const best = current.uses_audit ? `<option value="best" title="Mockup link when one is published, audit PDF attached">Best fit (mockup link + audit PDF)</option>` : '';
-      angleSelect.innerHTML = `${best}<option value="rotate">Rotate (A/B test)</option>${options}`;
-      const known = current.angles.some((a) => a.key === state.angle) || state.angle === 'rotate' || (current.uses_audit && state.angle === 'best');
-      angleSelect.value = known ? state.angle : (current.uses_audit ? 'best' : 'rotate');
+      const rotateLabel = current.angles.length > 2 ? 'Rotate (A/B/C test)' : 'Rotate (A/B test)';
+      angleSelect.innerHTML = `<option value="rotate">${rotateLabel}</option>${options}`;
+      const known = current.angles.some((a) => a.key === state.angle) || state.angle === 'rotate';
+      angleSelect.value = known ? state.angle : 'rotate';
       state.angle = angleSelect.value;
-      el('#draft-angle').innerHTML = `${best}<option value="">Rotate</option>${options}`;
+      el('#draft-angle').innerHTML = `<option value="">Rotate</option>${options}`;
     }
 
     async function loadResults() {
@@ -538,7 +538,8 @@ const stages = [
       el<HTMLInputElement>('#draft-subject').value = item.subject || '';
       el<HTMLTextAreaElement>('#draft-body').value = item.body || '';
       el<HTMLSelectElement>('#draft-status').value = item.status;
-      el<HTMLSelectElement>('#draft-angle').value = item.angle ?? (currentCampaign()?.uses_audit ? 'best' : '');
+      const knownDrawer = currentCampaign()?.angles.some((a) => a.key === item.angle);
+      el<HTMLSelectElement>('#draft-angle').value = knownDrawer && item.angle ? item.angle : '';
       el<HTMLSelectElement>('#draft-verification').value = item.verification_status;
       el('#draft-error').classList.add('hidden');
 

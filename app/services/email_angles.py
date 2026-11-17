@@ -8,8 +8,6 @@ from typing import Any
 from app.campaigns import EV_PERMITS, SEO_WEBSITES
 
 ROTATE = "rotate"
-# Uses what's been built for the lead: the mockup link when one is published,
-# and the audit PDF attached. Resolved by the campaign's writer.
 BEST = "best"
 
 
@@ -22,43 +20,40 @@ class Angle:
 
 ANGLES: dict[str, tuple[Angle, ...]] = {
     EV_PERMITS: (
-        Angle("sample", "Sample packet", "What the packets include for their city, then offers the sample. No link."),
+        Angle("sample", "Sample packet", "City-specific permit checklist + offers a 1-page sample. No link."),
         Angle("project", "Project + routing", "Asks about upcoming jobs and who handles permitting. No link."),
     ),
     SEO_WEBSITES: (
-        Angle("website_draft", "Website draft", "A real detail from their site, 1-2 phone-checkable problems, offers a free draft. No link."),
-        Angle("free_homepage", "Website mockup", "Offers the published mockup. Needs a published demo site."),
-        Angle("chatgpt_pick", "ChatGPT pick", "Names the competitors ChatGPT recommends in their city and notes they didn't come up. Offers a breakdown."),
-        Angle("chatgpt_profile", "ChatGPT profile", "Offers to walk them through claiming a ChatGPT business profile. Off until ENABLE_CHATGPT_PROFILE_OFFER is set."),
+        Angle("chatgpt_pick", "ChatGPT pick", "Names competitors ChatGPT recommends in their city and offers the 3-bullet fix. No link."),
+        Angle("competitor_gap", "Competitor gap", "Compares their local service pages/reviews to the #1 competitor in town. No link."),
+        Angle("website_draft", "Website draft", "Flags one undeniable Maps/SSL/mobile issue and offers a free mockup. No link."),
     ),
 }
-# Angles that were retired from the menu. Old sends still report under their real name.
+
 RETIRED_LABELS: dict[str, dict[str, str]] = {
-    EV_PERMITS: {"free_packet": "Free packet", "time_back": "Hours back", "guarantee": "30-day guarantee",
-                 "who_pulls": "Submittal checklist", "drawings": "EV & panel permits", "desk_work": "Permit desk work"},
-    SEO_WEBSITES: {"audit_attached": "Audit attached", "leader_vs_you": "Leader vs you",
-                   "ai_search": "AI / ChatGPT search", "competitor": "Competitor gap", "local_gap": "Local gap"},
+    EV_PERMITS: {
+        "free_packet": "Free packet", "time_back": "Hours back", "guarantee": "30-day guarantee",
+        "who_pulls": "Submittal checklist", "drawings": "EV & panel permits", "desk_work": "Permit desk work",
+    },
+    SEO_WEBSITES: {
+        "audit_attached": "Audit attached", "leader_vs_you": "Leader vs you",
+        "ai_search": "AI / ChatGPT search", "competitor": "Competitor gap", "local_gap": "Local gap",
+        "free_homepage": "Website mockup", "chatgpt_profile": "ChatGPT profile",
+    },
 }
-# What Rotate splits between.
+
 ROTATION = {
     EV_PERMITS: ("sample", "project"),
-    SEO_WEBSITES: ("website_draft", "chatgpt_pick"),
+    SEO_WEBSITES: ("chatgpt_pick", "competitor_gap", "website_draft"),
 }
-# Angles that stay out of the menu and the automatic routing until switched on.
-PROFILE_ANGLE = "chatgpt_profile"
 
 
 def profile_offer_enabled() -> bool:
-    try:
-        from app.core.config import get_settings
-        return bool(get_settings().enable_chatgpt_profile_offer)
-    except Exception:  # settings unavailable (e.g. a bare unit test): the offer stays off
-        return False
+    return False
 
 
 def angle_options(campaign: str) -> list[dict[str, Any]]:
-    return [asdict(angle) for angle in ANGLES[campaign]
-            if angle.key != PROFILE_ANGLE or profile_offer_enabled()]
+    return [asdict(angle) for angle in ANGLES[campaign]]
 
 
 def angle_label(campaign: str, key: str | None) -> str:

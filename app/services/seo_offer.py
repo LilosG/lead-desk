@@ -1,105 +1,67 @@
-"""The Website emails: a real detail from their site, 1-2 problems they can
-check on their own phone, and an offer of a free draft. No links or attachments.
-
-Problems come only from verified data: the audit's findings (Google listing
-link, SSL, mobile speed, tappable phone number) and the site scan (viewport).
-Leads whose listing points at a social profile get no website email.
-"""
+"""The Website & AI Search emails: concrete market facts, zero fluff, no links on Email #1."""
 from __future__ import annotations
 
-from typing import Any
-
 import re
+from typing import Any
 from urllib.parse import urlparse
 
+from app.services.chatgpt_check import trade_phrase
 from app.services.outreach_audit_copy import (
     clean_business_name,
     contact_first_name,
     possessive,
     short_name,
 )
-from app.services.chatgpt_check import trade_phrase
 from pipeline.verticals import vertical_profile
 
-PROMPT_VERSION = "seo-offer-v5"
+PROMPT_VERSION = "seo-offer-v6"
 AUDIT_ATTACHED = "audit_attached"
 FREE_HOMEPAGE = "free_homepage"
 WEBSITE_DRAFT = "website_draft"
+COMPETITOR_GAP = "competitor_gap"
 CHATGPT_PICK = "chatgpt_pick"
 CHATGPT_PROFILE = "chatgpt_profile"
 ATTACHES_AUDIT: set[str] = set()
 
 _VOICE_BY_PROFILE: dict[str, dict[str, str]] = {
     "home_service": {
-        "subject_leads": "service calls",
         "buyer": "homeowners",
-        "inquiries": "service calls",
-        "map_leads": "top-3 map calls",
         "outcome": "booked jobs",
-        "search_intent": "that exact job",
         "mobile_friction": "tap-to-call, costing you calls",
     },
     "legal": {
-        "subject_leads": "case inquiries",
         "buyer": "potential clients",
-        "inquiries": "case inquiries",
-        "map_leads": "top-3 Google Maps case inquiries",
         "outcome": "signed cases",
-        "search_intent": "that exact practice area",
         "mobile_friction": "request a consultation or call, costing you potential cases",
     },
     "real_estate": {
-        "subject_leads": "client leads",
         "buyer": "buyers and sellers",
-        "inquiries": "client inquiries",
-        "map_leads": "top-3 Google Maps client leads",
         "outcome": "listings and closings",
-        "search_intent": "homes and agents in their area",
         "mobile_friction": "reach out or browse listings, costing you buyer and seller leads",
     },
     "medical_aesthetic": {
-        "subject_leads": "patient bookings",
         "buyer": "patients",
-        "inquiries": "patient inquiries",
-        "map_leads": "top-3 Google Maps patient bookings",
         "outcome": "booked appointments",
-        "search_intent": "that exact treatment",
         "mobile_friction": "book online or call, costing you patient appointments",
     },
     "dental": {
-        "subject_leads": "new patient calls",
         "buyer": "patients",
-        "inquiries": "patient inquiries",
-        "map_leads": "top-3 Google Maps patient bookings",
         "outcome": "booked appointments",
-        "search_intent": "that exact procedure",
         "mobile_friction": "book online or call, costing you new patient appointments",
     },
     "wellness_health": {
-        "subject_leads": "patient bookings",
         "buyer": "patients",
-        "inquiries": "patient inquiries",
-        "map_leads": "top-3 Google Maps patient bookings",
         "outcome": "booked appointments",
-        "search_intent": "that exact service",
         "mobile_friction": "book online or call, costing you patient appointments",
     },
     "auto": {
-        "subject_leads": "repair bookings",
         "buyer": "drivers",
-        "inquiries": "service bookings",
-        "map_leads": "top-3 Google Maps repair calls",
         "outcome": "booked repairs",
-        "search_intent": "that exact repair",
         "mobile_friction": "book or tap-to-call, costing you service appointments",
     },
     "generic_local_business": {
-        "subject_leads": "client inquiries",
         "buyer": "locals",
-        "inquiries": "client inquiries",
-        "map_leads": "top-3 Google Maps leads",
         "outcome": "new clients",
-        "search_intent": "that exact service",
         "mobile_friction": "reach out or tap-to-call, costing you client inquiries",
     },
 }
@@ -128,7 +90,7 @@ def is_social_only(context: dict[str, Any]) -> bool:
 
 
 def display_name(name: str) -> str:
-    """'Five Point Electric' -> 'Five Point', but 'Crazy Electric' stays whole rather than 'Crazy'."""
+    """'Five Point Electric' -> 'Five Point', while 'Crazy Electric' stays whole."""
     short = short_name(name)
     if len(short.split()) >= 2:
         return short
@@ -139,52 +101,6 @@ def _greeting(first_name: str | None, paragraphs: list[str]) -> str:
     return "\n\n".join([*([f"Hi {first_name},"] if first_name else []), *paragraphs])
 
 
-def _opener(domain: str, hook: dict[str, Any] | None) -> str:
-    kind = (hook or {}).get("kind")
-    value = (hook or {}).get("value")
-    detail = {
-        "since": f"saw you've been around since {value}",
-        "years": f"saw {value}+ years in business",
-        "experience": f"saw {value}+ years of experience",
-        "license": f"saw you're a licensed {value} contractor",
-        "response": f"saw you offer {value}-hour response",
-        "family": "saw you're family-owned",
-    }.get(kind) if value else None
-    if detail:
-        return f"Was on {domain} and {detail}. That's worth leading with."
-    return f"Looked through {domain} on my phone today."
-
-
-def _problems(context: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
-    """Verified, phone-checkable problems, most serious first."""
-    findings = {f.get("signal"): f for f in snapshot.get("findings") or [] if isinstance(f, dict)}
-    signals = context.get("site_signals") or {}
-    lines: list[str] = []
-    if "broken_profile_link" in findings:
-        lines.append("The website link on your Google Maps listing opens an error page, so people "
-                     "who find you on Maps hit a dead end.")
-    elif "website_not_on_gbp" in findings:
-        lines.append("Your Google Maps listing doesn't link to your website, so people who find you "
-                     "on Maps never see it.")
-    if "no_ssl" in findings:
-        lines.append("Browsers show a \"Not secure\" warning before your site loads, and a lot of "
-                     "people back out right there.")
-    speed = findings.get("psi_mobile_critical") or findings.get("psi_mobile_poor")
-    if speed:
-        lcp = (speed.get("data") or {}).get("lcp_ms")
-        if isinstance(lcp, (int, float)) and lcp >= 3000:
-            lines.append(f"On a weaker phone signal it takes about {round(lcp / 1000)} seconds before "
-                         "anything shows up, and most people are gone by then.")
-        else:
-            lines.append("It's slow to load on a phone, and most people don't wait.")
-    if signals.get("has_viewport") is False:
-        lines.append("On a phone the page shows up desktop-sized, so people have to pinch and zoom "
-                     "to read it.")
-    if "no_click_to_call" in findings or signals.get("has_click_to_call") is False:
-        lines.append("Your phone number isn't tappable on mobile, so people have to copy it to call you.")
-    return lines
-
-
 def _rival_name(raw: Any) -> str:
     """'Mauzy Cooling, Heating, Plumbing, and Electrical, Inc.' -> 'Mauzy Cooling'."""
     name = clean_business_name(str(raw or "").split(",")[0])
@@ -193,6 +109,72 @@ def _rival_name(raw: Any) -> str:
 
 def _joined(names: list[str]) -> str:
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _top_service(context: dict[str, Any]) -> str | None:
+    for raw in context.get("offering_titles") or []:
+        title = " ".join(str(raw or "").split()).strip()
+        if 3 <= len(title) <= 36 and not any(
+            w in title.lower() for w in ("home", "about", "contact", "blog", "faq", "privacy")
+        ):
+            return title.lower()
+    return None
+
+
+def _review_count(context: dict[str, Any], snapshot: dict[str, Any] | None = None) -> int:
+    biz = (snapshot or {}).get("business") if isinstance((snapshot or {}).get("business"), dict) else {}
+    val = context.get("review_count") if context.get("review_count") is not None else biz.get("review_count")
+    try:
+        return int(val or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _hard_website_issue(context: dict[str, Any], snapshot: dict[str, Any]) -> tuple[str, str] | None:
+    """One undeniable, high-conviction issue. Skips weak nitpicks."""
+    findings = {f.get("signal"): f for f in snapshot.get("findings") or [] if isinstance(f, dict)}
+    signals = context.get("site_signals") or {}
+    domain = _host(context) or "your site"
+    short = display_name(clean_business_name(context.get("name")))
+    city = (context.get("city") or "").strip()
+    where = f" in {city}" if city else ""
+    buyer = _voice(context, snapshot)["buyer"]
+
+    if "broken_profile_link" in findings:
+        return (
+            f"Tried tapping the website button on {possessive(short)} Google Maps listing{where} earlier—"
+            f"it goes to an error page, so anyone finding you on Maps hits a dead end.",
+            "cleaner",
+        )
+    if "website_not_on_gbp" in findings:
+        return (
+            f"Pulled up {short} on Google Maps{where} earlier and noticed your website isn't linked on the listing, "
+            f"so people checking you out there never reach {domain}.",
+            "cleaner",
+        )
+    if "no_ssl" in findings:
+        return (
+            f"Pulled up {domain} earlier and Chrome threw a \"Not secure\" warning before the page even loaded—"
+            f"most {buyer} back out right there.",
+            "cleaner",
+        )
+    if signals.get("has_viewport") is False:
+        return (
+            f"Pulled up {domain} on mobile earlier and the page still loads desktop-sized, "
+            f"so {buyer} have to pinch and zoom just to find your number.",
+            "mobile-friendly",
+        )
+    speed = findings.get("psi_mobile_critical")
+    if speed:
+        lcp = (speed.get("data") or {}).get("lcp_ms")
+        if isinstance(lcp, (int, float)) and lcp >= 5000:
+            sec = round(lcp / 1000)
+            return (
+                f"Pulled up {domain} on mobile earlier and it took {sec} seconds before anything showed up—"
+                f"most {buyer} bounce back to Google after 3.",
+                "faster",
+            )
+    return None
 
 
 def _chatgpt_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
@@ -212,16 +194,29 @@ def _chatgpt_email(context: dict[str, Any], angle: str) -> dict[str, str] | None
             if rival and rival not in rivals:
                 rivals.append(rival)
         rivals = rivals[:3]
-        city = context.get("city")
+        city = (context.get("city") or "").strip()
         if len(rivals) < 2 or evidence.get("prospect_named") is not False or not city:
             return None
+        trade = trade_phrase(context.get("vertical"))
+        reviews = _review_count(context, context.get("audit_snapshot"))
+        domain = _host(context)
+        site_ref = domain or "your site"
+        if reviews >= 15:
+            opener = (
+                f"Saw {short} has {reviews:,} Google reviews in {city}, so I checked who ChatGPT "
+                f"recommends for {trade} there. It named {_joined(rivals)}—{short} didn't come up."
+            )
+        else:
+            opener = (
+                f"Checked who ChatGPT recommends for {trade} in {city} today. "
+                f"It named {_joined(rivals)}—{short} didn't come up."
+            )
         paragraphs = [
-            f"I asked ChatGPT for the best {trade_phrase(context.get('vertical'))} in {city}. "
-            f"It named {_joined(rivals)}. {short} didn't come up.",
-            "People are starting to ask it who to call.",
-            f"Want me to send over a breakdown of what those businesses are doing that {short} isn't?",
+            opener,
+            f"Usually that's just 2 or 3 missing signals on {site_ref}. I noted what {rivals[0]} has "
+            f"that you're missing—want me to send the 3 bullets over?",
         ]
-        return {"subject": f"{short} on ChatGPT".lower(), "body": _greeting(first_name, paragraphs),
+        return {"subject": f"{short} on chatgpt".lower(), "body": _greeting(first_name, paragraphs),
                 "angle": CHATGPT_PICK, "note": note}
 
     domain = _host(context)
@@ -236,52 +231,109 @@ def _chatgpt_email(context: dict[str, Any], angle: str) -> dict[str, str] | None
             "angle": CHATGPT_PROFILE, "note": note}
 
 
+def _competitor_gap_email(context: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, str] | None:
+    """Service-area & local competitor gap using real market_comparison leaders."""
+    if is_social_only(context):
+        return None
+    domain = _host(context)
+    if not domain:
+        return None
+    mc = snapshot.get("market_comparison") if isinstance(snapshot.get("market_comparison"), dict) else {}
+    leaders = mc.get("leaders") or []
+    name = clean_business_name(context.get("name"))
+    short = display_name(name)
+    my_reviews = _review_count(context, snapshot)
+
+    leader_name = ""
+    leader_reviews = 0
+    for row in leaders:
+        if not isinstance(row, dict):
+            continue
+        cand = _rival_name(row.get("name"))
+        if not cand or cand.lower() == short.lower() or cand.lower() == name.lower():
+            continue
+        rev = int(row.get("review_count") or 0)
+        if rev > my_reviews:
+            leader_name = cand
+            leader_reviews = rev
+            break
+
+    city = (context.get("city") or "").strip()
+    if not leader_name or not city:
+        return None
+
+    findings = {f.get("signal") for f in snapshot.get("findings") or [] if isinstance(f, dict)}
+    if not (findings & {"no_service_city_pages", "no_service_pages"}):
+        return None
+
+    signals = context.get("site_signals") or {}
+    first_name = contact_first_name(context.get("to_address"), context.get("name"), signals.get("owner_name"))
+    note = "" if first_name else "No contact name found, so there's no greeting."
+    focus = _top_service(context) or trade_phrase(context.get("vertical"))
+    review_clause = (
+        f" ({leader_reviews:,} Google reviews vs. {possessive(short)} {my_reviews:,})"
+        if my_reviews > 0 else f" ({leader_reviews:,} Google reviews)"
+    )
+
+    paragraphs = [
+        f"Noticed {leader_name} is pulling a lot of the {city} searches for {focus} right now"
+        f"{review_clause}, mostly because they have dedicated pages for each nearby area they serve "
+        f"while {domain} lumps everything together.",
+        f"I put together a quick 3-page outline showing which local {focus} pages would help {short} "
+        f"capture those jobs. Want me to send it over?",
+    ]
+    return {
+        "subject": f"{focus} in {city}".lower()[:42].strip(),
+        "body": _greeting(first_name, paragraphs),
+        "angle": COMPETITOR_GAP,
+        "note": note,
+    }
+
+
 def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
     if angle in (CHATGPT_PICK, CHATGPT_PROFILE):
         return _chatgpt_email(context, angle)
     snapshot = context.get("audit_snapshot")
     if not isinstance(snapshot, dict) or is_social_only(context):
         return None
+    if angle == COMPETITOR_GAP:
+        return _competitor_gap_email(context, snapshot)
+
     name = clean_business_name(context.get("name"))
-    short = short_name(name)
+    short = display_name(name)
     signals = context.get("site_signals") or {}
     first_name = contact_first_name(context.get("to_address"), context.get("name"),
                                     signals.get("owner_name"))
     demo_url = context.get("demo_url") or (snapshot.get("next_step") or {}).get("demo_url")
     note = "" if first_name else "No contact name found, so there's no greeting."
+    service = _top_service(context)
+    page_label = f"{service} page" if service else "homepage"
 
     if angle == FREE_HOMEPAGE and demo_url:
-        city = context.get("city")
+        city = (context.get("city") or "").strip()
         where = f" in {city}" if city else ""
-        voice = _voice(context, snapshot)
+        reviews = _review_count(context, snapshot)
+        rep = f"has {reviews:,} solid reviews{where}" if reviews >= 15 else f"is well-reviewed{where}"
         paragraphs = [
-            f"Looked through {possessive(short)} site on my phone today. You guys have solid reviews, "
-            f"but the current layout makes it tough for mobile visitors to {voice['mobile_friction']}{where}.",
-            f"Rather than sending a boring SEO audit, I used our internal tool to build an interactive, "
-            f"mobile-optimized mockup of what {possessive(short)} homepage should look like.",
-            "Mind if I shoot over the preview link? No strings attached, just wanted to share the build.",
+            f"Saw {short} {rep}, so I mocked up a cleaner, mobile-first version of your {page_label} "
+            f"to match your reputation.",
+            "Mind if I shoot over the preview link? No strings attached—just wanted to share the build.",
         ]
         return {"subject": f"redesign for {short}".lower(), "body": _greeting(first_name, paragraphs),
                 "angle": FREE_HOMEPAGE, "note": note}
 
-    domain = _host(context)
-    problems = _problems(context, snapshot)
-    if not domain or not problems:
+    issue = _hard_website_issue(context, snapshot)
+    if not issue:
         return None
-    paragraphs = [_opener(domain, signals.get("site_hook"))]
-    lead = "A couple of things are probably costing you calls, though." if len(problems) > 1 else \
-        "One thing is probably costing you calls, though."
-    paragraphs.append(" ".join([lead, *problems[:2]]))
+    issue_line, quality = issue
+    paragraphs = [issue_line]
     if signals.get("site_builder") == "toast":
         paragraphs.append("I moved a restaurant group's sites off Toast's builder onto their own fast "
                           "site and kept ordering on Toast.")
-    findings = {f.get("signal") for f in snapshot.get("findings") or [] if isinstance(f, dict)}
-    slow = bool(findings & {"psi_mobile_critical", "psi_mobile_poor"})
-    quality = "faster" if slow else "cleaner"
-    paragraphs.append(f"I put together a draft of a {quality}, mobile-friendly version. Want me to send it over?")
-    if not signals.get("site_hook"):
-        note = (note + " No homepage detail found, so it opens on the site itself.").strip()
-    return {"subject": f"{display_name(name)} website".lower(), "body": _greeting(first_name, paragraphs),
+    paragraphs.append(f"I mocked up a {quality}, mobile-friendly version of {possessive(short)} {page_label} "
+                      f"so you can see how it'd look. Want me to send the link over?")
+    subj = f"{short} — {service}".lower() if service else f"{short} website".lower()
+    return {"subject": subj[:42].strip(), "body": _greeting(first_name, paragraphs),
             "angle": WEBSITE_DRAFT, "note": note}
 
 
@@ -292,9 +344,13 @@ def write_follow_up(context: dict[str, Any], step: int) -> str:
     first_name = contact_first_name(context.get("to_address"), context.get("name"),
                                     signals.get("owner_name"))
     short = display_name(name)
-    ask = {
-        CHATGPT_PICK: f"Want me to send over the breakdown of what those businesses are doing on ChatGPT that {short} isn't?",
-        CHATGPT_PROFILE: f"Want me to walk you through claiming {possessive(short)} ChatGPT profile?",
-    }.get(context.get("angle"),
-          f"Want me to send over that mobile-friendly homepage draft for {short} so you can take a look?")
-    return _greeting(first_name, [f"Quick bump on this. {ask}"])
+    asset = {
+        CHATGPT_PICK: "3 ChatGPT bullets",
+        CHATGPT_PROFILE: "ChatGPT profile steps",
+        COMPETITOR_GAP: "3 local page ideas",
+    }.get(context.get("angle"), "homepage draft")
+    return _greeting(
+        first_name,
+        [f"Quick bump—already have those {asset} for {short} pulled together. "
+         f"Worth sending over, or not a priority right now?"],
+    )

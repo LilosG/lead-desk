@@ -422,6 +422,8 @@ class OutreachService:
         qualified: list[str] = []
         if seo_offer.write_email(context, seo_offer.WEBSITE_DRAFT) is not None:
             qualified.append(seo_offer.WEBSITE_DRAFT)
+        if seo_offer.write_email(context, seo_offer.COMPETITOR_GAP) is not None:
+            qualified.append(seo_offer.COMPETITOR_GAP)
         evidence = self._chatgpt_gap(context)
         if evidence is not None:
             qualified.append(seo_offer.CHATGPT_PICK)
@@ -511,8 +513,8 @@ class OutreachService:
 
         if uses_audit:
             raise OutreachBlocked(
-                "No verified website issue found for Website draft; "
-                "switch angle to Rotate or ChatGPT pick."
+                "No verified gap found for that angle; "
+                "switch angle to Rotate, ChatGPT pick, or Competitor gap."
             )
         if self.generator is None:
             raise OutreachIntegrationUnavailable(
