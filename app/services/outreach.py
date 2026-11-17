@@ -763,8 +763,6 @@ class OutreachService:
                 subject=follow_up["subject"],
                 body=follow_up["body"],
                 message_id_header=follow_up["message_id_header"],
-                in_reply_to=item.get("first_message_id"),
-                thread_id=item.get("gmail_thread_id"),
             )
         except GmailDraftError as exc:
             raise OutreachIntegrationUnavailable(str(exc)) from exc
