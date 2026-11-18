@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import parseaddr
+import re
+from typing import Any
 
 import requests
 
@@ -313,8 +315,42 @@ class GmailDraftClient:
         )
 
 
-    def list_inbound_replies(self, *, days: int = 90) -> list[dict[str, str]]:
-        """Return inbound human messages (thread_id + sender_email) from the last N days."""
+    @staticmethod
+    def _decode_b64url(data: str) -> str:
+        if not data:
+            return ""
+        padded = data + "=" * (-len(data) % 4)
+        try:
+            return base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    @classmethod
+    def _extract_body_text(cls, payload: dict[str, Any]) -> str:
+        plain_parts: list[str] = []
+        html_parts: list[str] = []
+
+        def walk(part: dict[str, Any]) -> None:
+            mime = str(part.get("mimeType") or "").lower()
+            body_data = (part.get("body") or {}).get("data")
+            if body_data and mime == "text/plain":
+                plain_parts.append(cls._decode_b64url(str(body_data)))
+            elif body_data and mime == "text/html":
+                html_parts.append(cls._decode_b64url(str(body_data)))
+            for child in part.get("parts") or []:
+                if isinstance(child, dict):
+                    walk(child)
+
+        walk(payload)
+        if plain_parts:
+            return "\n".join(plain_parts).strip()
+        if html_parts:
+            raw_html = "\n".join(html_parts)
+            return re.sub(r"<[^>]+>", " ", raw_html).strip()
+        return ""
+
+    def list_inbound_replies(self, *, days: int = 90) -> list[dict[str, Any]]:
+        """Return inbound messages (including bounces/OOO) with extracted text for classification."""
         access_token = self._access_token()
         self._assert_sender_account(access_token)
         msg_ids: list[str] = []
@@ -351,45 +387,75 @@ class GmailDraftClient:
             return []
 
         own_email = self.sender_email.strip().lower()
+        email_re = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
-        def fetch_meta(mid: str) -> dict[str, str] | None:
+        def fetch_msg(mid: str) -> dict[str, Any] | None:
             try:
                 res = requests.get(
                     f"{GMAIL_MESSAGES_URL}/{mid}",
                     headers={"Authorization": f"Bearer {access_token}"},
-                    params=[
-                        ("format", "metadata"),
-                        ("metadataHeaders", "From"),
-                        ("metadataHeaders", "Auto-Submitted"),
-                        ("metadataHeaders", "X-Autoreply"),
-                    ],
+                    params={"format": "full"},
                     timeout=self.timeout_seconds,
                 )
             except requests.RequestException:
                 return None
             if not res.ok:
                 return None
-            payload = res.json()
+            data = res.json()
+            payload = data.get("payload") or {}
             headers = {
                 str(h.get("name", "")).lower(): str(h.get("value", ""))
-                for h in (payload.get("payload", {}).get("headers") or [])
+                for h in (payload.get("headers") or [])
             }
             sender = parseaddr(headers.get("from", ""))[1].strip().lower()
             if not sender or sender == own_email:
                 return None
-            if any(b in sender for b in ("mailer-daemon@", "postmaster@", "noreply@", "no-reply@")):
-                return None
+
+            subject = headers.get("subject", "").strip()
+            snippet = str(data.get("snippet") or "").strip()
+            body_text = self._extract_body_text(payload) or snippet
+            # Strip quoted reply history so the classifier focuses on the new message
+            clean_lines = []
+            for line in body_text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith(">") or re.match(r"^On .+ wrote:$", stripped):
+                    break
+                clean_lines.append(line)
+            clean_body = ("\n".join(clean_lines).strip() or body_text)[:1500]
+
+            failed_rcpts = headers.get("x-failed-recipients", "")
+            is_bounce_header = (
+                any(b in sender for b in ("mailer-daemon@", "postmaster@"))
+                or bool(failed_rcpts.strip())
+                or subject.lower().startswith(("delivery status notification", "undeliverable:", "mail delivery failed"))
+            )
             auto_sub = headers.get("auto-submitted", "").strip().lower()
-            if (auto_sub and auto_sub != "no") or headers.get("x-autoreply"):
-                return None
+            is_auto_reply_header = (
+                (bool(auto_sub) and auto_sub != "no")
+                or bool(headers.get("x-autoreply"))
+                or bool(headers.get("x-auto-response-suppress"))
+            )
+
+            mentioned = {
+                m.lower()
+                for m in email_re.findall(f"{failed_rcpts}\n{snippet}\n{body_text[:2000]}")
+                if m.lower() != own_email
+            }
+
             return {
-                "thread_id": str(payload.get("threadId") or ""),
-                "sender_email": sender,
+                "thread_id": str(data.get("threadId") or ""),
                 "message_id": mid,
+                "sender_email": sender,
+                "subject": subject,
+                "snippet": snippet,
+                "body": clean_body,
+                "is_bounce_header": is_bounce_header,
+                "is_auto_reply_header": is_auto_reply_header,
+                "mentioned_emails": sorted(mentioned),
             }
 
         with ThreadPoolExecutor(max_workers=10) as pool:
-            return [r for r in pool.map(fetch_meta, msg_ids) if r is not None]
+            return [r for r in pool.map(fetch_msg, msg_ids) if r is not None]
 
     def _assert_sender_account(self, access_token: str) -> None:
         try:

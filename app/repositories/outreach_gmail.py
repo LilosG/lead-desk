@@ -138,6 +138,121 @@ class OutreachGmailRepository:
                     )
                     return True
 
+
+    def mark_closed_from_gmail(
+        self,
+        item_id: str,
+        *,
+        thread_id: str | None = None,
+        sender_email: str | None = None,
+        reason: str = "declined",
+    ) -> bool:
+        """Move a contacted lead to Closed (archived) when a polite/hard no is detected."""
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set status = 'archived',
+                            gmail_thread_id = coalesce(gmail_thread_id, nullif(%s, '')),
+                            version = version + 1,
+                            updated_at = now()
+                        where id = %s::uuid
+                          and status = 'contacted'
+                        returning place_id
+                        """,
+                        (thread_id or "", item_id),
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        return False
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (
+                            queue_id, place_id, event_type, changes
+                        ) values (%s::uuid, %s, 'gmail_reply_closed', %s)
+                        """,
+                        (
+                            item_id,
+                            row["place_id"],
+                            Jsonb({
+                                "thread_id": thread_id,
+                                "sender_email": sender_email,
+                                "reason": reason,
+                            }),
+                        ),
+                    )
+                    return True
+
+    def mark_suppressed_from_gmail(
+        self,
+        item_id: str,
+        *,
+        thread_id: str | None = None,
+        sender_email: str | None = None,
+        reason: str = "unsubscribed",
+    ) -> bool:
+        """Suppress a lead and add its email to suppression on bounce or opt-out."""
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        select place_id, to_address
+                        from outreach_queue
+                        where id = %s::uuid
+                          and status = 'contacted'
+                        for update
+                        """,
+                        (item_id,),
+                    )
+                    item = cur.fetchone()
+                    if item is None:
+                        return False
+                    target_email = (item.get("to_address") or sender_email or "").strip().lower()
+                    if target_email:
+                        cur.execute(
+                            """
+                            insert into suppression (email, reason)
+                            values (lower(%s), %s)
+                            on conflict (email) do update set reason = excluded.reason
+                            """,
+                            (target_email, reason),
+                        )
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set status = 'suppressed',
+                            gmail_thread_id = coalesce(gmail_thread_id, nullif(%s, '')),
+                            version = version + 1,
+                            updated_at = now()
+                        where place_id = %s
+                          and status <> 'suppressed'
+                        returning id::text as id
+                        """,
+                        (thread_id or "", item["place_id"]),
+                    )
+                    changed = [r["id"] for r in cur.fetchall()]
+                    for qid in changed:
+                        cur.execute(
+                            """
+                            insert into outreach_queue_events (
+                                queue_id, place_id, event_type, changes
+                            ) values (%s::uuid, %s, 'gmail_reply_suppressed', %s)
+                            """,
+                            (
+                                qid,
+                                item["place_id"],
+                                Jsonb({
+                                    "thread_id": thread_id,
+                                    "sender_email": target_email or sender_email,
+                                    "reason": reason,
+                                }),
+                            ),
+                        )
+                    return len(changed) > 0
+
     def reopen_unsent(self, item_id: str) -> bool:
         """Undo a 'left Gmail' that was a deleted draft, not a send.
 
