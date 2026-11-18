@@ -99,6 +99,11 @@ PERMIT_JOBS_SQL = PERMIT_JOBS_PATTERN.replace(r"\b", r"\y")
 # chargers, so the EV line makes no city claim there. These are EV-only: no
 # other job type gets a city-specific claim.
 EV_PERMIT_CITIES: dict[tuple[str, str], dict[str, str]] = {
+    ("Denver", "CO"): {
+        "fit": "full",
+        "asks_for": "a load calculation and one-line diagram",
+        "source": "https://www.denvergov.org/Government/Agencies-Departments-Offices/Agencies-Departments-Offices-Directory/Community-Planning-and-Development/Building-Permits/Electrical-Permits",
+    },
     ("Oro Valley", "AZ"): {
         "fit": "full",
         "asks_for": "a site plan, one-line diagram and load calculation",

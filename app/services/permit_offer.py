@@ -1,4 +1,4 @@
-"""The Permit Packets emails: two distinct, high-converting cold email angles."""
+"""The Permit Packets emails: three distinct cold email angles (A/B/C test), zero em-dashes."""
 from __future__ import annotations
 
 import re
@@ -17,7 +17,7 @@ from app.services.outreach_audit_copy import (
     short_name,
 )
 
-PROMPT_VERSION = "permit-offer-v6"
+PROMPT_VERSION = "permit-offer-v8"
 _EV_WORDS = re.compile(EV_SERVICE_PATTERN, re.I)
 _PERMIT_WORDS = re.compile(PERMIT_JOBS_PATTERN, re.I)
 
@@ -96,7 +96,7 @@ def _site_job_focus(ctx: dict[str, Any]) -> str | None:
 
 
 def _sample(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    """Angle A: Observation opener + Minutes-vs-Hours speed + AutoCAD DXF included."""
+    """Angle A: Observation opener + light commercial + sign-off ready + AutoCAD DXF."""
     city, short = ctx["city"], ctx["short"]
     focus = _site_job_focus(ctx)
     where = f" in {city}" if city else ""
@@ -112,31 +112,54 @@ def _sample(ctx: dict[str, Any]) -> tuple[str, list[str]]:
 
     return subject.lower(), [
         opener,
-        f"We built a simple tool set up around {checklist_ref} that turns basic job details into a "
-        "submission-ready packet in minutes instead of hours. It builds the scaled site plan, one-line, "
-        "NEC 220.82 load calc, and editable AutoCAD DXF files automatically.",
-        f"Put together a {sample_ref} so you can see the output—want me to send it over?",
+        f"We built a simple tool set up around {checklist_ref} for residential and light commercial jobs. "
+        "Enter basic field specs and get a complete packet ready for your sign-off and city submission, "
+        "with editable AutoCAD DXF files included, in minutes instead of hours.",
+        f"Put together a {sample_ref} so you can verify the drawings. Want me to send it over?",
     ]
 
 
 def _project(ctx: dict[str, Any]) -> tuple[str, list[str]]:
-    """Angle B: Workflow/AutoCAD question opener + Outside-drafter vs In-house contrast."""
+    """Angle B: Workflow/AutoCAD routing question + outside-drafter vs in-house contrast."""
     city, short = ctx["city"], ctx["short"]
     where = f" in {city}" if city else ""
     checklist_ref = f"{city}'s checklist" if city else "local city checklists"
 
     return f"permits at {short}".lower(), [
-        f"Quick question—who handles the site plans, load calcs, and AutoCAD drawings when {short} pulls permits{where}?",
-        "Most shops we talk to either wait days on outside drafters or burn hours doing them in-house. "
-        f"We built a simple tool configured for {checklist_ref} that generates a submission-ready PDF packet "
-        "and editable DXF files in a few minutes.",
-        "Happy to send over a sample packet so you can see how clean the drawings are—want me to shoot it over?",
+        f"Quick question: who handles the site plans, load calcs, and AutoCAD drawings when {short} "
+        f"pulls residential or light commercial permits{where}?",
+        "Most shops we talk to either wait days on outside drafters or burn nights doing them in-house. "
+        f"We built a simple tool configured for {checklist_ref} that generates a packet ready for your "
+        "sign-off, with editable AutoCAD DXF files included, in a few minutes.",
+        "Happy to send over a sample packet so you can check the quality. Want me to shoot it over?",
+    ]
+
+
+def _origin(ctx: dict[str, Any]) -> tuple[str, list[str]]:
+    """Angle C: Contractor origin story (stopped passing on jobs due to drawing time)."""
+    city, short = ctx["city"], ctx["short"]
+    checklist_ref = f"{city}'s checklist" if city else "your city's checklist"
+    sample_ref = f"sample {city} packet" if city else "sample packet"
+    passed_jobs = (
+        "panel upgrades and light commercial jobs"
+        if _is_simple_ev_city(ctx)
+        else "EV charger and upgrade jobs"
+    )
+
+    return f"permit drawings at {short}".lower(), [
+        f"One of the electrical contractors we work with told us he was passing on {passed_jobs} "
+        "just because the permit drawings took too long.",
+        f"We built a simple tool around {checklist_ref} that turns basic job details into a packet "
+        "ready for your sign-off and submission, with editable AutoCAD DXF files included, in minutes "
+        "instead of hours.",
+        f"Put together a {sample_ref} so you can verify the drawings. Want me to send it over?",
     ]
 
 
 _WRITERS = {
     "sample": _sample,
     "project": _project,
+    "origin": _origin,
 }
 
 
@@ -184,10 +207,10 @@ def write_follow_up(context: dict[str, Any], step: int) -> str:
     )
     if facts["first_name"]:
         matching = f"a matching {city} sample packet" if city else "a matching sample packet"
-        paragraph = (f"Quick bump—which do you pull more permits for at {short} right now, "
+        paragraph = (f"Quick bump on this. Which do you pull more permits for at {short} right now, "
                      f"{job_choices}? Happy to send over {matching} (PDF + AutoCAD DXF).")
     else:
         packet = f"a sample {city} packet" if city else "a sample packet"
-        paragraph = (f"Quick bump on this—who handles pulling electrical permits at {short}? "
+        paragraph = (f"Quick bump on this. Who handles pulling electrical permits at {short}? "
                      f"Happy to send {packet} (PDF + AutoCAD DXF) their way.")
     return _with_greeting(facts, [paragraph])

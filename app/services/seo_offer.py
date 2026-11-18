@@ -142,7 +142,7 @@ def _hard_website_issue(context: dict[str, Any], snapshot: dict[str, Any]) -> tu
 
     if "broken_profile_link" in findings:
         return (
-            f"Tried tapping the website button on {possessive(short)} Google Maps listing{where} earlier—"
+            f"Tried tapping the website button on {possessive(short)} Google Maps listing{where} earlier, "
             f"it goes to an error page, so anyone finding you on Maps hits a dead end.",
             "cleaner",
         )
@@ -154,7 +154,7 @@ def _hard_website_issue(context: dict[str, Any], snapshot: dict[str, Any]) -> tu
         )
     if "no_ssl" in findings:
         return (
-            f"Pulled up {domain} earlier and Chrome threw a \"Not secure\" warning before the page even loaded—"
+            f"Pulled up {domain} earlier and Chrome threw a \"Not secure\" warning before the page even loaded, "
             f"most {buyer} back out right there.",
             "cleaner",
         )
@@ -170,7 +170,7 @@ def _hard_website_issue(context: dict[str, Any], snapshot: dict[str, Any]) -> tu
         if isinstance(lcp, (int, float)) and lcp >= 5000:
             sec = round(lcp / 1000)
             return (
-                f"Pulled up {domain} on mobile earlier and it took {sec} seconds before anything showed up—"
+                f"Pulled up {domain} on mobile earlier and it took {sec} seconds before anything showed up, "
                 f"most {buyer} bounce back to Google after 3.",
                 "faster",
             )
@@ -204,17 +204,17 @@ def _chatgpt_email(context: dict[str, Any], angle: str) -> dict[str, str] | None
         if reviews >= 15:
             opener = (
                 f"Saw {short} has {reviews:,} Google reviews in {city}, so I checked who ChatGPT "
-                f"recommends for {trade} there. It named {_joined(rivals)}—{short} didn't come up."
+                f"recommends for {trade} there. It named {_joined(rivals)}, {short} didn't come up."
             )
         else:
             opener = (
                 f"Checked who ChatGPT recommends for {trade} in {city} today. "
-                f"It named {_joined(rivals)}—{short} didn't come up."
+                f"It named {_joined(rivals)}, {short} didn't come up."
             )
         paragraphs = [
             opener,
             f"Usually that's just 2 or 3 missing signals on {site_ref}. I noted what {rivals[0]} has "
-            f"that you're missing—want me to send the 3 bullets over?",
+            f"that you're missing, want me to send the 3 bullets over?",
         ]
         return {"subject": f"{short} on chatgpt".lower(), "body": _greeting(first_name, paragraphs),
                 "angle": CHATGPT_PICK, "note": note}
@@ -317,7 +317,7 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
         paragraphs = [
             f"Saw {short} {rep}, so I mocked up a cleaner, mobile-first version of your {page_label} "
             f"to match your reputation.",
-            "Mind if I shoot over the preview link? No strings attached—just wanted to share the build.",
+            "Mind if I shoot over the preview link? No strings attached, just wanted to share the build.",
         ]
         return {"subject": f"redesign for {short}".lower(), "body": _greeting(first_name, paragraphs),
                 "angle": FREE_HOMEPAGE, "note": note}
@@ -332,7 +332,7 @@ def write_email(context: dict[str, Any], angle: str) -> dict[str, str] | None:
                           "site and kept ordering on Toast.")
     paragraphs.append(f"I mocked up a {quality}, mobile-friendly version of {possessive(short)} {page_label} "
                       f"so you can see how it'd look. Want me to send the link over?")
-    subj = f"{short} — {service}".lower() if service else f"{short} website".lower()
+    subj = f"{short}, {service}".lower() if service else f"{short} website".lower()
     return {"subject": subj[:42].strip(), "body": _greeting(first_name, paragraphs),
             "angle": WEBSITE_DRAFT, "note": note}
 
@@ -351,6 +351,6 @@ def write_follow_up(context: dict[str, Any], step: int) -> str:
     }.get(context.get("angle"), "homepage draft")
     return _greeting(
         first_name,
-        [f"Quick bump—already have those {asset} for {short} pulled together. "
+        [f"Quick bump: already have those {asset} for {short} pulled together. "
          f"Worth sending over, or not a priority right now?"],
     )
