@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from email.message import EmailMessage
+from email.utils import parseaddr
 
 import requests
 
@@ -10,12 +12,17 @@ import requests
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GMAIL_PROFILE_URL = "https://gmail.googleapis.com/gmail/v1/users/me/profile"
 GMAIL_DRAFTS_URL = "https://gmail.googleapis.com/gmail/v1/users/me/drafts"
+GMAIL_MESSAGES_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
 
 
 class GmailDraftError(RuntimeError):
     def __init__(self, message: str, *, uncertain_side_effect: bool = False) -> None:
         super().__init__(message)
         self.uncertain_side_effect = uncertain_side_effect
+
+
+class GmailReadScopeMissingError(GmailDraftError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -304,6 +311,85 @@ class GmailDraftClient:
             draft_id=draft_id,
             message_id=str(message_id) if message_id else None,
         )
+
+
+    def list_inbound_replies(self, *, days: int = 90) -> list[dict[str, str]]:
+        """Return inbound human messages (thread_id + sender_email) from the last N days."""
+        access_token = self._access_token()
+        self._assert_sender_account(access_token)
+        msg_ids: list[str] = []
+        page_token: str | None = None
+        while len(msg_ids) < 1000:
+            params: dict[str, str | int] = {
+                "q": f"-from:me -in:drafts -in:spam -in:trash newer_than:{days}d",
+                "maxResults": 500,
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            try:
+                response = requests.get(
+                    GMAIL_MESSAGES_URL,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    params=params,
+                    timeout=self.timeout_seconds,
+                )
+            except requests.RequestException as exc:
+                raise GmailDraftError("Gmail message list request failed") from exc
+            if response.status_code == 403 and "SCOPE_INSUFFICIENT" in (response.text or ""):
+                raise GmailReadScopeMissingError("Gmail read permission not granted yet")
+            if not response.ok:
+                raise GmailDraftError(
+                    f"Gmail message list returned {response.status_code}: {response.text[:500]}"
+                )
+            data = response.json()
+            msg_ids.extend(str(m["id"]) for m in data.get("messages") or [] if m.get("id"))
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+
+        if not msg_ids:
+            return []
+
+        own_email = self.sender_email.strip().lower()
+
+        def fetch_meta(mid: str) -> dict[str, str] | None:
+            try:
+                res = requests.get(
+                    f"{GMAIL_MESSAGES_URL}/{mid}",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    params=[
+                        ("format", "metadata"),
+                        ("metadataHeaders", "From"),
+                        ("metadataHeaders", "Auto-Submitted"),
+                        ("metadataHeaders", "X-Autoreply"),
+                    ],
+                    timeout=self.timeout_seconds,
+                )
+            except requests.RequestException:
+                return None
+            if not res.ok:
+                return None
+            payload = res.json()
+            headers = {
+                str(h.get("name", "")).lower(): str(h.get("value", ""))
+                for h in (payload.get("payload", {}).get("headers") or [])
+            }
+            sender = parseaddr(headers.get("from", ""))[1].strip().lower()
+            if not sender or sender == own_email:
+                return None
+            if any(b in sender for b in ("mailer-daemon@", "postmaster@", "noreply@", "no-reply@")):
+                return None
+            auto_sub = headers.get("auto-submitted", "").strip().lower()
+            if (auto_sub and auto_sub != "no") or headers.get("x-autoreply"):
+                return None
+            return {
+                "thread_id": str(payload.get("threadId") or ""),
+                "sender_email": sender,
+                "message_id": mid,
+            }
+
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            return [r for r in pool.map(fetch_meta, msg_ids) if r is not None]
 
     def _assert_sender_account(self, access_token: str) -> None:
         try:

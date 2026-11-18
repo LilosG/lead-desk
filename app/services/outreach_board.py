@@ -6,7 +6,7 @@ from math import ceil
 from typing import Any, Literal
 
 from app.campaigns import CAMPAIGNS, EV_PERMITS, PERMIT_JOB_LABELS, get_campaign
-from app.integrations.gmail import GmailDraftClient, GmailDraftError
+from app.integrations.gmail import GmailDraftClient, GmailDraftError, GmailReadScopeMissingError
 from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
 from app.services.email_angles import angle_label, angle_options
@@ -226,13 +226,8 @@ class OutreachBoardService:
                             "Only drafts the Gmail check marked as contacted, with no follow-up yet, can be moved back"})
         return {"reopened": sum(r["ok"] for r in results), "results": results}
 
-    def sync_gmail(self) -> dict[str, int]:
-        """Find drafts that have left Gmail, meaning they were sent or deleted.
-
-        gmail.compose can list drafts but not read the Sent folder, so the two
-        can't be told apart. Mike's workflow sends what it drafts, so a draft
-        that's gone counts as contacted, and the row says how it was detected.
-        """
+    def sync_gmail(self) -> dict[str, Any]:
+        """Find drafts that left Gmail (sent/deleted) and detect inbound replies."""
         if self.gmail is None:
             raise OutreachIntegrationUnavailable("Gmail isn't connected")
         started = datetime.now(timezone.utc)
@@ -249,4 +244,38 @@ class OutreachBoardService:
         for follow_up in self.gmail_repository.open_follow_ups():
             if follow_up["gmail_draft_id"] not in live:
                 self.gmail_repository.mark_follow_up_left_gmail(follow_up["id"])
-        return {"checked": len(open_items), "moved_to_contacted": moved}
+
+        replied = 0
+        reply_sync_needs_reconnect = False
+        try:
+            inbound = self.gmail.list_inbound_replies(days=90)
+        except GmailReadScopeMissingError:
+            inbound = []
+            reply_sync_needs_reconnect = True
+
+        if inbound:
+            replied_threads = {m["thread_id"] for m in inbound if m.get("thread_id")}
+            replied_senders = {m["sender_email"] for m in inbound if m.get("sender_email")}
+            sender_to_thread = {
+                m["sender_email"]: m["thread_id"]
+                for m in inbound
+                if m.get("sender_email") and m.get("thread_id")
+            }
+            for item in self.gmail_repository.open_contacted_items():
+                tid = (item.get("gmail_thread_id") or "").strip()
+                addr = (item.get("to_address") or "").strip().lower()
+                if (tid and tid in replied_threads) or (addr and addr in replied_senders):
+                    matched_tid = tid or sender_to_thread.get(addr)
+                    if self.gmail_repository.mark_replied_from_gmail(
+                        item["id"],
+                        thread_id=matched_tid,
+                        sender_email=addr or None,
+                    ):
+                        replied += 1
+
+        return {
+            "checked": len(open_items),
+            "moved_to_contacted": moved,
+            "moved_to_replied": replied,
+            "reply_sync_needs_reconnect": reply_sync_needs_reconnect,
+        }

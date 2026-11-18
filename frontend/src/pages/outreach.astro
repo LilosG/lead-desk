@@ -508,11 +508,20 @@ const stages = [
       try {
         const result = await api('/api/outreach/gmail/sync', { method: 'POST' });
         sessionStorage.setItem(SYNC_KEY, String(Date.now()));
+        const notes: string[] = [];
         if (result.moved_to_contacted) {
-          showNote(`${result.moved_to_contacted} draft${result.moved_to_contacted === 1 ? ' has' : 's have'} left Gmail (sent or deleted), so ${result.moved_to_contacted === 1 ? 'it moved' : 'they moved'} to Contacted.`);
+          notes.push(`${result.moved_to_contacted} draft${result.moved_to_contacted === 1 ? ' has' : 's have'} left Gmail (sent or deleted), so ${result.moved_to_contacted === 1 ? 'it moved' : 'they moved'} to Contacted.`);
+        }
+        if (result.moved_to_replied) {
+          notes.push(`${result.moved_to_replied} new repl${result.moved_to_replied === 1 ? 'y' : 'ies'} detected in Gmail and moved to Replied.`);
+        }
+        if (notes.length) {
+          showNote(notes.join(' '));
           await loadBoard();
+        } else if (result.reply_sync_needs_reconnect && manual) {
+          showNote(`Checked ${result.checked} draft${result.checked === 1 ? '' : 's'}. Reconnect Gmail in Settings once to enable automatic reply detection.`);
         } else if (manual) {
-          showNote(`Checked ${result.checked} draft${result.checked === 1 ? '' : 's'}. Nothing has left Gmail.`);
+          showNote(`Checked ${result.checked} draft${result.checked === 1 ? '' : 's'}. Nothing new in Gmail.`);
         }
       } catch (error) {
         if (manual) showError(error);

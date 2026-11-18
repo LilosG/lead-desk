@@ -82,6 +82,62 @@ class OutreachGmailRepository:
                     )
                     return True
 
+
+    def open_contacted_items(self) -> list[dict[str, Any]]:
+        """Contacted email leads waiting for a reply."""
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select q.id::text as id, q.place_id, q.gmail_thread_id, q.to_address
+                    from outreach_queue q
+                    where q.channel = 'email'
+                      and q.status = 'contacted'
+                    """
+                )
+                return cur.fetchall()
+
+    def mark_replied_from_gmail(
+        self,
+        item_id: str,
+        *,
+        thread_id: str | None = None,
+        sender_email: str | None = None,
+    ) -> bool:
+        """Move a contacted lead to replied when an inbound Gmail message is detected."""
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        update outreach_queue
+                        set status = 'replied',
+                            gmail_thread_id = coalesce(gmail_thread_id, nullif(%s, '')),
+                            version = version + 1,
+                            updated_at = now()
+                        where id = %s::uuid
+                          and status = 'contacted'
+                        returning place_id
+                        """,
+                        (thread_id or "", item_id),
+                    )
+                    row = cur.fetchone()
+                    if row is None:
+                        return False
+                    cur.execute(
+                        """
+                        insert into outreach_queue_events (
+                            queue_id, place_id, event_type, changes
+                        ) values (%s::uuid, %s, 'gmail_reply_detected', %s)
+                        """,
+                        (
+                            item_id,
+                            row["place_id"],
+                            Jsonb({"thread_id": thread_id, "sender_email": sender_email}),
+                        ),
+                    )
+                    return True
+
     def reopen_unsent(self, item_id: str) -> bool:
         """Undo a 'left Gmail' that was a deleted draft, not a send.
 

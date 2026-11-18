@@ -14,6 +14,7 @@ from app.repositories.integrations import IntegrationRepository
 
 GMAIL_PROVIDER = "gmail"
 GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.compose"
+GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
@@ -69,7 +70,7 @@ class GmailIntegrationService:
             "client_id": self.settings.gmail_client_id,
             "redirect_uri": self.redirect_uri,
             "response_type": "code",
-            "scope": f"openid email {GMAIL_SCOPE}",
+            "scope": f"openid email {GMAIL_SCOPE} {GMAIL_READONLY_SCOPE}",
             "access_type": "offline",
             "include_granted_scopes": "true",
             "prompt": "select_account consent",
@@ -138,14 +139,14 @@ class GmailIntegrationService:
         # screen. Without gmail.compose every draft fails with a 403 later,
         # so refuse the connection now and say why.
         scopes = str(payload.get("scope") or "").split()
-        if scopes and GMAIL_SCOPE not in scopes:
+        if scopes and (GMAIL_SCOPE not in scopes or GMAIL_READONLY_SCOPE not in scopes):
             raise MissingGmailPermission(
-                "Google didn't grant the Gmail drafts permission"
+                "Google didn't grant both Gmail draft and read permissions — tick both boxes on Google's screen"
             )
 
         cipher = self._cipher()
         encrypted = cipher.encrypt(refresh_token, aad=GMAIL_PROVIDER)
-        scopes = scopes or f"openid email {GMAIL_SCOPE}".split()
+        scopes = scopes or f"openid email {GMAIL_SCOPE} {GMAIL_READONLY_SCOPE}".split()
         return self.repository.upsert_credential(
             GMAIL_PROVIDER,
             account_email=account_email,
