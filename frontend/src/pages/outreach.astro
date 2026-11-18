@@ -513,7 +513,13 @@ const stages = [
           notes.push(`${result.moved_to_contacted} draft${result.moved_to_contacted === 1 ? ' has' : 's have'} left Gmail (sent or deleted), so ${result.moved_to_contacted === 1 ? 'it moved' : 'they moved'} to Contacted.`);
         }
         if (result.moved_to_replied) {
-          notes.push(`${result.moved_to_replied} new repl${result.moved_to_replied === 1 ? 'y' : 'ies'} detected in Gmail and moved to Replied.`);
+          notes.push(`${result.moved_to_replied} interested repl${result.moved_to_replied === 1 ? 'y' : 'ies'} moved to Replied.`);
+        }
+        if (result.moved_to_closed) {
+          notes.push(`${result.moved_to_closed} declined repl${result.moved_to_closed === 1 ? 'y' : 'ies'} moved to Closed.`);
+        }
+        if (result.moved_to_suppressed) {
+          notes.push(`${result.moved_to_suppressed} bounce/opt-out${result.moved_to_suppressed === 1 ? '' : 's'} moved to Suppressed.`);
         }
         if (notes.length) {
           showNote(notes.join(' '));

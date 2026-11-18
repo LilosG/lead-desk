@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 from math import ceil
 from typing import Any, Literal
 
+import requests
+
 from app.campaigns import CAMPAIGNS, EV_PERMITS, PERMIT_JOB_LABELS, get_campaign
+from app.core.config import Settings, get_settings
 from app.integrations.gmail import GmailDraftClient, GmailDraftError, GmailReadScopeMissingError
 from app.repositories.outreach_board import OutreachBoardRepository
 from app.repositories.outreach_gmail import OutreachGmailRepository
@@ -154,10 +158,12 @@ class OutreachBoardService:
         *,
         gmail_repository: OutreachGmailRepository,
         gmail: GmailDraftClient | None,
+        settings: Settings | None = None,
     ) -> None:
         self.repository = repository
         self.gmail_repository = gmail_repository
         self.gmail = gmail
+        self.settings = settings or get_settings()
 
     def board(self, *, stage: str, page: int, page_size: int, campaign: str, **filters: Any) -> dict[str, Any]:
         if not get_campaign(campaign).uses_audit:
@@ -226,8 +232,78 @@ class OutreachBoardService:
                             "Only drafts the Gmail check marked as contacted, with no follow-up yet, can be moved back"})
         return {"reopened": sum(r["ok"] for r in results), "results": results}
 
+    def _classify_inbound_reply(self, msg: dict[str, Any]) -> tuple[str, str]:
+        """Classify an inbound message into interested, hard_no, unsubscribe, bounce, or out_of_office."""
+        if msg.get("is_bounce_header"):
+            return "bounce", "delivery failure header"
+        if msg.get("is_auto_reply_header"):
+            return "out_of_office", "auto-reply header"
+
+        subject = str(msg.get("subject") or "")
+        body = str(msg.get("body") or msg.get("snippet") or "").strip()
+        combined = f"{subject}\n{body}".lower()
+
+        if any(p in combined for p in (
+            "address not found", "message not delivered", "delivery has failed",
+            "user unknown", "mailbox unavailable", "550 5.1.1", "550-5.1.1",
+        )):
+            return "bounce", "delivery failure text"
+
+        if any(p in combined for p in (
+            "out of the office", "out of office", "away from my desk",
+            "on vacation", "automatic reply", "auto-reply",
+        )):
+            return "out_of_office", "out-of-office text"
+
+        api_key = getattr(self.settings, "openrouter_api_key", None)
+        model = getattr(self.settings, "openrouter_model", "qwen/qwen3-30b-a3b-instruct-2507")
+        if api_key and body:
+            prompt = (
+                "Classify this inbound email reply to a B2B cold outreach email into exactly ONE label:\n"
+                "- interested: Positive reply, question, asking for sample/Loom/pricing/call, forwarding to colleague, or any ambiguous human response.\n"
+                "- hard_no: Polite or blunt decline (e.g., 'no thanks', 'not interested', 'we already have someone') WITHOUT asking to be removed/unsubscribed.\n"
+                "- unsubscribe: Explicit opt-out or stop request (e.g., 'unsubscribe', 'remove me', 'take us off your list', 'stop emailing').\n"
+                "- bounce: Automated non-delivery / bounced email notice.\n"
+                "- out_of_office: Vacation auto-responder or automated ticketing receipt.\n\n"
+                "Return strict JSON only: {\"label\": \"<one_of_the_5>\", \"reason\": \"<short 3-6 word reason>\"}\n\n"
+                f"Subject: {subject[:200]}\n"
+                f"Body:\n{body[:1200]}"
+            )
+            try:
+                res = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "temperature": 0,
+                        "max_tokens": 80,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                    timeout=15.0,
+                )
+                if res.ok:
+                    raw = res.json()["choices"][0]["message"]["content"].strip()
+                    if raw.startswith("```"):
+                        raw = raw.strip("`").removeprefix("json").strip()
+                    parsed = json.loads(raw)
+                    label = str(parsed.get("label") or "").strip().lower()
+                    reason = str(parsed.get("reason") or label).strip()[:120]
+                    if label in {"interested", "hard_no", "unsubscribe", "bounce", "out_of_office"}:
+                        return label, reason
+            except Exception:
+                pass
+
+        if any(p in combined for p in ("unsubscribe", "remove me", "take me off", "take us off", "stop emailing")):
+            return "unsubscribe", "opt-out phrase"
+        if any(p in combined for p in ("not interested", "no thanks", "no thank you", "all set", "we're good")):
+            return "hard_no", "decline phrase"
+        return "interested", "human reply"
+
     def sync_gmail(self) -> dict[str, Any]:
-        """Find drafts that left Gmail (sent/deleted) and detect inbound replies."""
+        """Find drafts that left Gmail and classify inbound replies/bounces automatically."""
         if self.gmail is None:
             raise OutreachIntegrationUnavailable("Gmail isn't connected")
         started = datetime.now(timezone.utc)
@@ -246,6 +322,8 @@ class OutreachBoardService:
                 self.gmail_repository.mark_follow_up_left_gmail(follow_up["id"])
 
         replied = 0
+        closed = 0
+        suppressed = 0
         reply_sync_needs_reconnect = False
         try:
             inbound = self.gmail.list_inbound_replies(days=90)
@@ -254,28 +332,72 @@ class OutreachBoardService:
             reply_sync_needs_reconnect = True
 
         if inbound:
-            replied_threads = {m["thread_id"] for m in inbound if m.get("thread_id")}
-            replied_senders = {m["sender_email"] for m in inbound if m.get("sender_email")}
-            sender_to_thread = {
-                m["sender_email"]: m["thread_id"]
-                for m in inbound
-                if m.get("sender_email") and m.get("thread_id")
-            }
-            for item in self.gmail_repository.open_contacted_items():
+            contacted = self.gmail_repository.open_contacted_items()
+            by_thread: dict[str, list[dict[str, Any]]] = {}
+            by_email: dict[str, list[dict[str, Any]]] = {}
+            for m in inbound:
+                tid = (m.get("thread_id") or "").strip()
+                if tid:
+                    by_thread.setdefault(tid, []).append(m)
+                sender = (m.get("sender_email") or "").strip().lower()
+                if sender:
+                    by_email.setdefault(sender, []).append(m)
+                if m.get("is_bounce_header"):
+                    for rcpt in m.get("mentioned_emails") or []:
+                        by_email.setdefault(rcpt.lower(), []).append(m)
+
+            priority = {"interested": 4, "unsubscribe": 3, "bounce": 3, "hard_no": 2, "out_of_office": 1}
+            for item in contacted:
                 tid = (item.get("gmail_thread_id") or "").strip()
                 addr = (item.get("to_address") or "").strip().lower()
-                if (tid and tid in replied_threads) or (addr and addr in replied_senders):
-                    matched_tid = tid or sender_to_thread.get(addr)
+                matches = []
+                if tid and tid in by_thread:
+                    matches.extend(by_thread[tid])
+                if addr and addr in by_email:
+                    matches.extend(by_email[addr])
+                if not matches:
+                    continue
+
+                seen_mids: set[str] = set()
+                best_label = "out_of_office"
+                best_reason = ""
+                best_tid = tid
+                for m in matches:
+                    mid = str(m.get("message_id") or "")
+                    if mid and mid in seen_mids:
+                        continue
+                    if mid:
+                        seen_mids.add(mid)
+                    label, reason = self._classify_inbound_reply(m)
+                    if priority.get(label, 0) >= priority.get(best_label, 0):
+                        best_label = label
+                        best_reason = reason
+                        best_tid = best_tid or str(m.get("thread_id") or "")
+
+                if best_label == "interested":
                     if self.gmail_repository.mark_replied_from_gmail(
-                        item["id"],
-                        thread_id=matched_tid,
-                        sender_email=addr or None,
+                        item["id"], thread_id=best_tid, sender_email=addr or None
                     ):
                         replied += 1
+                elif best_label == "hard_no":
+                    if self.gmail_repository.mark_closed_from_gmail(
+                        item["id"], thread_id=best_tid, sender_email=addr or None, reason=best_reason
+                    ):
+                        closed += 1
+                elif best_label in {"unsubscribe", "bounce"}:
+                    if self.gmail_repository.mark_suppressed_from_gmail(
+                        item["id"],
+                        thread_id=best_tid,
+                        sender_email=addr or None,
+                        reason=f"{best_label}: {best_reason}",
+                    ):
+                        suppressed += 1
 
         return {
             "checked": len(open_items),
             "moved_to_contacted": moved,
             "moved_to_replied": replied,
+            "moved_to_closed": closed,
+            "moved_to_suppressed": suppressed,
             "reply_sync_needs_reconnect": reply_sync_needs_reconnect,
         }
