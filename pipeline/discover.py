@@ -336,6 +336,12 @@ def wrong_vertical(rec: dict, vertical: str) -> bool:
     types = set(rec.get("types") or [])
     name = (rec.get("name") or "").lower()
 
+    if vertical == "electrician" and re.search(
+        r"\b(electric(al)?\s+supply|wholesale|structural\s+engineer|civil\s+engineer)\b",
+        name,
+    ):
+        return True
+
     target_types = set(C.VERTICAL_EXPECTED_TYPES.get(vertical, set()))
     if types & target_types:
         return False
