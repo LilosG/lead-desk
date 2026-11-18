@@ -579,7 +579,7 @@ def sweep(
                         if rec["business_status"] in C.EXCLUDE_BUSINESS_STATUS:
                             ledger.drop("closed")
                             continue
-                        if (rec.get("review_count") or 0) < 10:
+                        if (rec.get("review_count") or 0) < (3 if rec.get("website_url") else 10):
                             ledger.drop("too_few_reviews")
                             continue
                         records.append(rec)

@@ -409,7 +409,9 @@ def _decode_cfemail(encoded: str) -> str | None:
 
 def extract_emails(html: str, soup: BeautifulSoup) -> set:
     """Every address a visitor to this page could read."""
-    found = set(EMAIL_RE.findall(html))
+    import html as _html_mod
+    decoded_html = _html_mod.unescape(html)
+    found = set(EMAIL_RE.findall(decoded_html))
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
         if href.lower().startswith("mailto:"):
@@ -714,7 +716,10 @@ def crawl_site(business: dict, session: requests.Session | None = None,
             location_paths.add(path.rstrip("/"))
         if full.rstrip("/") in seen:
             continue
-        if any(h in path for h in C.CONTACT_PAGE_HINTS):
+        anchor_low = a.get_text(" ", strip=True).lower()
+        if any(h in path for h in C.CONTACT_PAGE_HINTS) or any(
+            w in anchor_low for w in ("contact", "quote", "estimate", "about")
+        ):
             internal.append(full)
             seen.add(full.rstrip("/"))
         f.page_count_estimate += 1
