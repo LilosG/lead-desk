@@ -462,7 +462,7 @@ def _clean_emails(raw: set, site_host: str = "", business_name: str | None = Non
     site_domain = _registrable(site_host)
     out, rejected = [], []
     for e in raw:
-        e = e.strip().lower().rstrip(".,;:)")
+        e = urlparse.unquote(e).strip().lower().rstrip(".,;:)")
         # A site's own mailto link can be mistyped, so hold those to the same shape.
         if EMAIL_JUNK.search(e) or len(e) > 80 or not EMAIL_RE.fullmatch(e):
             continue
