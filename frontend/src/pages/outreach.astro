@@ -481,7 +481,12 @@ const stages = [
       if (state.q) query.set('q', state.q);
       if (state.vertical) query.set('vertical', state.vertical);
       if (state.market) query.set('market', state.market);
-      const data = await api(`/api/outreach/board?${query}`) as Board;
+      const [data, campaignData] = await Promise.all([
+        api(`/api/outreach/board?${query}`) as Promise<Board>,
+        api('/api/outreach/campaigns') as Promise<{ campaigns: Campaign[] }>,
+      ]);
+      campaigns = campaignData.campaigns;
+      renderCampaigns();
       rows = data.items;
       [...selected].forEach((key) => { if (!rows.some((r) => rowKey(r) === key)) selected.delete(key); });
       renderTabs(data.counts);
