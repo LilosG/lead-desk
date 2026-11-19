@@ -8,6 +8,7 @@ const API_ORIGIN = import.meta.env.DEV
 function isPublicAsset(pathname: string): boolean {
   return (
     pathname.startsWith('/_astro/') ||
+    pathname.startsWith('/api/') ||
     pathname === '/favicon.ico' ||
     pathname === '/favicon.svg' ||
     pathname === '/robots.txt'

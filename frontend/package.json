@@ -13,8 +13,7 @@
     "check": "astro check"
   },
   "dependencies": {
-    "@astrojs/node": "^11.1.5",
-    "@astrojs/vercel": "^11.0.10",
+    "@astrojs/cloudflare": "^14.4.9",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.3.2",
     "tailwindcss": "^4.3.3"
