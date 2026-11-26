@@ -23,7 +23,8 @@ const stages = [
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div id="campaign-tabs" role="group" aria-label="Campaign" class="flex flex-wrap gap-2"></div>
         <p id="campaign-summary" class="text-xs text-[var(--muted)]"></p>
-        <label class="ml-auto flex items-center gap-2 text-xs text-[var(--muted)]">
+        <button id="angle-pro-starter" type="button" aria-pressed="false" title="Switch to Permit Packets and use the Pro offer email: 1 free packet credit plus the 3-for-1 starter pack. Only selects the angle; creates no drafts." class="ml-auto rounded-full border-2 border-dashed border-amber-500 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 aria-pressed:border-solid aria-pressed:bg-amber-200">Pro 1-free + 3-for-1</button>
+        <label class="flex items-center gap-2 text-xs text-[var(--muted)]">
           Email angle
           <select id="angle-select" class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-[var(--ink,inherit)]"></select>
         </label>
@@ -370,6 +371,24 @@ const stages = [
       angleSelect.value = known ? state.angle : 'rotate';
       state.angle = angleSelect.value;
       el('#draft-angle').innerHTML = `<option value="">Rotate</option>${options}`;
+      renderProStarter();
+    }
+
+    function renderProStarter() {
+      el('#angle-pro-starter').setAttribute('aria-pressed', String(state.angle === 'pro_starter'));
+    }
+
+    function switchCampaign(key: string) {
+      state.campaign = key;
+      state.stage = 'to_prep';
+      state.vertical = '';
+      state.market = '';
+      state.page = 1;
+      selected.clear();
+      el('#bulk-result').classList.add('hidden');
+      renderCampaigns();
+      el<HTMLDetailsElement>('#campaign-results').open = false;
+      loadBoard().catch(showError);
     }
 
     async function loadResults() {
@@ -637,6 +656,19 @@ const stages = [
 
     el<HTMLSelectElement>('#angle-select').addEventListener('change', (event) => {
       state.angle = (event.target as HTMLSelectElement).value;
+      renderProStarter();
+    });
+
+    el<HTMLButtonElement>('#angle-pro-starter').addEventListener('click', () => {
+      if (!campaigns.some((c) => c.key === 'ev_permits')) return;
+      state.angle = 'pro_starter';
+      if (state.campaign !== 'ev_permits') {
+        switchCampaign('ev_permits');
+      } else {
+        el<HTMLSelectElement>('#angle-select').value = state.angle;
+        renderProStarter();
+      }
+      el<HTMLSelectElement>('#draft-angle').value = state.angle;
     });
 
     el<HTMLButtonElement>('#bulk-follow-up').addEventListener('click', () => {
@@ -647,16 +679,7 @@ const stages = [
     el('#campaign-tabs').addEventListener('click', (event) => {
       const button = (event.target as Element).closest<HTMLButtonElement>('[data-campaign]');
       if (!button?.dataset.campaign || button.dataset.campaign === state.campaign) return;
-      state.campaign = button.dataset.campaign;
-      state.stage = 'to_prep';
-      state.vertical = '';
-      state.market = '';
-      state.page = 1;
-      selected.clear();
-      el('#bulk-result').classList.add('hidden');
-      renderCampaigns();
-      el<HTMLDetailsElement>('#campaign-results').open = false;
-      loadBoard().catch(showError);
+      switchCampaign(button.dataset.campaign);
     });
 
     el<HTMLDetailsElement>('#campaign-results').addEventListener('toggle', (event) => {
