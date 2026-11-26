@@ -22,7 +22,7 @@ ANGLES: dict[str, tuple[Angle, ...]] = {
     EV_PERMITS: (
         Angle("sample", "Sample packet", "City-specific permit checklist + offers a 1-page sample. No link."),
         Angle("project", "Project + routing", "Asks about upcoming jobs and who handles permitting. No link."),
-    Angle("origin", "Origin story", "Peer contractor story about passing on permit-heavy jobs until drawing time dropped. No link."),
+        Angle("origin", "Origin story", "Peer contractor story about passing on permit-heavy jobs until drawing time dropped. No link."),
         Angle("pro_starter", "Pro 1-free + 3-for-1", "Offers 1 free packet credit to test on a live job and mentions the 3-for-1 starter pack. No link."),
     ),
     SEO_WEBSITES: (
@@ -45,7 +45,7 @@ RETIRED_LABELS: dict[str, dict[str, str]] = {
 }
 
 ROTATION = {
-    EV_PERMITS: ("sample", "project"),
+    EV_PERMITS: ("sample", "project", "origin", "pro_starter"),
     SEO_WEBSITES: ("chatgpt_pick", "competitor_gap", "website_draft"),
 }
 
