@@ -106,6 +106,28 @@ def test_no_city_never_renders_none(angle):
     assert "ready-to-submit permit packets" in project
 
 
+@pytest.mark.parametrize("city", ["Oro Valley", "Rancho Santa Margarita", None, "", "  "])
+def test_the_pro_starter_angle(city):
+    written = permit_offer.write_email({**LEAD, "city": city}, "pro_starter")
+    subject, body = written["subject"], written["body"]
+    text = subject + body
+    assert subject == subject.lower() and len(subject) <= 40
+    assert body.startswith("Hi Aaron,\n\n")
+    assert _words(body) <= 90
+    assert "1 free packet credit" in body and "live job" in body and "3-for-1 starter pack" in body
+    assert "Tesla/ChargePoint chargers" in body
+    assert "None" not in text and "—" not in text and "–" not in text
+    assert "http" not in text and "www." not in text
+    assert "  " not in body and " ," not in body and " ." not in body
+
+
+def test_pro_starter_is_offered_but_stays_out_of_the_rotation():
+    assert angle_label(EV_PERMITS, "pro_starter") == "Pro 1-free + 3-for-1"
+    assert ROTATION[EV_PERMITS] == ("sample", "project")
+    assert resolve_angle(EV_PERMITS, "p1", "pro_starter", "sample") == "pro_starter"
+    assert resolve_angle(EV_PERMITS, "p1", None, "pro_starter") == "pro_starter"
+
+
 def test_the_follow_up_asks_a_named_contact_which_job_they_permit_most():
     assert permit_offer.write_follow_up(LEAD, 2) == (
         "Hi Aaron,\n\n"
