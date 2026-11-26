@@ -164,10 +164,10 @@ def test_the_chatgpt_pick_email():
     assert written["angle"] == "chatgpt_pick"
     assert written["body"] == (
         "Hi Dave,\n\n"
-        "I asked ChatGPT for the best electricians in Phoenix. It named Sparks Electric, Volt Pros and "
-        "Amp Brothers Electrical. Five Point didn't come up.\n\n"
-        "People are starting to ask it who to call.\n\n"
-        "Want me to send over a breakdown of what those businesses are doing that Five Point isn't?"
+        "Checked who ChatGPT recommends for electricians in Phoenix today. "
+        "It named Sparks Electric, Volt Pros and Amp Brothers Electrical, Five Point didn't come up.\n\n"
+        "Usually that's just 2 or 3 missing signals on fivepointelectric.com. "
+        "I noted what Sparks Electric has that you're missing, want me to send the 3 bullets over?"
     )
 
 
@@ -182,7 +182,8 @@ def test_the_pick_email_refuses_without_a_real_gap():
 def test_the_pick_email_works_for_a_lead_with_no_website():
     written = seo_offer.write_email({**LEAD, "website_url": None, "to_address": "info@gmail.com", "city": "Phoenix",
                                      "chatgpt_evidence": PICK_EVIDENCE}, "chatgpt_pick")
-    assert written["body"].startswith("I asked ChatGPT")
+    assert written["body"].startswith("Checked who ChatGPT recommends")
+    assert "missing signals on your site" in written["body"]
 
 
 def test_the_profile_email():
@@ -206,10 +207,9 @@ def test_the_chatgpt_emails_have_no_link_or_attachment(angle):
 
 def test_each_angle_gets_its_own_follow_up():
     assert seo_offer.write_follow_up({**LEAD, "angle": "chatgpt_pick"}, 2) == (
-        "Hi Dave,\n\nQuick bump on this. Want me to send over the breakdown of what those businesses are "
-        "doing on ChatGPT that Five Point isn't?")
-    assert seo_offer.write_follow_up({**LEAD, "angle": "chatgpt_profile"}, 2).endswith(
-        "Want me to walk you through claiming Five Point's ChatGPT profile?")
+        "Hi Dave,\n\nQuick bump: already have those 3 ChatGPT bullets for Five Point pulled together. "
+        "Worth sending over, or not a priority right now?")
+    assert "ChatGPT profile steps for Five Point" in seo_offer.write_follow_up({**LEAD, "angle": "chatgpt_profile"}, 2)
     assert "homepage draft" in seo_offer.write_follow_up({**LEAD, "angle": "website_draft"}, 2)
 
 
@@ -299,7 +299,7 @@ def test_the_written_pick_draft_carries_its_evidence(monkeypatch):
     assert written["chatgpt_evidence"] == GAP
     assert written["prompt_version"] == seo_offer.PROMPT_VERSION
     assert "named Sparks Electric, Volt Pros LLC, Amp Brothers Electrical, Heating, and Plumbing" in written["verification_note"]
-    assert "I asked ChatGPT" in written["body"] and written["body"].rstrip().endswith("reach out again.")
+    assert "Checked who ChatGPT recommends" in written["body"] and written["body"].rstrip().endswith("reach out again.")
 
 
 def test_the_profile_angle_is_hidden_from_the_menu_until_switched_on(monkeypatch):
@@ -359,12 +359,17 @@ def test_the_call_sends_a_web_search_request_and_reports_errors(monkeypatch):
 @pytest.fixture(scope="module")
 def pool():
     dsn = os.environ.get("DATABASE_URL")
-    with ConnectionPool(dsn, open=True, kwargs={"row_factory": psycopg.rows.dict_row}) as connection_pool:
-        with connection_pool.connection() as conn:
-            conn.execute("delete from chatgpt_checks where vertical = 'test-trade'")
-        yield connection_pool
-        with connection_pool.connection() as conn:
-            conn.execute("delete from chatgpt_checks where vertical = 'test-trade'")
+    if not dsn:
+        pytest.skip("DATABASE_URL not set; skipping Postgres-backed tests")
+    try:
+        with ConnectionPool(dsn, open=True, timeout=3.0, kwargs={"row_factory": psycopg.rows.dict_row}) as connection_pool:
+            with connection_pool.connection() as conn:
+                conn.execute("delete from chatgpt_checks where vertical = 'test-trade'")
+            yield connection_pool
+            with connection_pool.connection() as conn:
+                conn.execute("delete from chatgpt_checks where vertical = 'test-trade'")
+    except Exception as exc:
+        pytest.skip(f"Postgres unavailable for tests: {exc}")
 
 
 def test_checks_are_saved_and_found_by_market_until_they_go_stale(pool):

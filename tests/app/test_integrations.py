@@ -127,16 +127,22 @@ def test_connect_refuses_a_grant_without_the_gmail_permission(monkeypatch):
     import pytest
     from app.services.integrations import MissingGmailPermission
 
-    repo, service = _authorize(monkeypatch, "openid https://www.googleapis.com/auth/userinfo.email")
-    with pytest.raises(MissingGmailPermission):
-        service.complete_authorization(code="c", state="state")
-    assert repo.credential is None
+    for incomplete_scope in (
+        "openid https://www.googleapis.com/auth/userinfo.email",
+        "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.compose",
+    ):
+        repo, service = _authorize(monkeypatch, incomplete_scope)
+        with pytest.raises(MissingGmailPermission):
+            service.complete_authorization(code="c", state="state")
+        assert repo.credential is None
 
 
 def test_connect_accepts_a_grant_with_the_gmail_permission(monkeypatch):
     repo, service = _authorize(
         monkeypatch,
-        "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.compose",
+        "openid https://www.googleapis.com/auth/userinfo.email "
+        "https://www.googleapis.com/auth/gmail.compose "
+        "https://www.googleapis.com/auth/gmail.readonly",
     )
     service.complete_authorization(code="c", state="state")
     assert repo.credential is not None

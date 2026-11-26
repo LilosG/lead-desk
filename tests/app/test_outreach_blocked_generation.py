@@ -230,7 +230,7 @@ def test_website_draft_with_no_verified_issue_is_blocked_not_sent_to_the_old_gen
     service = OutreachService(repo, generator=ClaimGenerator(), verifier=CapturingNoClaimVerifier(),
                               generation_model="qwen/qwen3-30b-a3b-instruct-2507")
     service.write_fixed_copy = lambda context, angle=None: None
-    with pytest.raises(OutreachBlocked, match="No verified website issue found for Website draft; "
-                                              "switch angle to Rotate or ChatGPT pick."):
+    with pytest.raises(OutreachBlocked, match="No verified gap found for that angle; "
+                                              "switch angle to Rotate, ChatGPT pick, or Competitor gap."):
         service.generate_draft(repo.item["id"], expected_version=repo.item["version"])
     assert repo.generated is None

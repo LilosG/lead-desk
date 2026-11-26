@@ -166,6 +166,8 @@ def test_beating_a_tiny_local_median_does_not_earn_review_points():
 
 def test_the_cleanup_removes_chargers_but_keeps_electricians_and_contacted_leads():
     dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL not set; skipping Postgres-backed test")
     sql = Path("sql/migrations/026_remove_charging_stations.sql").read_text()
     rows = [("cs-1", "Tesla Supercharger", "service", ["service"]),
             ("cs-2", "EVgo", "electric_vehicle_charging_station", ["electric_vehicle_charging_station"]),
@@ -315,6 +317,8 @@ def test_the_backfill_writes_only_the_permit_keys_and_never_touches_scores():
     assert BF.permit_facts(unreachable) is None
 
     dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL not set; skipping Postgres-backed test")
     with psycopg.connect(dsn) as conn:
         conn.execute("insert into businesses (place_id, name, vertical) values ('bf-1', 'Backfill Electric', 'electrician')")
         conn.execute("""insert into website_enrichment (place_id, site_signals, word_count)

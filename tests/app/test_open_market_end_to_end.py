@@ -79,6 +79,8 @@ def _site(pid: str, **kw) -> SiteFindings:
 @pytest.fixture(scope="module")
 def seeded_run():
     dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL not set; skipping Postgres-backed tests")
     store = PostgresStore(dsn)
     if not store.ping():
         pytest.skip("PostgreSQL not available")

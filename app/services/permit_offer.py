@@ -25,6 +25,8 @@ _JOB_PHRASES = {
     "ev_charger": "EV chargers",
     "service_upgrade": "200A panel upgrades",
     "subpanel": "subpanels",
+    "generator_ess": "backup generators and battery storage",
+    "light_commercial": "light commercial projects",
     "appliance_circuit": "240 V circuits",
 }
 

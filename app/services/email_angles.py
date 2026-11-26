@@ -50,12 +50,22 @@ ROTATION = {
 }
 
 
+_PROFILE_ANGLE = Angle(
+    "chatgpt_profile",
+    "ChatGPT profile",
+    "Offers to check and walk through claiming their ChatGPT business profile. No link.",
+)
+
+
 def profile_offer_enabled() -> bool:
     return False
 
 
 def angle_options(campaign: str) -> list[dict[str, Any]]:
-    return [asdict(angle) for angle in ANGLES[campaign]]
+    angles = list(ANGLES[campaign])
+    if campaign == SEO_WEBSITES and profile_offer_enabled():
+        angles.append(_PROFILE_ANGLE)
+    return [asdict(angle) for angle in angles]
 
 
 def angle_label(campaign: str, key: str | None) -> str:
@@ -71,6 +81,8 @@ def stable_pick(place_id: str, options: tuple[str, ...]) -> str:
 
 
 def is_known(campaign: str, key: str) -> bool:
+    if campaign == SEO_WEBSITES and key == _PROFILE_ANGLE.key:
+        return True
     return any(angle.key == key for angle in ANGLES[campaign])
 
 
