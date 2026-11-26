@@ -10,7 +10,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "check": "astro check"
+    "check": "astro check",
+    "check:selectors": "node scripts/verify-selectors.mjs"
   },
   "dependencies": {
     "@astrojs/node": "^11.1.5",

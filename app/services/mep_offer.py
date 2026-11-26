@@ -11,13 +11,13 @@ from app.services.outreach_audit_copy import (
 )
 from app.services.permit_offer import permit_evidence, shown_jobs
 
-PROMPT_VERSION = "mep-offer-v1"
+PROMPT_VERSION = "mep-offer-v2"
 
 _MEP_JOB_PHRASES = {
     "ev_charger": "EV chargers",
     "service_upgrade": "200A panel upgrades",
     "subpanel": "subpanels",
-    "generator_ess": "backup generators and battery storage",
+    "generator_ess": "backup generators",
     "appliance_circuit": "240V circuits",
 }
 
@@ -108,7 +108,7 @@ def _panel_closer(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     )
     return subject, [
         f"When {short} quotes a 100A-to-200A service upgrade or EV charger{where}, "
-        "handing the homeowner a clean NEC 220.82 load calculation and panel schedule "
+        "handing the homeowner a clean NEC 220 load calculation and panel schedule "
         "closes the bid fast and covers the city submittal.",
         "We built a zero-subscription tool that turns one address into the full permit PDF "
         "(site plan, single-line, NEC 220 sheet, and cut sheets) with your license in the title block.",
@@ -125,7 +125,7 @@ def _night_drafting(ctx: dict[str, Any]) -> tuple[str, list[str]]:
         "residential permit plans",
     )
     return subject, [
-        f"Most electrical shops{where} either wait days on $300+ outside drafters or burn "
+        f"Most electrical shops{where} either wait days on outside drafters or burn "
         "evenings drawing residential permit plans themselves.",
         "We built a pay-per-packet generator (no monthly subscription) that drafts the parcel "
         "site plan, single-line diagram, NEC 220 load calc, and UL cut sheets in minutes, "
@@ -184,7 +184,7 @@ def write_follow_up(context: dict[str, Any], step: int) -> str:
     if facts["first_name"]:
         paragraph = (
             f"Quick bump in case you're buried in jobs at {short}. Still happy to set aside "
-            f"1 free contractor credit (no subscription, no card) so you can test a real{for_city} "
+            f"1 free contractor credit (no subscription) so you can test a real{for_city} "
             "EV charger, subpanel, or 200A upgrade address and see the single-line and NEC 220 sheets. "
             "Want me to send the credit over?"
         )
