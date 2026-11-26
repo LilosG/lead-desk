@@ -8,7 +8,9 @@ from typing import Any
 
 from psycopg_pool import ConnectionPool
 
-from app.campaigns import COOLDOWN_DAYS, EV_PERMITS, MY_ELECTRICAL_PERMIT, PERMIT_CAMPAIGNS, PERMIT_JOBS_SQL
+from app.campaigns import (
+    COOLDOWN_DAYS, EV_PERMITS, MY_ELECTRICAL_PERMIT, PERMIT_CAMPAIGNS, PERMIT_GAP_DAYS, PERMIT_JOBS_SQL,
+)
 
 # Who the Permit Packets offer can go to. A site that doesn't show permit work
 # still gets the email, worded as a question, and ranks after the shops that do.
@@ -39,7 +41,28 @@ _PERMIT_ELIGIBLE = f"""(
                    ~* %(permit_pattern)s
               )
     )"""
-_LEAD_RULES = {EV_PERMITS: f"and {_PERMIT_AUDIENCE}", MY_ELECTRICAL_PERMIT: f"and {_PERMIT_AUDIENCE}"}
+# MyElectricalPermit.com reuses Permit Packets prospects, except shops that
+# replied there (a live conversation) or were closed out (archived or opted out).
+_ENDED_IN_PERMIT_PACKETS = f"""not exists (
+        select 1 from outreach_queue pq
+        join v_outreach_stage ps on ps.id = pq.id
+        where pq.place_id = w.place_id
+          and pq.campaign_key = '{EV_PERMITS}'
+          and ps.stage in ('replied', 'closed')
+    )"""
+_LEAD_RULES = {
+    EV_PERMITS: f"and {_PERMIT_AUDIENCE}",
+    MY_ELECTRICAL_PERMIT: f"and {_PERMIT_AUDIENCE} and {_ENDED_IN_PERMIT_PACKETS}",
+}
+
+
+def cooldown_params() -> dict[str, Any]:
+    """Values every query using cooldown_join() needs."""
+    return {
+        "cooldown_days": COOLDOWN_DAYS,
+        "permit_gap_days": PERMIT_GAP_DAYS,
+        "permit_campaigns": list(PERMIT_CAMPAIGNS),
+    }
 
 
 def cooldown_join(place: str, campaign: str) -> str:
@@ -47,20 +70,24 @@ def cooldown_join(place: str, campaign: str) -> str:
 
     A Gmail draft counts from the moment it exists: it may go out at any time.
     A reply restarts the clock, so a live conversation doesn't get a second pitch.
+    Between the two permit campaigns the wait is PERMIT_GAP_DAYS, not COOLDOWN_DAYS.
     """
     last_touch = ("greatest(oq.contacted_at, oq.gmail_draft_created_at, "
                   "case when oq.status = 'replied' then oq.updated_at end)")
+    gap = ("make_interval(days => case when oq.campaign_key = any(%(permit_campaigns)s) "
+           f"and {campaign} = any(%(permit_campaigns)s) "
+           "then %(permit_gap_days)s else %(cooldown_days)s end)")
     return f"""
         left join lateral (
             select c.name as cooldown_campaign,
-                   {last_touch} + make_interval(days => %(cooldown_days)s) as cooldown_until
+                   {last_touch} + {gap} as cooldown_until
             from outreach_queue oq
             join campaigns c on c.key = oq.campaign_key
             where oq.place_id = {place}
               and oq.campaign_key <> {campaign}
-              and {last_touch} > now() - make_interval(days => %(cooldown_days)s)
+              and {last_touch} + {gap} > now()
               and (oq.contacted_at is not null or oq.status not in ('archived', 'suppressed'))
-            order by {last_touch} desc
+            order by cooldown_until desc
             limit 1
         ) cd on true
     """
@@ -258,7 +285,7 @@ def default_order(campaign: str) -> str:
 def _scope(campaign: str) -> dict[str, Any]:
     return {
         "campaign": campaign,
-        "cooldown_days": COOLDOWN_DAYS,
+        **cooldown_params(),
         "permit_pattern": PERMIT_JOBS_SQL,
     }
 
@@ -313,8 +340,10 @@ class OutreachBoardRepository:
         )
         order = _ORDER_BY.get(stage, default_order(campaign))
         if stage == "to_prep":
-            # Leads you've already started (audit built or mockup made) come first.
-            order = f"case when has_audit or mockup_status is not null then 0 else 1 end, {order}"
+            # Leads held by another campaign's cooldown can't be drafted yet, so they go last.
+            # Then leads you've already started (audit built or mockup made) come first.
+            order = ("case when cooldown_until is not null then 1 else 0 end, "
+                     f"case when has_audit or mockup_status is not null then 0 else 1 end, {order}")
         cte = board_cte(campaign)
         rows_query = f"""
             {cte}
@@ -384,7 +413,7 @@ class OutreachBoardRepository:
         """
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, {"id": item_id, "cooldown_days": COOLDOWN_DAYS})
+                cur.execute(query, {"id": item_id, **cooldown_params()})
                 return cur.fetchone()
 
     def campaigns(self) -> list[dict[str, Any]]:

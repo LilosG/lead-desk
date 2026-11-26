@@ -164,6 +164,9 @@ class OutreachService:
 
     def cooldown_block(self, place_id: str, campaign_key: str | None) -> str | None:
         """Why this business can't be contacted in this campaign yet, if so."""
+        ended = getattr(self.repository, "ended_in_permit_packets", None)
+        if campaign_key == MY_ELECTRICAL_PERMIT and ended and ended(place_id):
+            return "Replied to or closed in Permit Packets. Not pitched again."
         recent = self.repository.recent_contact(place_id, campaign_key or DEFAULT_CAMPAIGN)
         if not recent:
             return None

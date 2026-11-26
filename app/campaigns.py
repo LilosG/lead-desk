@@ -14,6 +14,9 @@ PERMIT_CAMPAIGNS = (EV_PERMITS, MY_ELECTRICAL_PERMIT)
 DEFAULT_CAMPAIGN = SEO_WEBSITES
 # One business shouldn't hear two different pitches within this many days.
 COOLDOWN_DAYS = 30
+# Permit Packets and MyElectricalPermit.com are different offers to the same
+# electricians, so one can follow the other after a week instead of a month.
+PERMIT_GAP_DAYS = 7
 
 
 @dataclass(frozen=True)
