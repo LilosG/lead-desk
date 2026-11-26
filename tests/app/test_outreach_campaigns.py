@@ -191,7 +191,7 @@ def test_the_ev_email_says_only_what_is_verified(outreach):
     result = fast_track(outreach, None, "camp-title", gmail=False, campaign_key=EV_PERMITS)
     item = outreach.repository.get_item(result["item_id"])
 
-    assert "site plan" in item["body"] and "sample packet" in item["body"]
+    assert "checklist" in item["body"] and "sample" in item["body"]
     assert "http" not in item["body"] and "lilosgrowth.com" not in item["body"]
     assert "no thanks" in item["body"]
     assert item["angle"] in {"sample", "project"}
@@ -205,7 +205,7 @@ def test_a_lead_without_ev_evidence_gets_an_email_that_asks(outreach):
     assert result["ok"], result
     item = outreach.repository.get_item(result["item_id"])
     assert "If camp-noev" not in item["body"]
-    assert "Saw " not in item["body"]
+    assert "runs residential and commercial electrical work" in item["body"]
     assert "Site doesn't show permit work" in item["verification_note"]
 
 
@@ -499,7 +499,7 @@ def test_permit_leads_rank_by_job_types_shown_not_the_seo_score(pool, board):
         data = board.board(campaign=EV_PERMITS, stage="to_prep", page=1, page_size=100,
                            q="camp-", vertical=None, market=None, qualified_only=False)
         assert data["items"][0]["place_id"] == "camp-signal"
-        assert data["items"][0]["lead_note"] == "EV, Panel upgrades · 2 job types · Tesla · 60 reviews"
+        assert data["items"][0]["lead_note"] == "EV, Service upgrades · 2 job types · Tesla · 60 reviews"
         notes = {row["place_id"]: row["lead_note"] for row in data["items"]}
         assert notes["camp-noev"] == "No permit work on site · 60 reviews"
         # A legacy lead with only the EV signal still reads as one EV job.

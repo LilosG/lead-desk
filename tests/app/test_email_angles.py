@@ -428,7 +428,7 @@ def test_a_follow_up_is_a_threaded_gmail_draft_with_the_opt_out(pool, item):
     service = OutreachService(OutreachRepository(pool), gmail=gmail)
     assert service.draft_follow_up(item)["step"] == 2
     draft = gmail.created[0]
-    assert draft["subject"] == "Re: Who draws your EV site plans?"
+    assert draft["subject"] == "following up - five point electric"
     assert draft["thread_id"] == "thread-1"
     assert draft["body"].startswith("Hi Aaron,\n\nWhich do you pull the most permits for at Five Point")
     assert "no thanks" in draft["body"]
