@@ -93,5 +93,8 @@ jobs:
       - name: Astro validation
         run: npm run check
 
+      - name: Page script selector check
+        run: npm run check:selectors
+
       - name: Production build
         run: npm run build

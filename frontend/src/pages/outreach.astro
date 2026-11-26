@@ -677,17 +677,6 @@ const stages = [
       state.angle = (event.target as HTMLSelectElement).value;
     });
 
-    el<HTMLButtonElement>('#angle-pro-starter').addEventListener('click', () => {
-      if (!campaigns.some((c) => c.key === 'ev_permits')) return;
-      state.angle = 'pro_starter';
-      if (state.campaign !== 'ev_permits') {
-        switchCampaign('ev_permits');
-      } else {
-        el<HTMLSelectElement>('#angle-select').value = state.angle;
-        }
-      el<HTMLSelectElement>('#draft-angle').value = state.angle;
-    });
-
     el<HTMLButtonElement>('#bulk-follow-up').addEventListener('click', () => {
       const items = rows.filter((r) => r.follow_up_due && r.id && selected.has(rowKey(r)));
       if (items.length) draftFollowUps(items).catch(showError);
