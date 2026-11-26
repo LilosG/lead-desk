@@ -156,10 +156,30 @@ def _origin(ctx: dict[str, Any]) -> tuple[str, list[str]]:
     ]
 
 
+def _pro_starter(ctx: dict[str, Any]) -> tuple[str, list[str]]:
+    """Pro offer: 1 free packet credit on a live job, plus the 3-for-1 starter pack."""
+    city, short = ctx["city"], ctx["short"]
+    focus = _site_job_focus(ctx) or "residential and light commercial electrical work"
+    where = f" in {city}" if city else ""
+    for_city = f" for {city}" if city else ""
+    subject = f"free {city} permit packet".lower() if city else "free permit packet"
+    if len(subject) > 40:
+        subject = "free permit packet"
+
+    return subject, [
+        f"Saw {short} handles {focus}{where}.",
+        f"We built a simple tool that turns basic job details into a permit packet{for_city}, ready for "
+        "your sign-off, with editable AutoCAD DXF files included.",
+        "Want to test it on a live job? Reply and I'll set you up with 1 free packet credit and "
+        "share details on our 3-for-1 starter pack.",
+    ]
+
+
 _WRITERS = {
     "sample": _sample,
     "project": _project,
     "origin": _origin,
+    "pro_starter": _pro_starter,
 }
 
 
