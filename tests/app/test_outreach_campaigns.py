@@ -79,6 +79,8 @@ def _site(pid: str, *, titles: list[str] | None = None, ev_signal: bool = False,
 @pytest.fixture(scope="module")
 def pool():
     dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        pytest.skip("DATABASE_URL not set; skipping Postgres-backed tests")
     store = PostgresStore(dsn)
     if not store.ping():
         pytest.skip("PostgreSQL not available")

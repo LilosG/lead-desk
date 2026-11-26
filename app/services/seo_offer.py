@@ -162,7 +162,7 @@ def _hard_website_issue(context: dict[str, Any], snapshot: dict[str, Any]) -> tu
         return (
             f"Pulled up {domain} on mobile earlier and the page still loads desktop-sized, "
             f"so {buyer} have to pinch and zoom just to find your number.",
-            "mobile-friendly",
+            "mobile-first",
         )
     speed = findings.get("psi_mobile_critical")
     if speed:

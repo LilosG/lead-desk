@@ -47,11 +47,15 @@ def test_next_step_covers_every_stage_and_flags_follow_ups():
 
 
 class FakeGmail:
-    def __init__(self, live):
+    def __init__(self, live, inbound=None):
         self.live = live
+        self.inbound = inbound or []
 
     def list_draft_ids(self):
         return self.live
+
+    def list_inbound_replies(self, days=90):
+        return self.inbound
 
 
 class FakeGmailRepo:
@@ -79,7 +83,14 @@ def test_sync_moves_only_drafts_that_left_gmail():
         {"id": "b", "gmail_draft_id": "gone"},
     ])
     service = OutreachBoardService(None, gmail_repository=repo, gmail=FakeGmail({"still-there"}))
-    assert service.sync_gmail() == {"checked": 2, "moved_to_contacted": 1}
+    assert service.sync_gmail() == {
+        "checked": 2,
+        "moved_to_contacted": 1,
+        "moved_to_replied": 0,
+        "moved_to_closed": 0,
+        "moved_to_suppressed": 0,
+        "reply_sync_needs_reconnect": False,
+    }
     assert repo.moved == [("b", "gone"), "f2"]
 
 
