@@ -430,7 +430,7 @@ def test_a_follow_up_is_a_threaded_gmail_draft_with_the_opt_out(pool, item):
     draft = gmail.created[0]
     assert draft["subject"] == "following up - five point electric"
     assert "thread_id" not in draft
-    assert draft["body"].startswith("Hi Aaron,\n\nWhich do you pull the most permits for at Five Point")
+    assert draft["body"].startswith("Hi Aaron,\n\nQuick bump on this. Which do you pull more permits for at Five Point")
     assert "no thanks" in draft["body"]
     assert "http" not in draft["body"] and "lilosgrowth.com" not in draft["body"]
 
