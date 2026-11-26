@@ -62,11 +62,12 @@ class PermitJob:
 PERMIT_JOBS: tuple[PermitJob, ...] = (
     PermitJob("ev_charger", "EV", EV_SERVICE_PATTERN),
     PermitJob(
-        "service_upgrade", "Panel upgrades",
+        "service_upgrade", "Service upgrades",
         r"(?<!solar\s)\b(breaker\s+box|(electrical\s+|breaker\s+)?panel)s?\s+(upgrad|replac|chang)\w*"
         r"|\belectrical\s+service\s+(upgrad|chang|replac)\w*"
         r"|\b(upgrad|chang)\w*\s+(your|the)\s+electrical\s+service\b"
-        r"|\b(100|125|150|200|400)[\s-]*amps?\s+(electrical\s+)?(service|panel)"
+        r"|\b(100|125|150|200|400|600|800)[\s-]*amps?\s+(electrical\s+)?(service|panel)"
+        r"|\bmeter\s*mains?\b"
     ),
     PermitJob(
         "subpanel", "Subpanels",
@@ -75,6 +76,21 @@ PERMIT_JOBS: tuple[PermitJob, ...] = (
         r"|\b(power|wiring|feeder|electric)\w*\b.{0,40}\bdetached\s+(garage|building|workshop)"
         r"|\badus?\b.{0,40}(electric|wiring|panel)"
         r"|\b(electric|wiring|panel)\w*\b.{0,40}\badus?\b"
+    ),
+    PermitJob(
+        "generator_ess", "Backup power",
+        r"\b(backup|standby|whole[\s-]?home)\s+generators?\b"
+        r"|\b(generac|kohler|cummins)\b.{0,40}install"
+        r"|\b(battery\s+storage|ess|powerwall|enphase|franklin)\b.{0,40}(install|system|backup)"
+        r"|\btransfer\s+switch(es)?\b"
+    ),
+    PermitJob(
+        "light_commercial", "Light commercial",
+        r"\b(tenant\s+improvements?|ti\s+build[\s-]?outs?)\b"
+        r"|\b(3[\s-]?phase|three[\s-]?phase)\b.{0,40}(power|wiring|panel|service)"
+        r"|\b(power|wiring|panel|service)\w*\b.{0,40}\b(3[\s-]?phase|three[\s-]?phase)\b"
+        r"|\bcommercial\s+(build[\s-]?outs?|switchgear|electrical\s+service|panel\s+schedules?|lighting|rewir\w*)\b"
+        r"|\btransformer\s+install(s|ations?)?\b"
     ),
     PermitJob(
         "appliance_circuit", "240 V circuits",
