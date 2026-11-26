@@ -25,7 +25,8 @@ from enrich import SiteFindings  # noqa: E402
 from store import PostgresStore  # noqa: E402
 
 from app.campaigns import (  # noqa: E402
-    EV_PERMITS, EV_SERVICE_PATTERN, EV_SERVICE_SQL, PERMIT_JOBS, PERMIT_JOBS_SQL, SEO_WEBSITES,
+    EV_PERMITS, EV_SERVICE_PATTERN, EV_SERVICE_SQL, MY_ELECTRICAL_PERMIT, PERMIT_JOBS, PERMIT_JOBS_SQL,
+    SEO_WEBSITES,
 )
 from app.integrations.gmail import GmailDraftResult  # noqa: E402
 from app.repositories.outreach import OutreachRepository  # noqa: E402
@@ -251,6 +252,42 @@ def test_contact_in_one_campaign_holds_the_other_for_30_days(pool, outreach, boa
 
     _touch(pool, seo["id"], contacted_at=datetime.now(timezone.utc) - timedelta(days=31))
     assert fast_track(outreach, None, "camp-signal", gmail=False, campaign_key=EV_PERMITS)["ok"]
+
+
+def test_permit_packets_holds_my_electrical_permit_for_a_week_not_a_month(pool, outreach, board):
+    now = datetime.now(timezone.utc)
+    ev = outreach.create_item("camp-signal", "email", None, EV_PERMITS)
+    _touch(pool, ev["id"], status="contacted", contacted_at=now - timedelta(days=3))
+
+    row = _names(board, MY_ELECTRICAL_PERMIT)["camp-signal"]
+    assert row["next_step"].startswith("Already in Permit Packets outreach. Wait until")
+    result = fast_track(outreach, None, "camp-signal", gmail=False, campaign_key=MY_ELECTRICAL_PERMIT)
+    assert result["failed_step"] == "cooldown"
+
+    _touch(pool, ev["id"], contacted_at=now - timedelta(days=8))
+    assert outreach.cooldown_block("camp-signal", SEO_WEBSITES)  # other offers still wait 30 days
+    assert outreach.cooldown_block("camp-signal", MY_ELECTRICAL_PERMIT) is None
+    assert fast_track(outreach, None, "camp-signal", gmail=False, campaign_key=MY_ELECTRICAL_PERMIT)["ok"]
+
+
+@pytest.mark.parametrize("status", ["replied", "archived"])
+def test_shops_that_replied_or_were_closed_in_permit_packets_get_no_second_pitch(
+        pool, outreach, board, status):
+    ev = outreach.create_item("camp-signal", "email", None, EV_PERMITS)
+    _touch(pool, ev["id"], status=status,
+           contacted_at=datetime.now(timezone.utc) - timedelta(days=60))
+
+    assert "camp-signal" not in _names(board, MY_ELECTRICAL_PERMIT)
+    assert outreach.cooldown_block("camp-signal", MY_ELECTRICAL_PERMIT).startswith("Replied to or closed")
+
+
+def test_leads_held_by_a_cooldown_sort_after_ones_you_can_draft(pool, outreach, board):
+    ev = outreach.create_item("camp-title", "email", None, EV_PERMITS)
+    _touch(pool, ev["id"], status="contacted", contacted_at=datetime.now(timezone.utc))
+
+    names = list(_names(board, MY_ELECTRICAL_PERMIT))
+    assert names[-1] == "camp-title"
+    assert set(names) == PERMIT_LEADS
 
 
 def test_a_reply_keeps_the_other_offer_away_after_the_first_contact_ages_out(pool, outreach):

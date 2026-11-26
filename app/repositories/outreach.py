@@ -3,8 +3,8 @@ from typing import Any
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
-from app.campaigns import COOLDOWN_DAYS, DEFAULT_CAMPAIGN
-from app.repositories.outreach_board import cooldown_join
+from app.campaigns import DEFAULT_CAMPAIGN, EV_PERMITS
+from app.repositories.outreach_board import cooldown_join, cooldown_params
 
 
 class OutreachOperationLocked(RuntimeError):
@@ -1061,9 +1061,25 @@ class OutreachRepository:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, {
-                    "place_id": place_id, "campaign_key": campaign_key, "cooldown_days": COOLDOWN_DAYS,
+                    "place_id": place_id, "campaign_key": campaign_key, **cooldown_params(),
                 })
                 return cur.fetchone()
+
+    def ended_in_permit_packets(self, place_id: str) -> bool:
+        """The business replied to, or was closed out of, Permit Packets."""
+        query = """
+            select exists (
+                select 1 from outreach_queue q
+                join v_outreach_stage vs on vs.id = q.id
+                where q.place_id = %s and q.campaign_key = %s
+                  and vs.stage in ('replied', 'closed')
+            ) as ended
+        """
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (place_id, EV_PERMITS))
+                row = cur.fetchone()
+        return bool(row and row["ended"])
 
     def place_opted_out(self, place_id: str) -> bool:
         query = "select 1 from outreach_queue where place_id = %s and status = 'suppressed' limit 1"
