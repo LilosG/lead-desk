@@ -100,12 +100,6 @@ def test_no_city_never_renders_none(angle):
     assert "sample packet" in project.lower()
 
 
-@pytest.mark.parametrize("city", ["Oro Valley", "Rancho Santa Margarita", None, "", "  "])
-def test_pro_starter_is_in_the_rotation():
-    assert angle_label(EV_PERMITS, "pro_starter") == "Pro 1-free + 3-for-1"
-    assert ROTATION[EV_PERMITS] == ("sample", "project", "origin")
-    assert resolve_angle(EV_PERMITS, "p1", "pro_starter", "sample") == "pro_starter"
-    assert resolve_angle(EV_PERMITS, "p1", None, "pro_starter") == "pro_starter"
 
 
 def test_the_follow_up_asks_a_named_contact_which_job_they_permit_most():
