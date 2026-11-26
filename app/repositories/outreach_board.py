@@ -8,7 +8,7 @@ from typing import Any
 
 from psycopg_pool import ConnectionPool
 
-from app.campaigns import COOLDOWN_DAYS, EV_PERMITS, PERMIT_JOBS_SQL
+from app.campaigns import COOLDOWN_DAYS, EV_PERMITS, MY_ELECTRICAL_PERMIT, PERMIT_CAMPAIGNS, PERMIT_JOBS_SQL
 
 # Who the Permit Packets offer can go to. A site that doesn't show permit work
 # still gets the email, worded as a question, and ranks after the shops that do.
@@ -39,7 +39,7 @@ _PERMIT_ELIGIBLE = f"""(
                    ~* %(permit_pattern)s
               )
     )"""
-_LEAD_RULES = {EV_PERMITS: f"and {_PERMIT_AUDIENCE}"}
+_LEAD_RULES = {EV_PERMITS: f"and {_PERMIT_AUDIENCE}", MY_ELECTRICAL_PERMIT: f"and {_PERMIT_AUDIENCE}"}
 
 
 def cooldown_join(place: str, campaign: str) -> str:
@@ -252,7 +252,7 @@ _EV_ORDER = (
 
 
 def default_order(campaign: str) -> str:
-    return _EV_ORDER if campaign == EV_PERMITS else _SEO_ORDER
+    return _EV_ORDER if campaign in PERMIT_CAMPAIGNS else _SEO_ORDER
 
 
 def _scope(campaign: str) -> dict[str, Any]:
@@ -289,7 +289,7 @@ class OutreachBoardRepository:
             params["market"] = market
         # Automate review thresholds: 50+ for Permit Packets, 25+ for SEO & Websites
         min_reviews = 25
-        where.append(f"(kind <> 'candidate' or coalesce(review_count, 0) >= {min_reviews} or ({campaign == 'ev_permits'} and coalesce(review_count, 0) >= 10 and jsonb_array_length(coalesce(permit_jobs, '[]'::jsonb)) > 0))")
+        where.append(f"(kind <> 'candidate' or coalesce(review_count, 0) >= {min_reviews} or ({campaign in PERMIT_CAMPAIGNS} and coalesce(review_count, 0) >= 10 and jsonb_array_length(coalesce(permit_jobs, '[]'::jsonb)) > 0))")
 
         if qualified_only:
             # Only narrows the list to work next; later stages are already committed to.

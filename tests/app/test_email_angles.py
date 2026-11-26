@@ -101,23 +101,9 @@ def test_no_city_never_renders_none(angle):
 
 
 @pytest.mark.parametrize("city", ["Oro Valley", "Rancho Santa Margarita", None, "", "  "])
-def test_the_pro_starter_angle(city):
-    written = permit_offer.write_email({**LEAD, "city": city}, "pro_starter")
-    subject, body = written["subject"], written["body"]
-    text = subject + body
-    assert subject == subject.lower() and len(subject) <= 40
-    assert body.startswith("Hi Aaron,\n\n")
-    assert _words(body) <= 90
-    assert "1 free packet credit" in body and "live job" in body and "3-for-1 starter pack" in body
-    assert "Tesla/ChargePoint chargers" in body
-    assert "None" not in text and "—" not in text and "–" not in text
-    assert "http" not in text and "www." not in text
-    assert "  " not in body and " ," not in body and " ." not in body
-
-
 def test_pro_starter_is_in_the_rotation():
     assert angle_label(EV_PERMITS, "pro_starter") == "Pro 1-free + 3-for-1"
-    assert ROTATION[EV_PERMITS] == ("sample", "project", "origin", "pro_starter")
+    assert ROTATION[EV_PERMITS] == ("sample", "project", "origin")
     assert resolve_angle(EV_PERMITS, "p1", "pro_starter", "sample") == "pro_starter"
     assert resolve_angle(EV_PERMITS, "p1", None, "pro_starter") == "pro_starter"
 
@@ -287,7 +273,7 @@ def test_rotation_is_stable_and_stays_inside_the_campaign():
     # A lead still on a retired angle moves into the current rotation.
     for retired in ("free_packet", "who_pulls", "drawings", "desk_work"):
         assert resolve_angle(EV_PERMITS, "p1", None, retired) in ROTATION[EV_PERMITS]
-    assert ROTATION[EV_PERMITS] == ("sample", "project", "origin", "pro_starter")
+    assert ROTATION[EV_PERMITS] == ("sample", "project", "origin")
     assert "ai_search" not in ROTATION[SEO_WEBSITES]
 
 
@@ -532,3 +518,24 @@ def test_board_reopen_reports_each_item(pool, item):
     service = OutreachBoardService(OutreachBoardRepository(pool), gmail_repository=OutreachGmailRepository(pool), gmail=None)
     result = service.reopen_unsent([item])
     assert result["reopened"] == 0 and result["results"][0]["detail"]
+
+
+def test_my_electrical_permit_four_angles():
+    from app.campaigns import MY_ELECTRICAL_PERMIT
+    from app.services import mep_offer
+    expected_keys = ("pro_starter", "ahj_checklist", "panel_closer", "night_drafting")
+    assert tuple(a.key for a in ANGLES[MY_ELECTRICAL_PERMIT]) == expected_keys
+    assert ROTATION[MY_ELECTRICAL_PERMIT] == expected_keys
+    for key in expected_keys:
+        written = mep_offer.write_email(LEAD, key)
+        assert written["body"].startswith("Hi Aaron,\n\n")
+        assert _words(written["body"]) <= 90
+        assert len(written["subject"]) <= 40
+        assert written["subject"] == written["subject"].lower()
+        assert "http" not in written["body"] and "www." not in written["body"]
+        assert "AutoCAD" not in written["body"] and "DXF" not in written["body"]
+        assert "None" not in written["body"] + written["subject"]
+        no_city = mep_offer.write_email({**LEAD, "city": None}, key)
+        assert "None" not in no_city["body"] + no_city["subject"]
+    fup = mep_offer.write_follow_up(LEAD, 2)
+    assert "AutoCAD" not in fup and "DXF" not in fup and "None" not in fup
