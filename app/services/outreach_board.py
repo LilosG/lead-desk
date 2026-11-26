@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 import requests
 
-from app.campaigns import CAMPAIGNS, EV_PERMITS, PERMIT_JOB_LABELS, get_campaign
+from app.campaigns import CAMPAIGNS, EV_PERMITS, PERMIT_CAMPAIGNS, PERMIT_JOB_LABELS, get_campaign
 from app.core.config import Settings, get_settings
 from app.integrations.gmail import GmailDraftClient, GmailDraftError, GmailReadScopeMissingError
 from app.repositories.outreach_board import OutreachBoardRepository
@@ -70,7 +70,7 @@ def follow_up_step(row: dict[str, Any], now: datetime | None = None) -> str:
 
 def lead_note(row: dict[str, Any], campaign: str) -> str | None:
     """Why this lead sits where it does in this campaign's list."""
-    if campaign == EV_PERMITS:
+    if campaign in PERMIT_CAMPAIGNS:
         jobs = [slug for slug in row.get("permit_jobs") or [] if slug in PERMIT_JOB_LABELS]
         if not jobs and row.get("ev_strength"):
             jobs = ["ev_charger"]  # read before permit_jobs was recorded

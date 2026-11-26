@@ -5,7 +5,7 @@ import hashlib
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from app.campaigns import EV_PERMITS, SEO_WEBSITES
+from app.campaigns import EV_PERMITS, MY_ELECTRICAL_PERMIT, SEO_WEBSITES
 
 ROTATE = "rotate"
 BEST = "best"
@@ -23,7 +23,12 @@ ANGLES: dict[str, tuple[Angle, ...]] = {
         Angle("sample", "Sample packet", "City-specific permit checklist + offers a 1-page sample. No link."),
         Angle("project", "Project + routing", "Asks about upcoming jobs and who handles permitting. No link."),
         Angle("origin", "Origin story", "Peer contractor story about passing on permit-heavy jobs until drawing time dropped. No link."),
-        Angle("pro_starter", "Pro 1-free + 3-for-1", "Offers 1 free packet credit to test on a live job and mentions the 3-for-1 starter pack. No link."),
+    ),
+    MY_ELECTRICAL_PERMIT: (
+        Angle("pro_starter", "1-Free + 3-for-1 Pack", "Offers 1 free packet credit on a live job + mentions the 3-for-1 starter pack. No link."),
+        Angle("ahj_checklist", "Local AHJ + Title Block", "Asks how they handle city site plans/NEC 220 calcs + offers 1 free credit with their license on the title block. No link."),
+        Angle("panel_closer", "200A Upgrade Closer", "Positions NEC 220.82 load calc + panel schedule to close 100A-to-200A upgrade bids + 1 free credit. No link."),
+        Angle("night_drafting", "No-Sub Evening Relief", "Contrasts $300+ drafters & night drafting with pay-per-packet plans + 1 free credit & 3-for-1 offer. No link."),
     ),
     SEO_WEBSITES: (
         Angle("chatgpt_pick", "ChatGPT pick", "Names competitors ChatGPT recommends in their city and offers the 3-bullet fix. No link."),
@@ -36,7 +41,9 @@ RETIRED_LABELS: dict[str, dict[str, str]] = {
     EV_PERMITS: {
         "free_packet": "Free packet", "time_back": "Hours back", "guarantee": "30-day guarantee",
         "who_pulls": "Submittal checklist", "drawings": "EV & panel permits", "desk_work": "Permit desk work",
+        "pro_starter": "Pro 1-free + 3-for-1",
     },
+    MY_ELECTRICAL_PERMIT: {},
     SEO_WEBSITES: {
         "audit_attached": "Audit attached", "leader_vs_you": "Leader vs you",
         "ai_search": "AI / ChatGPT search", "competitor": "Competitor gap", "local_gap": "Local gap",
@@ -45,7 +52,8 @@ RETIRED_LABELS: dict[str, dict[str, str]] = {
 }
 
 ROTATION = {
-    EV_PERMITS: ("sample", "project", "origin", "pro_starter"),
+    EV_PERMITS: ("sample", "project", "origin"),
+    MY_ELECTRICAL_PERMIT: ("pro_starter", "ahj_checklist", "panel_closer", "night_drafting"),
     SEO_WEBSITES: ("chatgpt_pick", "competitor_gap", "website_draft"),
 }
 

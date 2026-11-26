@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 SEO_WEBSITES = "seo_websites"
 EV_PERMITS = "ev_permits"
+MY_ELECTRICAL_PERMIT = "my_electrical_permit"
+PERMIT_CAMPAIGNS = (EV_PERMITS, MY_ELECTRICAL_PERMIT)
 DEFAULT_CAMPAIGN = SEO_WEBSITES
 # One business shouldn't hear two different pitches within this many days.
 COOLDOWN_DAYS = 30
@@ -25,6 +27,7 @@ class Campaign:
 CAMPAIGNS = {
     SEO_WEBSITES: Campaign(SEO_WEBSITES, "audit_report", "Audit + email + Gmail draft", True),
     EV_PERMITS: Campaign(EV_PERMITS, "ev_permit_offer", "Email + Gmail draft", False),
+    MY_ELECTRICAL_PERMIT: Campaign(MY_ELECTRICAL_PERMIT, "mep_pro_offer", "Email + Gmail draft", False),
 }
 
 

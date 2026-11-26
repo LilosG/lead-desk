@@ -23,8 +23,7 @@ const stages = [
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div id="campaign-tabs" role="group" aria-label="Campaign" class="flex flex-wrap gap-2"></div>
         <p id="campaign-summary" class="text-xs text-[var(--muted)]"></p>
-        <button id="angle-pro-starter" type="button" aria-pressed="false" title="Switch to Permit Packets and use the Pro offer email: 1 free packet credit plus the 3-for-1 starter pack. Only selects the angle; creates no drafts." class="ml-auto rounded-full border-2 border-dashed border-amber-500 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 aria-pressed:border-solid aria-pressed:bg-amber-200">Pro 1-free + 3-for-1</button>
-        <label class="flex items-center gap-2 text-xs text-[var(--muted)]">
+        <label class="ml-auto flex items-center gap-2 text-xs text-[var(--muted)]">
           Email angle
           <select id="angle-select" class="rounded-md border border-[var(--line)] bg-white px-2 py-1.5 text-[var(--ink,inherit)]"></select>
         </label>
@@ -355,7 +354,11 @@ const stages = [
     function renderCampaigns() {
       el('#campaign-tabs').innerHTML = campaigns.map((campaign) => {
         const active = campaign.key === state.campaign;
-        return `<button type="button" data-campaign="${esc(campaign.key)}" aria-pressed="${active}" title="${esc(campaign.description)}" class="rounded-md border px-3 py-1.5 text-sm font-medium transition ${active ? 'border-[var(--dark)] bg-[var(--dark)] text-white' : 'border-[var(--line)] bg-white hover:border-[var(--accent)]'}">${esc(campaign.name)}</button>`;
+        const isMep = campaign.key === 'my_electrical_permit';
+        const cls = active
+          ? (isMep ? 'border-amber-700 bg-amber-600 text-white shadow-sm' : 'border-[var(--dark)] bg-[var(--dark)] text-white')
+          : (isMep ? 'border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100' : 'border-[var(--line)] bg-white hover:border-[var(--accent)]');
+        return `<button type="button" data-campaign="${esc(campaign.key)}" aria-pressed="${active}" title="${esc(campaign.description)}" class="rounded-md border px-3 py-1.5 text-sm font-medium transition ${cls}">${esc(campaign.name)}</button>`;
       }).join('');
       const current = currentCampaign();
       if (!current) return;
@@ -365,17 +368,13 @@ const stages = [
       el('#bulk-prep').textContent = current.prep_label;
       const options = current.angles.map((a) => `<option value="${esc(a.key)}" title="${esc(a.summary)}">${esc(a.label)}</option>`).join('');
       const angleSelect = el<HTMLSelectElement>('#angle-select');
-      const rotateLabel = current.angles.length > 2 ? 'Rotate (A/B/C test)' : 'Rotate (A/B test)';
+      const rotateLetters = ['A', 'B', 'C', 'D', 'E'].slice(0, Math.max(2, current.angles.length)).join('/');
+      const rotateLabel = `Rotate (${rotateLetters} test)`;
       angleSelect.innerHTML = `<option value="rotate">${rotateLabel}</option>${options}`;
       const known = current.angles.some((a) => a.key === state.angle) || state.angle === 'rotate';
       angleSelect.value = known ? state.angle : 'rotate';
       state.angle = angleSelect.value;
       el('#draft-angle').innerHTML = `<option value="">Rotate</option>${options}`;
-      renderProStarter();
-    }
-
-    function renderProStarter() {
-      el('#angle-pro-starter').setAttribute('aria-pressed', String(state.angle === 'pro_starter'));
     }
 
     function switchCampaign(key: string) {
@@ -676,7 +675,6 @@ const stages = [
 
     el<HTMLSelectElement>('#angle-select').addEventListener('change', (event) => {
       state.angle = (event.target as HTMLSelectElement).value;
-      renderProStarter();
     });
 
     el<HTMLButtonElement>('#angle-pro-starter').addEventListener('click', () => {
@@ -686,8 +684,7 @@ const stages = [
         switchCampaign('ev_permits');
       } else {
         el<HTMLSelectElement>('#angle-select').value = state.angle;
-        renderProStarter();
-      }
+        }
       el<HTMLSelectElement>('#draft-angle').value = state.angle;
     });
 

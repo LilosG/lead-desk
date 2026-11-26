@@ -6,7 +6,7 @@ import re
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.campaigns import DEFAULT_CAMPAIGN, EV_PERMITS, get_campaign
+from app.campaigns import DEFAULT_CAMPAIGN, EV_PERMITS, MY_ELECTRICAL_PERMIT, get_campaign
 from app.integrations.gmail import GmailDraftClient, GmailDraftError
 from app.integrations.openrouter import CLAIM_TOKEN, OpenRouterClient, OpenRouterError
 from app.outreach_policy import OUTREACHABLE_SIGNALS, client_facing_claim
@@ -19,7 +19,7 @@ from app.services.outreach_audit_copy import (
     contact_first_name,
     personal_greeting,
 )
-from app.services import permit_offer, seo_offer
+from app.services import mep_offer, permit_offer, seo_offer
 from app.services.chatgpt_check import ChatGPTCheckService, has_gap
 from app.services.email_angles import (
     BEST, ROTATE, is_known, profile_offer_enabled, resolve_angle, stable_pick,
@@ -63,7 +63,7 @@ def looks_like_email(address: str | None) -> bool:
 
 def uses_old_copy(item: dict) -> bool:
     """A draft written before the current emails. Older rows have no angle behind them."""
-    current = {"ev_permit_offer": permit_offer.PROMPT_VERSION, "audit_report": seo_offer.PROMPT_VERSION}
+    current = {"ev_permit_offer": permit_offer.PROMPT_VERSION, "mep_pro_offer": mep_offer.PROMPT_VERSION, "audit_report": seo_offer.PROMPT_VERSION}
     expected = current.get(item.get("claim_signal"))
     version = item.get("generation_prompt_version")
     return bool(expected and version and version != expected)
@@ -364,25 +364,30 @@ class OutreachService:
         return recent
 
     def write_ev_draft(self, context: dict, angle: str | None = None) -> dict:
-        """The Permit Packets email, refused unless its facts check out."""
+        """The Permit Packets or MyElectricalPermit.com email, refused unless its facts check out."""
+        campaign_key = get_campaign(context.get("campaign_key")).key
+        if campaign_key not in (EV_PERMITS, MY_ELECTRICAL_PERMIT):
+            campaign_key = EV_PERMITS
+        offer = mep_offer if campaign_key == MY_ELECTRICAL_PERMIT else permit_offer
+        label = "MyElectricalPermit.com" if campaign_key == MY_ELECTRICAL_PERMIT else "Permit Packets"
         if context.get("vertical") != "electrician":
-            raise OutreachBlocked("Permit Packets is only for electricians.")
-        evidence = permit_offer.permit_evidence(context)
+            raise OutreachBlocked(f"{label} is only for electricians.")
+        evidence = offer.permit_evidence(context)
         if angle == BEST:
             angle = ROTATE  # Permit emails carry no audit or mockup.
-        chosen = resolve_angle(EV_PERMITS, context["place_id"], angle, context.get("angle"))
-        if not is_known(EV_PERMITS, chosen):
+        chosen = resolve_angle(campaign_key, context["place_id"], angle, context.get("angle"))
+        if not is_known(campaign_key, chosen):
             raise OutreachBlocked(f"Unknown email angle: {chosen}")
-        written = permit_offer.write_email(context, chosen)
+        written = offer.write_email(context, chosen)
         return {
             "subject": written["subject"],
             "body": f"{written['body']}\n\n{CAN_SPAM_FOOTER}",
-            "claim_signal": get_campaign(context.get("campaign_key")).claim_signal,
+            "claim_signal": get_campaign(campaign_key).claim_signal,
             "verification_status": "verified",
             "verification_note": (f"Permit work found: {evidence}." if evidence else "")
                                   + f" {written['note']}".rstrip(),
             "generation_model": FIXED_COPY,
-            "prompt_version": permit_offer.PROMPT_VERSION,
+            "prompt_version": offer.PROMPT_VERSION,
             "angle": chosen,
         }
 
@@ -749,7 +754,7 @@ class OutreachService:
         if (now or datetime.now(timezone.utc)) < due:
             raise OutreachBlocked(f"This follow-up is due on {due:%b} {due.day}.")
 
-        offer = permit_offer if item["campaign_key"] == EV_PERMITS else seo_offer
+        offer = mep_offer if item["campaign_key"] == MY_ELECTRICAL_PERMIT else (permit_offer if item["campaign_key"] == EV_PERMITS else seo_offer)
         subject = item["subject"] or ""
         follow_up = self.repository.begin_follow_up(
             item_id, step,
